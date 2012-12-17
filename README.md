@@ -10,3 +10,4 @@ This library provides primitives for asynchronous code:
 - workq_service - a manager for multiple workqs, implements scheduling of work units.
 - promise - an event-based promise (I may in the future replace this with boost code, if I can figure out the event handling)
 - msg_queue - a message queue implementation (WIP)
+- refcnt - reference counted pointers
