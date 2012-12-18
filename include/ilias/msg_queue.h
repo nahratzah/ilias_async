@@ -91,7 +91,7 @@ public:
 	}
 
 	msgq_opt_data(msgq_opt_data&& o)
-	    noexcept((std::is_nothrow_move_constructible<value_type>::value || std::is_nothrow_copy_constructible<value_type>::value) && std::is_nothrow_destructable<value_type>::value) :
+	    noexcept((std::is_nothrow_move_constructible<value_type>::value || std::is_nothrow_copy_constructible<value_type>::value) && std::is_nothrow_destructible<value_type>::value) :
 		m_has_value(false)
 	{
 		this->swap(o);
@@ -109,7 +109,7 @@ public:
 		::new(&this->m_value.impl) value_type(std::move(v));
 	}
 
-	~msgq_opt_data() noexcept(std::is_nothrow_destructable<value_type>::value)
+	~msgq_opt_data() noexcept(std::is_nothrow_destructible<value_type>::value)
 	{
 		if (this->m_has_value)
 			this->m_value.impl.~value_type();
@@ -117,7 +117,7 @@ public:
 
 	msgq_opt_data&
 	operator=(msgq_opt_data o)
-	    noexcept((std::is_nothrow_move_constructible<value_type>::value || std::is_nothrow_copy_constructible<value_type>::value) && std::is_nothrow_destructable<value_type>::value)
+	    noexcept((std::is_nothrow_move_constructible<value_type>::value || std::is_nothrow_copy_constructible<value_type>::value) && std::is_nothrow_destructible<value_type>::value)
 	{
 		this->swap(o);
 		return *this;
@@ -125,7 +125,7 @@ public:
 
 	void
 	swap(msgq_opt_data& o)
-	    noexcept((std::is_nothrow_move_constructible<value_type>::value || std::is_nothrow_copy_constructible<value_type>::value) && std::is_nothrow_destructable<value_type>::value)
+	    noexcept((std::is_nothrow_move_constructible<value_type>::value || std::is_nothrow_copy_constructible<value_type>::value) && std::is_nothrow_destructible<value_type>::value)
 	{
 		using std::swap;
 
@@ -144,7 +144,7 @@ public:
 
 	friend void
 	swap(msgq_opt_data& a, msgq_opt_data& b)
-	    noexcept((std::is_nothrow_move_constructible<value_type>::value || std::is_nothrow_copy_constructible<value_type>::value) && std::is_nothrow_destructable<value_type>::value)
+	    noexcept((std::is_nothrow_move_constructible<value_type>::value || std::is_nothrow_copy_constructible<value_type>::value) && std::is_nothrow_destructible<value_type>::value)
 	{
 		a.swap(b);
 	}
