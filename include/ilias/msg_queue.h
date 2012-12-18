@@ -205,7 +205,7 @@ class msg_queue_alloc
 {
 public:
 	typedef DataType* alloc_pointer;
-	typedef typename std::allocator_traits<Alloc>::template rebind<DataType>::other allocator_type;
+	typedef typename std::allocator_traits<Alloc>::template rebind_alloc<DataType> allocator_type;
 	typedef std::allocator_traits<allocator_type> allocator_traits;
 
 private:
@@ -516,7 +516,7 @@ public:
 		/* Empty body. */
 	}
 
-	~msg_queue_data() noexcept(noexcept(msg_queue_alloc<Type, Alloc>::destroy(ll_data_type*)))
+	~msg_queue_data() noexcept
 	{
 		using namespace std::placeholders;
 
@@ -560,7 +560,7 @@ protected:
 	}
 
 	opt_element_type
-	pop() noexcept(noexcept(ll_data_type::move_if_noexcept()))
+	pop() noexcept(noexcept(((ll_data_type*)0)->move_if_noexcept()))
 	{
 		opt_element_type rv;
 
@@ -586,8 +586,8 @@ protected:
  *
  * Since void can hold no data, no list is required to keep track of the data either.
  */
-template<typename Alloc>
-class msg_queue_data<void, Alloc> :
+template<>
+class msg_queue_data<void, void> :
 	public msg_queue_size
 {
 public:
@@ -669,7 +669,7 @@ public:
 		o.m_ptr = nullptr;
 	}
 
-	~prepare_hold() noexcept(noexcept(alloc_type::destroy(alloc::alloc_pointer)))
+	~prepare_hold() noexcept(noexcept(alloc_type::destroy(alloc_type::alloc_pointer)))
 	{
 		if (this->m_ptr) {
 			assert(this->m_alloc);
@@ -989,7 +989,7 @@ public:
 
 	template<typename... Args>
 	void
-	push(Args&&... args) noexcept(noexcept(parent_type::push(Args...)))
+	push(Args&&... args) noexcept(noexcept(parent_type::push(Args()...)))
 	{
 		this->parent_type::push(std::forward<Args>(args)...);
 		/* XXX read-event */
@@ -1000,7 +1000,7 @@ public:
 
 	template<typename... Args>
 	opt_element_type
-	pop(Args&&... args) noexcept(noexcept(parent_type::pop(Args...)))
+	pop(Args&&... args) noexcept(noexcept(parent_type::pop(Args()...)))
 	{
 		auto rv = this->parent_type::pop(std::forward<Args>(args)...);
 		if (!this->full()) {
