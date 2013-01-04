@@ -10,8 +10,10 @@ include (CheckCXXCompilerFlag)
 include (CheckCXXSourceRuns)	# Required to properly test TLS.
 
 include_directories (include)
+include_directories (internal)
 
-# Linux glibc needs exposure declaration.  Keep it simple and pull in every standard they have.
+# Linux glibc needs exposure declaration.
+# Keep it simple and pull in every standard they have.
 # Also make sure their functions are thread-safe.
 add_definitions (-D_REENTRANT -D_GNU_SOURCE)
 
@@ -26,7 +28,8 @@ endif ()
 
 # Setup compiler flags.
 if (CMAKE_COMPILER_IS_GNUCC)
-	# GNU or clang compiler: enable optimization, hide everything not explicitly made visible.
+	# GNU or clang compiler: enable optimization,
+	# hide everything not explicitly made visible.
 	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility-inlines-hidden -fvisibility=hidden")
 	set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3")
 	set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")

@@ -56,7 +56,7 @@ private:
 	struct ip_delete
 	{
 		void
-		operator()(elem* p) const ILIAS_NET2_NOTHROW
+		operator()(elem* p) const noexcept
 		{
 			p->~elem();
 			std::free(p);
@@ -70,13 +70,15 @@ private:
 	std::vector<internal_pointer> instances;
 
 	static void
-	destructor(void* p_) ILIAS_NET2_NOTHROW
+	destructor(void* p_) noexcept
 	{
 		elem* p = static_cast<elem*>(p_);
 
 		tls* self = p->self;
 		std::lock_guard<std::mutex> lck(self->mtx);
-		auto f = std::find_if(self->instances.begin(), self->instances.end(), [p](const internal_pointer& ip) -> bool {
+		auto f = std::find_if(self->instances.begin(),
+		    self->instances.end(),
+		    [p](const internal_pointer& ip) -> bool {
 			return ip.get() == p;
 		    });
 		assert(f != self->instances.end());
@@ -90,14 +92,14 @@ public:
 		if (rv) {
 			/*
 			 * Well, if too many keys are used, EAGAIN is returned,
-			 * which is technically not a memory allocation failure,
-			 * but some other kind of resource.
+			 * which is technically not a memory allocation
+			 * failure, but some other kind of resource.
 			 */
 			throw std::bad_alloc();
 		}
 	}
 
-	~tls() ILIAS_NET2_NOTHROW
+	~tls() noexcept
 	{
 		::pthread_key_delete(this->key);
 	}
@@ -139,7 +141,10 @@ public:
 			throw;
 		}
 
-		/* Note that if everything went well, ip currently holds null. */
+		/*
+		 * Note that if everything went well,
+		 * ip currently holds null.
+		 */
 		return &static_cast<elem*>(p)->data;
 	}
 
