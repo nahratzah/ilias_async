@@ -44,22 +44,27 @@ private:
 
 public:
 	template<typename... Args>
-	msgq_ll_data(Args&&... args) noexcept(std::is_nothrow_constructible<value_type, Args...>::value) :
-		m_value(std::forward<Args>(args)...)
+	msgq_ll_data(Args&&... args) noexcept(
+	    std::is_nothrow_constructible<value_type, Args...>::value)
+	:	m_value(std::forward<Args>(args)...)
 	{
 		/* Empty body. */
 	}
 
 	value_type
-	move_if_noexcept()
-	    noexcept(std::is_nothrow_move_constructible<value_type>::value || std::is_nothrow_copy_constructible<value_type>::value)
+	move_if_noexcept() noexcept(
+	    std::is_nothrow_move_constructible<value_type>::value ||
+	    std::is_nothrow_copy_constructible<value_type>::value)
 	{
 		return std::move_if_noexcept(this->m_value);
 	}
 };
 
 
-/* Optional element content for message queue (comparable to boost::optional). */
+/*
+ * Optional element content for message queue
+ * (comparable to boost::optional).
+ */
 template<typename Type>
 class msgq_opt_data
 {
@@ -81,8 +86,9 @@ public:
 		/* Empty body. */
 	}
 
-	msgq_opt_data(const msgq_opt_data& o) noexcept(std::is_nothrow_copy_constructible<value_type>::value) :
-		m_has_value(false)
+	msgq_opt_data(const msgq_opt_data& o) noexcept(
+	    std::is_nothrow_copy_constructible<value_type>::value)
+	:	m_has_value(false)
 	{
 		if (o.m_has_value) {
 			::new(&this->m_value.impl) value_type(o.m_value.impl);
@@ -90,61 +96,74 @@ public:
 		}
 	}
 
-	msgq_opt_data(msgq_opt_data&& o)
-	    noexcept((std::is_nothrow_move_constructible<value_type>::value || std::is_nothrow_copy_constructible<value_type>::value) && std::is_nothrow_destructible<value_type>::value) :
-		m_has_value(false)
+	msgq_opt_data(msgq_opt_data&& o) noexcept(
+	    (std::is_nothrow_move_constructible<value_type>::value ||
+	     std::is_nothrow_copy_constructible<value_type>::value) &&
+	    std::is_nothrow_destructible<value_type>::value)
+	:	m_has_value(false)
 	{
 		this->swap(o);
 	}
 
-	explicit msgq_opt_data(const value_type& v) noexcept(std::is_nothrow_copy_constructible<value_type>::value) :
-		m_has_value(true)
+	explicit msgq_opt_data(const value_type& v) noexcept(
+	    std::is_nothrow_copy_constructible<value_type>::value)
+	:	m_has_value(true)
 	{
 		::new(&this->m_value.impl) value_type(v);
 	}
 
-	explicit msgq_opt_data(value_type&& v) noexcept(std::is_nothrow_move_constructible<value_type>::value) :
-		m_has_value(true)
+	explicit msgq_opt_data(value_type&& v) noexcept(
+	    std::is_nothrow_move_constructible<value_type>::value)
+	:	m_has_value(true)
 	{
 		::new(&this->m_value.impl) value_type(std::move(v));
 	}
 
-	~msgq_opt_data() noexcept(std::is_nothrow_destructible<value_type>::value)
+	~msgq_opt_data() noexcept(
+	    std::is_nothrow_destructible<value_type>::value)
 	{
 		if (this->m_has_value)
 			this->m_value.impl.~value_type();
 	}
 
 	msgq_opt_data&
-	operator=(msgq_opt_data o)
-	    noexcept((std::is_nothrow_move_constructible<value_type>::value || std::is_nothrow_copy_constructible<value_type>::value) && std::is_nothrow_destructible<value_type>::value)
+	operator=(msgq_opt_data o) noexcept(
+	    (std::is_nothrow_move_constructible<value_type>::value ||
+	     std::is_nothrow_copy_constructible<value_type>::value) &&
+	    std::is_nothrow_destructible<value_type>::value)
 	{
 		this->swap(o);
 		return *this;
 	}
 
 	void
-	swap(msgq_opt_data& o)
-	    noexcept((std::is_nothrow_move_constructible<value_type>::value || std::is_nothrow_copy_constructible<value_type>::value) && std::is_nothrow_destructible<value_type>::value)
+	swap(msgq_opt_data& o) noexcept(
+	    (std::is_nothrow_move_constructible<value_type>::value ||
+	     std::is_nothrow_copy_constructible<value_type>::value) &&
+	    std::is_nothrow_destructible<value_type>::value)
 	{
 		using std::swap;
 
 		if (this->m_has_value && o.m_has_value)
 			swap(this->m_value.impl, o.m_value.impl);
 		else if (this->m_has_value) {
-			::new(&o.m_value.impl) value_type(std::move_if_noexcept(this->m_value.impl));
+			::new(&o.m_value.impl) value_type(
+			    std::move_if_noexcept(this->m_value.impl));
 			swap(this->m_has_value, o.m_has_value);
 			this->m_value.impl.~value_type();
 		} else if (o.m_has_value) {
-			::new(&this->m_value.impl) value_type(std::move_if_noexcept(o.m_value.impl));
+			::new(&this->m_value.impl) value_type(
+			    std::move_if_noexcept(o.m_value.impl));
 			swap(this->m_has_value, o.m_has_value);
 			o.m_value.impl.~value_type();
 		}
 	}
 
 	friend void
-	swap(msgq_opt_data& a, msgq_opt_data& b)
-	    noexcept((std::is_nothrow_move_constructible<value_type>::value || std::is_nothrow_copy_constructible<value_type>::value) && std::is_nothrow_destructible<value_type>::value)
+	swap(msgq_opt_data& a, msgq_opt_data& b) noexcept(
+	    (std::is_nothrow_move_constructible<value_type>::value ||
+	     std::is_nothrow_copy_constructible<value_type>::value) &&
+	    std::is_nothrow_destructible<value_type>::value)
 	{
 		a.swap(b);
 	}
@@ -205,21 +224,24 @@ class msg_queue_alloc
 {
 public:
 	typedef DataType* alloc_pointer;
-	typedef typename std::allocator_traits<Alloc>::template rebind_alloc<DataType> allocator_type;
+	typedef typename std::allocator_traits<Alloc>::
+	    template rebind_alloc<DataType> allocator_type;
 	typedef std::allocator_traits<allocator_type> allocator_traits;
 
 private:
 	allocator_type m_alloc;
 
 public:
-	msg_queue_alloc() noexcept(std::is_nothrow_default_constructible<allocator_type>::value) :
-		m_alloc()
+	msg_queue_alloc() noexcept(
+	    std::is_nothrow_default_constructible<allocator_type>::value)
+	:	m_alloc()
 	{
 		/* Empty body. */
 	}
 
-	msg_queue_alloc(Alloc alloc) noexcept(std::is_nothrow_constructible<allocator_type, Alloc>::value) :
-		m_alloc(alloc)
+	msg_queue_alloc(Alloc alloc) noexcept(
+	    std::is_nothrow_constructible<allocator_type, Alloc>::value)
+	:	m_alloc(alloc)
 	{
 		/* Empty body. */
 	}
@@ -232,7 +254,8 @@ public:
 
 		const auto p = allocator_traits::allocate(this->m_alloc, 1);
 		try {
-			allocator_traits::construct(this->m_alloc, p, std::forward<Args>(args)...);
+			allocator_traits::construct(this->m_alloc, p,
+			    std::forward<Args>(args)...);
 			rv = alloc_pointer(p);
 		} catch (...) {
 			allocator_traits::deallocate(this->m_alloc, p, 1);
@@ -327,10 +350,11 @@ struct msg_queue_ref::refman<Derived, msg_queue_ref::REF_IN>
 	release(const Derived& v) noexcept
 	{
 		const msg_queue_ref& v_ = v;
-		const auto p = v_.m_in_ref.fetch_sub(1, std::memory_order_release);
+		const auto p = v_.m_in_ref.fetch_sub(1,
+		    std::memory_order_release);
 		assert(p > 0);
-		if (p == 1 &&
-		    v_.m_state.fetch_and(~MQ_HAS_IN, std::memory_order_acquire) == MQ_HAS_IN)
+		if (p == 1 && v_.m_state.fetch_and(~MQ_HAS_IN,
+		    std::memory_order_acquire) == MQ_HAS_IN)
 			delete &v;
 	}
 };
@@ -349,10 +373,11 @@ struct msg_queue_ref::refman<Derived, msg_queue_ref::REF_OUT>
 	release(const Derived& v) noexcept
 	{
 		const msg_queue_ref& v_ = v;
-		const auto p = v_.m_out_ref.fetch_sub(1, std::memory_order_release);
+		const auto p = v_.m_out_ref.fetch_sub(1,
+		    std::memory_order_release);
 		assert(p > 0);
-		if (p == 1 &&
-		    v_.m_state.fetch_and(~MQ_HAS_OUT, std::memory_order_acquire) == MQ_HAS_OUT)
+		if (p == 1 && v_.m_state.fetch_and(~MQ_HAS_OUT,
+		    std::memory_order_acquire) == MQ_HAS_OUT)
 			delete &v;
 	}
 };
@@ -472,7 +497,7 @@ public:
 	bool
 	full() const noexcept
 	{
-		return (this->m_eff_avail.load(std::memory_order_relaxed) == 0);
+		return this->m_eff_avail.load(std::memory_order_relaxed) == 0;
 	}
 
 	ILIAS_ASYNC_EXPORT size_type get_max_size() const noexcept;
@@ -520,7 +545,9 @@ public:
 	{
 		using namespace std::placeholders;
 
-		this->m_list.clear_and_dispose(std::bind(&msg_queue_alloc<ll_data_type, Alloc>::destroy, this, _1));
+		this->m_list.clear_and_dispose(
+		    std::bind(&msg_queue_alloc<ll_data_type, Alloc>::destroy,
+		    this, _1));
 	}
 
 	bool
@@ -584,7 +611,8 @@ protected:
 /*
  * Message queue specialization for void.
  *
- * Since void can hold no data, no list is required to keep track of the data either.
+ * Since void can hold no data,
+ * no list is required to keep track of the data either.
  */
 template<>
 class msg_queue_data<void, void> :
@@ -647,29 +675,31 @@ private:
 	typename alloc_type::alloc_pointer m_ptr;
 
 public:
-	prepare_hold() noexcept :
-		m_alloc(nullptr),
+	prepare_hold() noexcept
+	:	m_alloc(nullptr),
 		m_ptr(nullptr)
 	{
 		return;
 	}
 
 	template<typename... Args>
-	prepare_hold(alloc_type& alloc, Args&&... args) noexcept :
-		prepare_hold()
+	prepare_hold(alloc_type& alloc, Args&&... args) noexcept
+	:	prepare_hold()
 	{
 		this->m_alloc = &alloc;
-		this->m_ptr = this->m_alloc->create(std::forward<Args>(args)...);
+		this->m_ptr = this->m_alloc->create(
+		    std::forward<Args>(args)...);
 	}
 
-	prepare_hold(prepare_hold&& o) noexcept :
-		m_alloc(o.alloc),
+	prepare_hold(prepare_hold&& o) noexcept
+	:	m_alloc(o.alloc),
 		m_ptr(o.m_ptr)
 	{
 		o.m_ptr = nullptr;
 	}
 
-	~prepare_hold() noexcept(noexcept(alloc_type::destroy(alloc_type::alloc_pointer)))
+	~prepare_hold() noexcept(
+	    noexcept(alloc_type::destroy(alloc_type::alloc_pointer)))
 	{
 		if (this->m_ptr) {
 			assert(this->m_alloc);
@@ -687,8 +717,10 @@ public:
 	void
 	assign(const value_type& v)
 	{
-		if (!this->m_alloc)
-			throw std::invalid_argument("prepare: assign called without allocator");
+		if (!this->m_alloc) {
+			throw std::invalid_argument("prepare: "
+			    "assign called without allocator");
+		}
 		if (this->m_ptr)
 			**this->m_ptr = v;
 		else
@@ -698,8 +730,10 @@ public:
 	void
 	assign(value_type&& v)
 	{
-		if (!this->m_alloc)
-			throw std::invalid_argument("prepare: assign called without allocator");
+		if (!this->m_alloc) {
+			throw std::invalid_argument("prepare: "
+			    "assign called without allocator");
+		}
 		if (this->m_ptr)
 			**this->m_ptr = std::move(v);
 		else
@@ -710,12 +744,17 @@ public:
 	void
 	assign(Args&&... args)
 	{
-		if (!this->m_alloc)
-			throw std::invalid_argument("prepare: assign called without allocator");
-		if (this->m_ptr)
-			**this->m_ptr = value_type(std::forward<Args>(args)...);
-		else
-			this->m_ptr = this->m_alloc->create(std::forward<Args>(args)...);
+		if (!this->m_alloc) {
+			throw std::invalid_argument("prepare: "
+			    "assign called without allocator");
+		}
+		if (this->m_ptr) {
+			**this->m_ptr =
+			    value_type(std::forward<Args>(args)...);
+		} else {
+			this->m_ptr =
+			    this->m_alloc->create(std::forward<Args>(args)...);
+		}
 	}
 
 protected:
@@ -754,12 +793,14 @@ protected:
  * Allows preparation of a push, with guaranteed succes on commit.
  */
 template<typename MQ, typename ElemType = typename MQ::element_type>
-class prepared_push :
-	private MQ::in_refpointer,
-	private prepare_hold<typename MQ::ll_data_type, typename MQ::allocator_type>
+class prepared_push
+:	private MQ::in_refpointer,
+	private prepare_hold<typename MQ::ll_data_type,
+	    typename MQ::allocator_type>
 {
 private:
-	typedef prepare_hold<typename MQ::ll_data_type, typename MQ::allocator_type> parent_type;
+	typedef prepare_hold<typename MQ::ll_data_type,
+	    typename MQ::allocator_type> parent_type;
 	typedef MQ msgq_type;
 
 public:
@@ -770,8 +811,8 @@ private:
 	typename msgq_type::insert_lock m_lck;
 
 public:
-	prepared_push() noexcept :
-		MQ::in_refpointer(),
+	prepared_push() noexcept
+	:	MQ::in_refpointer(),
 		parent_type(),
 		m_assigned(false),
 		m_lck()
@@ -779,15 +820,16 @@ public:
 		/* Empty body. */
 	}
 
-	prepared_push(prepared_push&& pp) noexcept :
-		prepared_push()
+	prepared_push(prepared_push&& pp) noexcept
+	:	prepared_push()
 	{
 		this->swap(pp);
 	}
 
 	template<typename... Args>
-	prepared_push(const typename msgq_type::in_refpointer& self, Args&&... args) :
-		prepared_push(),
+	prepared_push(const typename msgq_type::in_refpointer& self,
+	    Args&&... args)
+	:	prepared_push(),
 		msgq_type::in_refpointer(&self),
 		parent_type(self, std::forward<Args>(args)...),
 		m_assigned(sizeof...(args) > 0),
@@ -820,7 +862,8 @@ public:
 	commit() noexcept
 	{
 		assert(this->m_assigned);
-		assert(this->get_ptr() && this->m_lck.get_lockable());	/* Implied by above. */
+		assert(this->get_ptr() &&
+		    this->m_lck.get_lockable());	/* Implied by above. */
 
 		msgq_type& self = **this;
 		self.push(std::move(this->m_lck), this->get_ptr());
@@ -949,32 +992,39 @@ struct select_allocator<void, Alloc>
  * Select default allocator for type.
  */
 template<typename Type>
-struct default_allocator : public select_allocator<Type, std::allocator<Type> > {};
+struct default_allocator
+:	public select_allocator<Type, std::allocator<Type> > {};
 
 
 } /* namespace ilias::msg_queue_detail */
 
 
-template<typename Type, typename Alloc = typename msg_queue_detail::default_allocator<Type>::type >
-class msg_queue :
-	public msg_queue_detail::msg_queue_data<Type, typename msg_queue_detail::select_allocator<Type, Alloc>::type>,
+template<typename Type,
+    typename Alloc = typename msg_queue_detail::default_allocator<Type>::type >
+class msg_queue
+:	public msg_queue_detail::msg_queue_data<Type,
+	    typename msg_queue_detail::select_allocator<Type, Alloc>::type>,
 	public msg_queue_detail::msg_queue_ref
 {
 friend class msg_queue_detail::prepared_push<msg_queue>;
 
 public:
-	typedef msg_queue_detail::msg_queue_data<Type, typename msg_queue_detail::select_allocator<Type, Alloc>::type> parent_type;
+	typedef msg_queue_detail::msg_queue_data<Type,
+	    typename msg_queue_detail::select_allocator<Type, Alloc>::type>
+	    parent_type;
 	typedef typename parent_type::size_type size_type;
 	typedef typename parent_type::opt_element_type opt_element_type;
 	typedef msg_queue_detail::prepared_push<msg_queue> prepared_push;
 
-	typedef refpointer<msg_queue, msg_queue_detail::msg_queue_ref::refman<msg_queue, REF_IN> >
+	typedef refpointer<msg_queue,
+	    msg_queue_detail::msg_queue_ref::refman<msg_queue, REF_IN> >
 	    in_refpointer;
-	typedef refpointer<msg_queue, msg_queue_detail::msg_queue_ref::refman<msg_queue, REF_OUT> >
+	typedef refpointer<msg_queue,
+	    msg_queue_detail::msg_queue_ref::refman<msg_queue, REF_OUT> >
 	    out_refpointer;
 
-	msg_queue() :
-		parent_type(),
+	msg_queue()
+	:	parent_type(),
 		msg_queue_detail::msg_queue_ref()
 	{
 		/* Empty body. */
@@ -1024,8 +1074,9 @@ private:
 	Transform m_fn;
 
 public:
-	msg_queue_tf_impl(Transform fn) noexcept(std::is_nothrow_move_constructible<Transform>::value) :
-		m_fn(fn)
+	msg_queue_tf_impl(Transform fn) noexcept(
+	    std::is_nothrow_move_constructible<Transform>::value)
+	:	m_fn(fn)
 	{
 		/* Empty body. */
 	}
@@ -1045,8 +1096,9 @@ private:
 	Transform m_fn;
 
 public:
-	msg_queue_tf_impl(Transform fn) noexcept(std::is_nothrow_move_constructible<Transform>::value) :
-		m_fn(fn)
+	msg_queue_tf_impl(Transform fn) noexcept(
+	    std::is_nothrow_move_constructible<Transform>::value)
+	:	m_fn(fn)
 	{
 		/* Empty body. */
 	}
@@ -1066,8 +1118,9 @@ private:
 	Transform m_fn;
 
 public:
-	msg_queue_tf_impl(Transform fn) noexcept(std::is_nothrow_move_constructible<Transform>::value) :
-		m_fn(fn)
+	msg_queue_tf_impl(Transform fn) noexcept(
+	    std::is_nothrow_move_constructible<Transform>::value)
+	:	m_fn(fn)
 	{
 		/* Empty body. */
 	}
@@ -1087,8 +1140,9 @@ private:
 	Transform m_fn;
 
 public:
-	msg_queue_tf_impl(Transform fn) noexcept(std::is_nothrow_move_constructible<Transform>::value) :
-		m_fn(fn)
+	msg_queue_tf_impl(Transform fn) noexcept(
+	    std::is_nothrow_move_constructible<Transform>::value)
+	:	m_fn(fn)
 	{
 		/* Empty body. */
 	}
@@ -1106,16 +1160,19 @@ public:
 /*
  * Simple transformer.
  *
- * Takes messages from MQ_in, runs a conversion routine and places the result in MQ_out.
+ * Takes messages from MQ_in, runs a conversion routine and
+ * places the result in MQ_out.
  * Transform must be a functor that will not throw.
  */
 template<typename MQ_in, typename MQ_out, typename Transform>
 class msg_queue_transform :
 	public workq_job,
-	private msg_queue_tf_impl<typename MQ_in::element_type, typename MQ_out::element_type, Transform>
+	private msg_queue_tf_impl<typename MQ_in::element_type,
+	    typename MQ_out::element_type, Transform>
 {
 private:
-	static const unsigned int wqj_type_mask = ~(workq_job::TYPE_ONCE | workq_job::TYPE_PERSIST);
+	static const unsigned int wqj_type_mask =
+	    ~(workq_job::TYPE_ONCE | workq_job::TYPE_PERSIST);
 
 	typename MQ_in::out_refpointer m_input;
 	typename MQ_out::in_refpointer m_output;
@@ -1123,18 +1180,24 @@ private:
 	void
 	validate() throw (std::invalid_argument)
 	{
-		if (!this->m_input)
-			throw std::invalid_argument("msg_queue_transform: no input queue supplied");
-		if (!this->m_output)
-			throw std::invalid_argument("msg_queue_transform: no output queue supplied");
+		if (!this->m_input) {
+			throw std::invalid_argument("msg_queue_transform: "
+			    "no input queue supplied");
+		}
+		if (!this->m_output) {
+			throw std::invalid_argument("msg_queue_transform: "
+			    "no output queue supplied");
+		}
 	}
 
 public:
 	msg_queue_transform(workq_ptr wq,
-	    typename MQ_in::out_refpointer input, typename MQ_out::in_refpointer output,
-	    Transform tf, unsigned int type = 0) :
-		workq_job(std::move(wq), type & wqj_type_mask),
-		msg_queue_tf_impl<typename MQ_in::element_type, typename MQ_out::element_type, Transform>(std::move(tf)),
+	    typename MQ_in::out_refpointer input,
+	    typename MQ_out::in_refpointer output,
+	    Transform tf, unsigned int type = 0)
+	:	workq_job(std::move(wq), type & wqj_type_mask),
+		msg_queue_tf_impl<typename MQ_in::element_type,
+		    typename MQ_out::element_type, Transform>(std::move(tf)),
 		m_input(std::move(input)),
 		m_output(std::move(output))
 	{
@@ -1187,25 +1250,28 @@ public:
 
 template<typename MQ_in, typename MQ_out, typename Transform>
 void
-mqtf_transform(workq_ptr wq, const MQ_in& in_ptr, const MQ_out& out_ptr, Transform&& tf, unsigned int wqfl = 0)
+mqtf_transform(workq_ptr wq, const MQ_in& in_ptr, const MQ_out& out_ptr,
+    Transform&& tf, unsigned int wqfl = 0)
 {
-	typedef mqtf_detail::msg_queue_transform<typename std::remove_reference<MQ_in>::type::element_type,
+	typedef mqtf_detail::msg_queue_transform<
+	    typename std::remove_reference<MQ_in>::type::element_type,
 	    typename std::remove_reference<MQ_out>::type::element_type,
 	    typename std::remove_cv<Transform>::type> impl_type;
 
 	auto impl = new_workq_job<impl_type>(std::move(wq),
 	    in_ptr, out_ptr, std::forward<Transform>(tf), wqfl);
 
-	std::function<void()> ev = std::bind(&workq_job::activate, impl, workq_job::ACT_IMMED);
-#if 0
-	if (in_ptr->push_ev || out_ptr->pop_ev)
-		throw std::invalid_argument("msg_queue_transform: IO must not have events");
+	std::function<void()> ev = std::bind(&workq_job::activate, impl,
+	    workq_job::ACT_IMMED);
+	if (in_ptr->push_ev || out_ptr->pop_ev) {
+		throw std::invalid_argument("msg_queue_transform: "
+		    "IO must not have events");
+	}
 	in_ptr->push_ev = ev;
 	out_ptr->pop_ev = ev;
 
 	if (!in_ptr->empty())
 		ev->activate();
-#endif
 }
 
 
