@@ -116,3 +116,9 @@ add_library (ilias_async
 target_link_libraries (ilias_async ${extra_libs})
 set_property (TARGET ilias_async PROPERTY VERSION "0.0")
 set_property (TARGET ilias_async PROPERTY SOVERSION "0.0")
+
+
+#
+# Enable examples.
+#
+add_subdirectory (examples)
