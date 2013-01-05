@@ -699,7 +699,8 @@ public:
 	}
 
 	~prepare_hold() noexcept(
-	    noexcept(alloc_type::destroy(alloc_type::alloc_pointer)))
+	    noexcept(m_alloc->destroy(
+	      (typename alloc_type::alloc_pointer)nullptr)))
 	{
 		if (this->m_ptr) {
 			assert(this->m_alloc);
@@ -708,7 +709,7 @@ public:
 	}
 
 	prepare_hold&
-	operator=(prepare_hold&& o)
+	operator=(prepare_hold&& o) noexcept
 	{
 		this->swap(o);
 		return *this;
@@ -1022,7 +1023,26 @@ public:
 	typedef refpointer<msg_queue,
 	    msg_queue_detail::msg_queue_ref::refman<msg_queue, REF_OUT> >
 	    out_refpointer;
+	typedef std::function<void()> event;
 
+private:
+	event push_ev, pop_ev;
+
+	inline void
+	read_event() noexcept
+	{
+		if (this->pop_ev)
+			this->pop_ev();
+	}
+
+	inline void
+	write_event() noexcept
+	{
+		if (this->push_ev)
+			this->push_ev();
+	}
+	
+public:
 	msg_queue()
 	:	parent_type(),
 		msg_queue_detail::msg_queue_ref()
@@ -1039,27 +1059,65 @@ public:
 
 	template<typename... Args>
 	void
-	push(Args&&... args) noexcept(noexcept(parent_type::push(Args()...)))
+	push(Args&&... args)
+#if 0	// noexcept is possibly the most broken feature introduced in c++11.
+	noexcept(
+	    noexcept(this->parent_type::push(
+	      std::forward<Args>(args)...)))
+#endif
 	{
 		this->parent_type::push(std::forward<Args>(args)...);
-		/* XXX read-event */
+		this->read_event();
 		if (!this->full()) {
-			/* XXX write-event */
+			this->write_event();
 		}
 	}
 
 	template<typename... Args>
 	opt_element_type
-	pop(Args&&... args) noexcept(noexcept(parent_type::pop(Args()...)))
+	pop(Args&&... args)
+#if 0	// noexcept is possibly the most broken feature introduced in c++11.
+	noexcept(
+	    noexcept(this->parent_type::pop(
+	      std::forward<Args>(args)...)))
+#endif
 	{
 		auto rv = this->parent_type::pop(std::forward<Args>(args)...);
 		if (!this->full()) {
-			/* XXX write-event */
+			this->write_event();
 		}
 		if (!this->empty()) {
-			/* XXX read-event */
+			this->read_event();
 		}
 		return rv;
+	}
+
+	bool
+	has_push_ev() const noexcept
+	{
+		return bool(this->push_ev);
+	}
+
+	bool
+	has_pop_ev() const noexcept
+	{
+		return bool(this->pop_ev);
+	}
+
+	void
+	assign_push_ev(event ev) noexcept
+	{
+		this->push_ev = std::move(ev);
+		if (!this->full())
+			this->write_event();
+	}
+
+	void
+	assign_pop_ev(event ev) noexcept
+	{
+		this->pop_ev = std::move(ev);
+		if (!this->empty())
+			this->read_event();
 	}
 };
 
@@ -1263,15 +1321,12 @@ mqtf_transform(workq_ptr wq, const MQ_in& in_ptr, const MQ_out& out_ptr,
 
 	std::function<void()> ev = std::bind(&workq_job::activate, impl,
 	    workq_job::ACT_IMMED);
-	if (in_ptr->push_ev || out_ptr->pop_ev) {
+	if (in_ptr->has_push_ev() || out_ptr->has_pop_ev()) {
 		throw std::invalid_argument("msg_queue_transform: "
 		    "IO must not have events");
 	}
-	in_ptr->push_ev = ev;
-	out_ptr->pop_ev = ev;
-
-	if (!in_ptr->empty())
-		ev->activate();
+	in_ptr->assign_push_ev(ev);
+	out_ptr->assign_pop_ev(ev);
 }
 
 

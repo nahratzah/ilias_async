@@ -40,7 +40,8 @@ namespace ilias {
  * Derived: derived type of the class.
  * Deleter: deletion invocation on release of last reference.
  */
-template<typename Derived, typename Deleter = std::default_delete<const Derived> >
+template<typename Derived,
+    typename Deleter = std::default_delete<const Derived> >
 class refcount_base
 {
 private:
@@ -48,8 +49,8 @@ private:
 	Deleter m_deleter;
 
 protected:
-	refcount_base() noexcept :
-		m_refcount(0),
+	refcount_base() noexcept
+	:	m_refcount(0),
 		m_deleter()
 	{
 		/* Empty body. */
@@ -57,8 +58,7 @@ protected:
 
 	refcount_base(const Deleter& m_deleter)
 		noexcept(std::is_nothrow_copy_constructible<Deleter>::value)
-	    :
-		m_refcount(0),
+	:	m_refcount(0),
 		m_deleter(m_deleter)
 	{
 		/* Empty body. */
@@ -66,9 +66,8 @@ protected:
 
 	refcount_base(Deleter&& m_deleter)
 		noexcept(std::is_nothrow_move_constructible<Deleter>::value)
-	    :
-		m_refcount(0),
-		m_deleter(m_deleter)
+	:	m_refcount(0),
+		m_deleter(std::move(m_deleter))
 	{
 		/* Empty body. */
 	}
@@ -101,12 +100,14 @@ protected:
 	friend void
 	refcnt_release(const Derived& o)
 		noexcept(
-		    noexcept(o.refcount_base::m_deleter(&o)) &&
-		    (std::is_nothrow_move_constructible<Deleter>::value || std::is_nothrow_copy_constructible<Deleter>::value) &&
+		    noexcept(m_deleter(&o)) &&
+		    (std::is_nothrow_move_constructible<Deleter>::value ||
+		     std::is_nothrow_copy_constructible<Deleter>::value) &&
 		    std::is_nothrow_destructible<Deleter>::value)
 	{
 		const refcount_base& self = o;
-		if (self.m_refcount.fetch_sub(1, std::memory_order_release) == 1) {
+		if (self.m_refcount.fetch_sub(1,
+		    std::memory_order_release) == 1) {
 			Deleter deleter = std::move_if_noexcept(self.m_deleter);
 			deleter(&o);
 		}
@@ -157,50 +158,55 @@ private:
 	pointer m_ptr;
 
 public:
-	refpointer() noexcept :
-		m_ptr(nullptr)
+	refpointer() noexcept
+	:	m_ptr(nullptr)
 	{
 		return;
 	}
 
-	refpointer(std::nullptr_t, bool = true) noexcept :
-		m_ptr(nullptr)
+	refpointer(std::nullptr_t, bool = true) noexcept
+	:	m_ptr(nullptr)
 	{
 		return;
 	}
 
-	refpointer(const refpointer& o) noexcept(noexcept(AcqRel::acquire(*this->m_ptr))) :
-		m_ptr(nullptr)
+	refpointer(const refpointer& o) noexcept(
+	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
+	:	m_ptr(nullptr)
 	{
 		this->reset(o);
 	}
 
-	refpointer(refpointer&& o) noexcept :
-		m_ptr(nullptr)
+	refpointer(refpointer&& o) noexcept
+	:	m_ptr(nullptr)
 	{
 		std::swap(this->m_ptr, o.m_ptr);
 	}
 
 	template<typename U, typename U_AcqRel>
-	refpointer(const refpointer<U, U_AcqRel>& o) noexcept(noexcept(AcqRel::acquire(*this->m_ptr))) :
-		m_ptr(nullptr)
+	refpointer(const refpointer<U, U_AcqRel>& o) noexcept(
+	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
+	:	m_ptr(nullptr)
 	{
 		this->reset(o.get());
 	}
 
-	refpointer(pointer p, bool do_acquire = true) noexcept(noexcept(AcqRel::acquire(*this->m_ptr))) :
-		m_ptr(nullptr)
+	refpointer(pointer p, bool do_acquire = true) noexcept(
+	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
+	:	m_ptr(nullptr)
 	{
 		this->reset(p, do_acquire);
 	}
 
-	~refpointer() noexcept(noexcept(AcqRel::release(*this->m_ptr)))
+	~refpointer() noexcept(
+	    noexcept(AcqRel().release(*(Type*)nullptr)))
 	{
 		this->reset();
 	}
 
 	void
-	reset() noexcept(noexcept(AcqRel::release(*this->m_ptr)))
+	reset() noexcept(
+	    noexcept(AcqRel().release(*(Type*)nullptr)))
 	{
 		if (this->m_ptr) {
 			this->AcqRel::release(*this->m_ptr);
@@ -209,7 +215,9 @@ public:
 	}
 
 	void
-	reset(const refpointer& o) noexcept(noexcept(AcqRel::release(*this->m_ptr)) && noexcept(AcqRel::acquire(*this->m_ptr)))
+	reset(const refpointer& o) noexcept(
+	    noexcept(AcqRel().release(*(Type*)nullptr)) &&
+	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
 	{
 		const pointer old = this->m_ptr;
 		if (o.m_ptr) {
@@ -223,7 +231,8 @@ public:
 	}
 
 	void
-	reset(refpointer&& o) noexcept(noexcept(refcnt_release(*this->m_ptr)))
+	reset(refpointer&& o) noexcept(
+	    noexcept(AcqRel().release(*(Type*)nullptr)))
 	{
 		const pointer old = this->m_ptr;
 		this->m_ptr = o.m_ptr;
@@ -234,7 +243,9 @@ public:
 	}
 
 	void
-	reset(pointer p, bool do_acquire = true) noexcept(noexcept(AcqRel::release(*this->m_ptr)) && noexcept(AcqRel::acquire(*this->m_ptr)))
+	reset(pointer p, bool do_acquire = true) noexcept(
+	    noexcept(AcqRel().release(*(Type*)nullptr)) &&
+	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
 	{
 		const pointer old = this->m_ptr;
 		if (p) {
@@ -250,34 +261,42 @@ public:
 
 	template<typename U, typename U_AcqRel>
 	void
-	reset(const refpointer<U, U_AcqRel>& o) noexcept(noexcept(AcqRel::release(*this->m_ptr)) && noexcept(AcqRel::acquire(*this->m_ptr)))
+	reset(const refpointer<U, U_AcqRel>& o) noexcept(
+	    noexcept(AcqRel().release(*(Type*)nullptr)) &&
+	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
 	{
 		this->reset(o.get(), true);
 	}
 
 	refpointer&
-	operator=(std::nullptr_t) noexcept(noexcept(AcqRel::release(*this->m_ptr)))
+	operator=(std::nullptr_t) noexcept(
+	    noexcept(AcqRel().release(*(Type*)nullptr)))
 	{
 		this->reset();
 		return *this;
 	}
 
 	refpointer&
-	operator=(const refpointer& o) noexcept(noexcept(AcqRel::release(*this->m_ptr)) && noexcept(AcqRel::acquire(*this->m_ptr)))
+	operator=(const refpointer& o) noexcept(
+	    noexcept(AcqRel().release(*(Type*)nullptr)) &&
+	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
 	{
 		this->reset(o);
 		return *this;
 	}
 
 	refpointer&
-	operator=(refpointer&& o) noexcept(noexcept(AcqRel::release(*this->m_ptr)))
+	operator=(refpointer&& o) noexcept(
+	    noexcept(AcqRel().release(*(Type*)nullptr)))
 	{
 		this->reset(o);
 		return *this;
 	}
 
 	refpointer&
-	operator=(pointer p) noexcept(noexcept(AcqRel::release(*this->m_ptr)) && noexcept(AcqRel::acquire(*this->m_ptr)))
+	operator=(pointer p) noexcept(
+	    noexcept(AcqRel().release(*(Type*)nullptr)) &&
+	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
 	{
 		this->reset(p);
 		return *this;
@@ -344,7 +363,9 @@ public:
 	void
 	swap(refpointer& o) noexcept
 	{
-		std::swap(this->m_ptr, o.m_ptr);
+		using std::swap;
+
+		swap(this->m_ptr, o.m_ptr);
 	}
 
 	friend void

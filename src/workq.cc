@@ -939,8 +939,8 @@ wq_deleter::operator()(const workq_service* wqs) const noexcept
 } /* namespace ilias::workq_detail */
 
 
-class ILIAS_NET2_LOCAL job_single :
-	public workq_job
+class ILIAS_ASYNC_LOCAL job_single
+:	public workq_job
 {
 private:
 	const std::function<void()> m_fn;
@@ -976,7 +976,7 @@ workq::new_job(unsigned int type, std::function<void()> fn) throw (std::bad_allo
 }
 
 
-class ILIAS_NET2_LOCAL coroutine_job :
+class ILIAS_ASYNC_LOCAL coroutine_job :
 	public workq_detail::co_runnable
 {
 private:
@@ -1043,7 +1043,7 @@ workq::new_job(unsigned int type, std::vector<std::function<void()> > fn) throw 
 
 
 template<typename JobType>
-class ILIAS_NET2_LOCAL job_once final :
+class ILIAS_ASYNC_LOCAL job_once final :
 	public JobType,
 	public std::enable_shared_from_this<job_once<JobType> >
 {
