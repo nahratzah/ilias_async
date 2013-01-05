@@ -495,7 +495,8 @@ new_workq_service(unsigned int threads) throw (std::bad_alloc)
 }
 
 
-workq_job::workq_job(workq_ptr wq, unsigned int type) throw (std::invalid_argument) :
+workq_job::workq_job(workq_ptr wq, unsigned int type)
+    throw (std::invalid_argument) :
 	m_type(type),
 	m_run_gen(0),
 	m_state(0),
@@ -503,21 +504,27 @@ workq_job::workq_job(workq_ptr wq, unsigned int type) throw (std::invalid_argume
 {
 	if (!this->m_wq)
 		throw std::invalid_argument("workq_job: null workq");
-	if ((type & TYPE_ONCE) && (type & TYPE_PERSIST))
-		throw std::invalid_argument("workq_job: cannot create persistent job that only runs once");
-	if ((type & TYPE_MASK) != type)
-		throw std::invalid_argument("workq_job: invalid type (unrecognized flags)");
+	if ((type & TYPE_ONCE) && (type & TYPE_PERSIST)) {
+		throw std::invalid_argument("workq_job: "
+		    "cannot create persistent job that only runs once");
+	}
+	if ((type & TYPE_MASK) != type) {
+		throw std::invalid_argument("workq_job: "
+		    "invalid type (unrecognized flags)");
+	}
 }
 
 workq_job::~workq_job() noexcept
 {
-	assert(!(this->m_state.load(std::memory_order_relaxed) & STATE_RUNNING));
+	assert(!(this->m_state.load(std::memory_order_relaxed) &
+	    STATE_RUNNING));
 }
 
 void
 workq_job::activate(unsigned int flags) noexcept
 {
-	const auto s = this->m_state.fetch_or(STATE_ACTIVE, std::memory_order_relaxed);
+	const auto s = this->m_state.fetch_or(STATE_ACTIVE,
+	    std::memory_order_relaxed);
 	if (!(s & (STATE_RUNNING | STATE_ACTIVE)))
 		this->get_workq()->job_to_runq(this);
 
@@ -536,7 +543,8 @@ void
 workq_job::deactivate() noexcept
 {
 	const auto gen = this->m_run_gen.load(std::memory_order_relaxed);
-	auto s = this->m_state.fetch_and(~STATE_ACTIVE, std::memory_order_release);
+	auto s = this->m_state.fetch_and(~STATE_ACTIVE,
+	    std::memory_order_release);
 
 	if ((s & STATE_RUNNING) && get_wq_tls().find(*this))
 		return;	/* Deactivated from within. */
@@ -577,7 +585,8 @@ workq_job::lock_run() noexcept
 		new_s = s | STATE_RUNNING;
 		if (!(this->m_type & TYPE_PERSIST))
 			new_s &= ~STATE_ACTIVE;
-	} while (!this->m_state.compare_exchange_weak(s, new_s, std::memory_order_acquire, std::memory_order_relaxed));
+	} while (!this->m_state.compare_exchange_weak(s, new_s,
+	    std::memory_order_acquire, std::memory_order_relaxed));
 
 	this->m_run_gen.fetch_add(1, std::memory_order_acquire);
 	return RUNNING;
@@ -589,7 +598,8 @@ workq_job::unlock_run(workq_job::run_lck rl) noexcept
 	switch (rl) {
 	case RUNNING:
 		{
-			auto s = this->m_state.fetch_and(~STATE_RUNNING, std::memory_order_release);
+			auto s = this->m_state.fetch_and(~STATE_RUNNING,
+			    std::memory_order_release);
 			assert(s & STATE_RUNNING);
 			if (this->m_type & TYPE_ONCE)
 				return;
@@ -608,8 +618,9 @@ workq_detail::co_runnable::~co_runnable() noexcept
 	return;
 }
 
-workq_detail::co_runnable::co_runnable(workq_ptr wq, unsigned int type) throw (std::invalid_argument) :
-	workq_job(std::move(wq), type),
+workq_detail::co_runnable::co_runnable(workq_ptr wq, unsigned int type)
+    throw (std::invalid_argument)
+:	workq_job(std::move(wq), type),
 	m_runcount(0)
 {
 	/* Empty body. */
@@ -623,7 +634,8 @@ workq_detail::co_runnable::co_publish(std::size_t runcount) noexcept
 		this->m_runcount.store(runcount, std::memory_order_acq_rel);
 		this->get_workq_service()->co_to_runq(this, runcount);
 	} else {
-		/* Not publishing co-runnable, not eating lock, co-runnable will unlock on return. */
+		/* Not publishing co-runnable, not eating lock,
+		 * co-runnable will unlock on return. */
 	}
 }
 
@@ -632,7 +644,9 @@ workq_detail::co_runnable::unlock_run(workq_job::run_lck rl) noexcept
 {
 	switch (rl) {
 	case RUNNING:
-		return;	/* Handled by co_runnable::release, which will be called from co_run() as appropriate. */
+		/* Handled by co_runnable::release,
+		 * which will be called from co_run() as appropriate. */
+		return;
 	case BUSY:
 		break;
 	}
@@ -643,34 +657,36 @@ bool
 workq_detail::co_runnable::release(std::size_t n) noexcept
 {
 	bool did_unlock = false;
-	/* XXX gcc-4.6.2 does not have atomic_thread_fence.  Use a workaround using a temporary. */
-	std::atomic<int> atom;
 
 	/*
 	 * When release is called, the co-runnable cannot start more work.
 	 * It must be unlinked from the co-runq.
-	 * Note that this call will fail a lot, because multiple threads will attempt this operation
-	 * but only one will succeed (which is fine, we simply don't want it to keep appearing on the
+	 *
+	 * Note that this call will fail a lot, because multiple threads
+	 * will attempt this operation, but only one will succeed
+	 * (which is fine, we simply don't want it to keep appearing on the
 	 * co-runq).
 	 *
-	 * Note: this call must complete before the co-runnable ceases to run, otherwise a race
-	 * could cause co-runnable insertion to fail when it is next activated.
+	 * Note: this call must complete before the co-runnable ceases to run,
+	 * otherwise a race could cause co-runnable insertion to fail
+	 * when it is next activated.
 	 */
-	this->get_workq_service()->m_co_runq.erase(this->get_workq_service()->m_co_runq.iterator_to(*this));
+	this->get_workq_service()->m_co_runq.erase(
+	    this->get_workq_service()->m_co_runq.iterator_to(*this));
 
 	assert(this->m_rlck.is_locked());
-	atom.store(0, std::memory_order_release);	/* XXX std::atomic_thread_fence(std::memory_order_release) */
+	std::atomic_thread_fence(std::memory_order_release);
 	if (get_wq_tls().steal_lock(*this).co_unlock()) {
 		get_wq_tls().store(std::move(this->m_rlck));
 		did_unlock = true;
-		atom.load(std::memory_order_acquire);	/* XXX std::atomic_thread_fence(std::memory_order_acquire) */
+		std::atomic_thread_fence(std::memory_order_acquire);
 	}
 	return did_unlock;
 }
 
 
-workq::workq(workq_service_ptr wqs) throw (std::invalid_argument) :
-	m_wqs(std::move(wqs)),
+workq::workq(workq_service_ptr wqs) throw (std::invalid_argument)
+:	m_wqs(std::move(wqs)),
 	m_run_single(false),
 	m_run_parallel(0)
 {
@@ -701,7 +717,8 @@ void
 workq::job_to_runq(workq_detail::workq_intref<workq_job> j) noexcept
 {
 	bool activate = false;
-	if ((j->m_type & workq_job::TYPE_PARALLEL) && this->m_p_runq.push_back(j))
+	if ((j->m_type & workq_job::TYPE_PARALLEL) &&
+	    this->m_p_runq.push_back(j))
 		activate = true;
 	if (this->m_runq.push_back(std::move(j)))
 		activate = true;
@@ -732,13 +749,17 @@ workq::unlock_run(workq::run_lck rl) noexcept
 	switch (rl) {
 	case RUN_SINGLE:
 		{
-			const auto old_run_single = this->m_run_single.exchange(false, std::memory_order_release);
+			const auto old_run_single =
+			    this->m_run_single.exchange(false,
+			    std::memory_order_release);
 			assert(old_run_single);
 		}
 		break;
 	case RUN_PARALLEL:
 		{
-			const auto old_run_parallel = this->m_run_parallel.fetch_sub(1, std::memory_order_release);
+			const auto old_run_parallel =
+			    this->m_run_parallel.fetch_sub(1,
+			    std::memory_order_release);
 			assert(old_run_parallel > 0);
 		}
 		break;
@@ -751,8 +772,11 @@ workq::lock_run_downgrade(workq::run_lck rl) noexcept
 	switch (rl) {
 	case RUN_SINGLE:
 		{
-			this->m_run_parallel.fetch_add(1, std::memory_order_acquire);
-			const auto old_run_single = this->m_run_single.exchange(false, std::memory_order_release);
+			this->m_run_parallel.fetch_add(1,
+			    std::memory_order_acquire);
+			const auto old_run_single =
+			    this->m_run_single.exchange(false,
+			    std::memory_order_release);
 			assert(old_run_single);
 
 			rl = RUN_PARALLEL;
@@ -789,14 +813,14 @@ workq_service::threadpool_work() noexcept
 	return this->aid(32);
 }
 
-workq_service::workq_service() :
-	workq_service(threadpool::default_thread_count())
+workq_service::workq_service()
+:	workq_service(threadpool::default_thread_count())
 {
 	return;
 }
 
-workq_service::workq_service(unsigned int threads) :
-	m_workers(std::bind(&workq_service::threadpool_pred, this),
+workq_service::workq_service(unsigned int threads)
+:	m_workers(std::bind(&workq_service::threadpool_pred, this),
 	    std::bind(&workq_service::threadpool_work, this),
 	    threads)
 {
@@ -817,7 +841,9 @@ workq_service::wq_to_runq(workq_detail::workq_intref<workq> wq) noexcept
 }
 
 void
-workq_service::co_to_runq(workq_detail::workq_intref<workq_detail::co_runnable> co, std::size_t max_threads) noexcept
+workq_service::co_to_runq(
+    workq_detail::workq_intref<workq_detail::co_runnable> co,
+    std::size_t max_threads) noexcept
 {
 	assert(max_threads > 0);
 	const bool pushback_succeeded = (this->m_co_runq.push_back(co));
@@ -842,6 +868,8 @@ workq_service::aid(unsigned int count) noexcept
 {
 	using std::begin;
 	using std::end;
+	using workq_detail::workq_intref;
+	using workq_detail::co_runnable;
 
 	unsigned int i;
 	auto co = begin(this->m_co_runq);
@@ -849,9 +877,16 @@ workq_service::aid(unsigned int count) noexcept
 		/* Run co-runnables before workqs. */
 		if (co != end(this->m_co_runq)) {
 			do {
-				workq_detail::workq_intref<workq_detail::co_runnable> co_ptr = co.get();
-				wq_stack stack(*co_ptr);	/* Acquire lock and publish intent to execute. */
-				co = this->m_co_runq.end();	/* Release list refcount, so co_runnable::release() can unlink. */
+				workq_intref<co_runnable> co_ptr = co.get();
+
+				/* Acquire lock and
+				 * publish intent to execute. */
+				wq_stack stack(*co_ptr);
+
+				/* Release list refcount,
+				 * so co_runnable::release() can unlink. */
+				co = this->m_co_runq.end();
+				
 				if (co_ptr->co_run())
 					++i;
 				co = this->m_co_runq.begin();
@@ -861,8 +896,10 @@ workq_service::aid(unsigned int count) noexcept
 
 		/* Run a workq. */
 		workq_detail::wq_run_lock rlck(*this);
-		if (!rlck.is_locked())
-			break;	/* GUARD: No co-runnables, nor workqs available. */
+		if (!rlck.is_locked()) {
+			/* GUARD: No co-runnables, nor workqs available. */
+			break;
+		}
 
 		{
 			rlck.commit();
@@ -885,13 +922,18 @@ namespace workq_detail {
 void
 wq_deleter::operator()(const workq_job* wqj) const noexcept
 {
-	wqj->get_workq()->m_runq.unlink_robust(wqj->get_workq()->m_runq.iterator_to(const_cast<workq_job&>(*wqj)));
-	wqj->get_workq()->m_p_runq.unlink_robust(wqj->get_workq()->m_p_runq.iterator_to(const_cast<workq_job&>(*wqj)));
+	wqj->get_workq()->m_runq.unlink_robust(
+	    wqj->get_workq()->m_runq.iterator_to(
+	    const_cast<workq_job&>(*wqj)));
+	wqj->get_workq()->m_p_runq.unlink_robust(
+	    wqj->get_workq()->m_p_runq.iterator_to(
+	    const_cast<workq_job&>(*wqj)));
 	const_cast<workq_job*>(wqj)->deactivate();
 
 	/*
 	 * If this job is being destroyed from within its own worker thread,
-	 * inform the internal references that they are responsible for destruction.
+	 * inform the internal references that they are responsible
+	 * for destruction.
 	 */
 	if (get_wq_tls().find(*wqj)) {
 		wqj->int_suicide.store(true, std::memory_order_release);
@@ -907,11 +949,14 @@ wq_deleter::operator()(const workq_job* wqj) const noexcept
 void
 wq_deleter::operator()(const workq* wq) const noexcept
 {
-	wq->get_workq_service()->m_wq_runq.unlink_robust(wq->get_workq_service()->m_wq_runq.iterator_to(const_cast<workq&>(*wq)));
+	wq->get_workq_service()->m_wq_runq.unlink_robust(
+	    wq->get_workq_service()->m_wq_runq.iterator_to(
+	    const_cast<workq&>(*wq)));
 
 	/*
 	 * If this wq is being destroyed from within its own worker thread,
-	 * inform the internal references that they are responsible for destruction.
+	 * inform the internal references that they are responsible
+	 * for destruction.
 	 */
 	if (get_wq_tls().find(*wq)) {
 		wq->int_suicide.store(true, std::memory_order_release);
@@ -927,7 +972,8 @@ wq_deleter::operator()(const workq* wq) const noexcept
 void
 wq_deleter::operator()(const workq_service* wqs) const noexcept
 {
-	/* XXX check if this wqs is being destroyed from within its own worker thread, then perform special handling. */
+	/* XXX check if this wqs is being destroyed from within
+	 * its own worker thread, then perform special handling. */
 
 	/* Wait for the last internal reference to go away. */
 	wqs->wait_unreferenced();
@@ -946,12 +992,15 @@ private:
 	const std::function<void()> m_fn;
 
 public:
-	job_single(workq_ptr wq, std::function<void()> fn, unsigned int type = 0) throw (std::invalid_argument) :
-		workq_job(std::move(wq), type),
+	job_single(workq_ptr wq, std::function<void()> fn,
+	    unsigned int type = 0) throw (std::invalid_argument)
+	:	workq_job(std::move(wq), type),
 		m_fn(std::move(fn))
 	{
-		if (!this->m_fn)
-			throw std::invalid_argument("workq_job: functor invalid");
+		if (!this->m_fn) {
+			throw std::invalid_argument("workq_job: "
+			    "functor invalid");
+		}
 	}
 
 	virtual ~job_single() noexcept;
@@ -970,14 +1019,15 @@ job_single::run() noexcept
 }
 
 workq_job_ptr
-workq::new_job(unsigned int type, std::function<void()> fn) throw (std::bad_alloc, std::invalid_argument)
+workq::new_job(unsigned int type, std::function<void()> fn)
+    throw (std::bad_alloc, std::invalid_argument)
 {
 	return new_workq_job<job_single>(workq_ptr(this), std::move(fn), type);
 }
 
 
-class ILIAS_ASYNC_LOCAL coroutine_job :
-	public workq_detail::co_runnable
+class ILIAS_ASYNC_LOCAL coroutine_job
+:	public workq_detail::co_runnable
 {
 private:
 	typedef std::vector<std::function<void()> > co_list;
@@ -986,14 +1036,19 @@ private:
 	std::atomic<co_list::size_type> m_co_idx;
 
 public:
-	coroutine_job(workq_ptr ptr, std::vector<std::function<void()> > fns, unsigned int type) throw (std::invalid_argument) :
-		workq_detail::co_runnable(std::move(ptr), type),
+	coroutine_job(workq_ptr ptr, std::vector<std::function<void()> > fns,
+	    unsigned int type) throw (std::invalid_argument)
+	:	workq_detail::co_runnable(std::move(ptr), type),
 		m_coroutines(std::move(fns))
 	{
 		/* Validate co-routines. */
-		if (this->m_coroutines.empty())
-			throw std::invalid_argument("workq coroutine job: no functors");
-		std::for_each(this->m_coroutines.begin(), this->m_coroutines.end(), [](const std::function<void()>& fn) {
+		if (this->m_coroutines.empty()) {
+			throw std::invalid_argument("workq coroutine job: "
+			    "no functors");
+		}
+		std::for_each(this->m_coroutines.begin(),
+		    this->m_coroutines.end(),
+		    [](const std::function<void()>& fn) {
 			if (!fn)
 				throw std::invalid_argument("workq coroutine job: invalid functor");
 		});
@@ -1020,9 +1075,9 @@ bool
 coroutine_job::co_run() noexcept
 {
 	std::size_t runcount = 0;
-	for (co_list::size_type idx = this->m_co_idx.fetch_add(1, std::memory_order_acquire);
-	    idx < this->m_coroutines.size();
-	    idx = this->m_co_idx.fetch_add(1, std::memory_order_acquire)) {
+	co_list::size_type idx;
+	while ((idx = this->m_co_idx.fetch_add(1, std::memory_order_acquire)) <
+	    this->m_coroutines.size()) {
 		++runcount;
 		this->m_coroutines[idx]();
 	}
@@ -1031,12 +1086,15 @@ coroutine_job::co_run() noexcept
 }
 
 workq_job_ptr
-workq::new_job(unsigned int type, std::vector<std::function<void()> > fn) throw (std::bad_alloc, std::invalid_argument)
+workq::new_job(unsigned int type, std::vector<std::function<void()> > fn)
+    throw (std::bad_alloc, std::invalid_argument)
 {
 	if (fn.empty())
 		throw std::invalid_argument("new_job: empty co-routine");
-	if (fn.size() == 1)
-		return this->new_job(type, std::move(fn.front()));	/* Use simpler job type if there is only one function. */
+	if (fn.size() == 1) {
+		/* Use simpler job type if there is only one function. */
+		return this->new_job(type, std::move(fn.front()));
+	}
 
 	return new_workq_job<coroutine_job>(this, std::move(fn), type);
 }
@@ -1053,7 +1111,8 @@ private:
 public:
 	template<typename FN>
 	job_once(workq_ptr ptr, FN&& fn) :
-		JobType(std::move(ptr), std::forward<FN>(fn), workq_job::TYPE_ONCE),
+		JobType(std::move(ptr), std::forward<FN>(fn),
+		    workq_job::TYPE_ONCE),
 		m_self(this)
 	{
 		assert(this->m_type & workq_job::TYPE_ONCE);
@@ -1070,25 +1129,31 @@ public:
 };
 
 void
-workq::once(std::function<void()> fn) throw (std::bad_alloc, std::invalid_argument)
+workq::once(std::function<void()> fn)
+    throw (std::bad_alloc, std::invalid_argument)
 {
 	/* Create a job that will run once and then kill itself. */
-	workq_job_ptr j = new_workq_job<job_once<job_single> >(this, std::move(fn));
+	workq_job_ptr j =
+	    new_workq_job<job_once<job_single> >(this, std::move(fn));
 
 	/* May not throw past this point. */
-
+	static_assert(noexcept(j->activate()), "Job activation may not throw, "
+	    "since we are unable to undo part of the operation.");
 	/* Activate this job, so it will run. */
 	j->activate();
 }
 
 void
-workq::once(std::vector<std::function<void()> > fns) throw (std::bad_alloc, std::invalid_argument)
+workq::once(std::vector<std::function<void()> > fns)
+    throw (std::bad_alloc, std::invalid_argument)
 {
 	/* Create a job that will run once and then kill itself. */
-	workq_job_ptr j = new_workq_job<job_once<coroutine_job> >(this, std::move(fns));
+	workq_job_ptr j = new_workq_job<job_once<coroutine_job> >(this,
+	    std::move(fns));
 
 	/* May not throw past this point. */
-
+	static_assert(noexcept(j->activate()), "Job activation may not throw, "
+	    "since we are unable to undo part of the operation.");
 	/* Activate this job, so it will run. */
 	j->activate();	/* Never throws */
 }
@@ -1100,14 +1165,17 @@ workq::once(std::vector<std::function<void()> > fns) throw (std::bad_alloc, std:
  * Returns the previous run level.
  */
 workq_pop_state
-workq_switch(const workq_pop_state& dst) throw (workq_deadlock, workq_stack_error)
+workq_switch(const workq_pop_state& dst)
+    throw (workq_deadlock, workq_stack_error)
 {
 	auto& tls = get_wq_tls();
 	wq_stack*const head = tls.head();
 
 	if (!head) {
-		workq_stack_error::throw_me("workq_switch: require active workq invocation to switch stacks "
-		    "(otherwise it is impossible to know when the stack frame ends)");	/* Nothing to lock. */
+		workq_stack_error::throw_me("workq_switch: "
+		    "require active workq invocation to switch stacks "
+		    "(otherwise it is impossible to know "
+		    "when the stack frame ends)");	/* Nothing to lock. */
 	}
 
 	workq_detail::wq_run_lock& lck = head->lck;
@@ -1141,8 +1209,10 @@ workq_switch(const workq_pop_state& dst) throw (workq_deadlock, workq_stack_erro
 	if (dst.is_single()) {
 		for (const wq_stack* s = head->pred; s; s = s->pred) {
 			if (s->get_wq() == dst.get_workq() &&
-			    s->lck.wq_is_single())
-				workq_deadlock::throw_me();	/* Recursive lock -> deadlock. */
+			    s->lck.wq_is_single()) {
+				/* Recursive lock -> deadlock. */
+				workq_deadlock::throw_me();
+			}
 		}
 	}
 
