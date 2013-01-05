@@ -1028,20 +1028,20 @@ public:
 private:
 	event push_ev, pop_ev;
 
-	inline void
+	void
 	read_event() noexcept
 	{
 		if (this->pop_ev)
 			this->pop_ev();
 	}
 
-	inline void
+	void
 	write_event() noexcept
 	{
 		if (this->push_ev)
 			this->push_ev();
 	}
-	
+
 public:
 	msg_queue()
 	:	parent_type(),
@@ -1327,6 +1327,82 @@ mqtf_transform(workq_ptr wq, const MQ_in& in_ptr, const MQ_out& out_ptr,
 	}
 	in_ptr->assign_push_ev(ev);
 	out_ptr->assign_pop_ev(ev);
+}
+
+
+/* Create a message queue pair. */
+template<typename Type, typename Alloc = std::allocator<Type>>
+std::pair<typename msg_queue<Type, Alloc>::in_ref_pointer,
+    typename msg_queue<Type, Alloc>::out_ref_pointer>
+make_msg_queue()
+{
+	std::pair<typename msg_queue<Type, Alloc>::in_ref_pointer,
+	    typename msg_queue<Type, Alloc>::out_ref_pointer> rv;
+
+	auto ptr = new msg_queue<Type, Alloc>();
+	rv.first = ptr;		/* Claim ownership. */
+	rv.second = ptr;	/* Claim ownership. */
+	return rv;
+}
+
+/* Create a message queue which generates a sequence of numbers. */
+template<typename Type, typename Alloc>
+typename msg_queue<Type, Alloc>::out_ref_pointer
+make_msgq_generator(workq_ptr wq, Type begin, Type end, Type step = Type(1))
+{
+	typename msg_queue<Type, Alloc>::out_ref_pointer out;
+	typename msg_queue<Type, Alloc>::in_ref_pointer in;
+
+	std::tie(in, out) = make_msg_queue<Type, Alloc>();
+
+	class generator
+	{
+	public:
+		typedef typename msg_queue<Type, Alloc>::in_ref_pointer
+		    in_type;
+
+	private:
+		in_type in;
+		Type begin;
+		const Type end;
+		const Type step;
+
+	public:
+		generator(Type begin, Type end, Type step, in_type in) noexcept
+		:	in(in),
+			begin(begin),
+			end(end),
+			step(step)
+		{
+			/* Empty body. */
+		}
+
+		generator(const generator&) = default;
+		generator(generator&&) = default;
+		generator& operator=(const generator&) = default;
+		generator& operator=(generator&&) = default;
+
+		void
+		operator()() noexcept
+		{
+			try {
+				this->in->push(begin);
+			} catch (...) {
+				return;
+			}
+			this->begin += this->step;
+			if (this->begin == this->end)
+				this->in.reset();
+		}
+	};
+
+	std::function<void()> ev = std::bind(&workq_job::activate,
+	    new_workq_job(std::move(wq), generator(std::move(begin),
+	      std::move(end), std::move(step), std::move(in))),
+	    workq_job::ACT_IMMED);
+	in->assign_push_ev(ev);
+
+	return out;
 }
 
 
