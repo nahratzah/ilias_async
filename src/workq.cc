@@ -30,6 +30,20 @@
 namespace ilias {
 
 
+/* Since we need a referable definition of static const somewhere. */
+const unsigned int workq_job::STATE_RUNNING;
+const unsigned int workq_job::STATE_HAS_RUN;
+const unsigned int workq_job::STATE_ACTIVE;
+
+const unsigned int workq_job::TYPE_ONCE;
+const unsigned int workq_job::TYPE_PERSIST;
+const unsigned int workq_job::TYPE_PARALLEL;
+const unsigned int workq_job::TYPE_NO_AID;
+const unsigned int workq_job::TYPE_MASK;
+
+const unsigned int workq_job::ACT_IMMED;
+
+
 workq_error::~workq_error() noexcept
 {
 	return;
