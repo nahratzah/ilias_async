@@ -31,6 +31,9 @@ namespace ilias {
 namespace msg_queue_detail {
 
 
+template<typename DataType, typename Alloc> class prepare_hold;
+
+
 /* Adapter, to push Type on a ll_list. */
 template<typename Type>
 class msgq_ll_data :
@@ -255,6 +258,7 @@ public:
 	typedef typename std::allocator_traits<Alloc>::
 	    template rebind_alloc<DataType> allocator_type;
 	typedef std::allocator_traits<allocator_type> allocator_traits;
+	typedef Alloc mq_plain_alloc;
 
 private:
 	allocator_type m_alloc;
@@ -543,6 +547,8 @@ class msg_queue_data :
 	protected msg_queue_alloc<msgq_ll_data<Type>, Alloc>,
 	public msg_queue_size
 {
+friend class prepare_hold<msgq_ll_data<Type>, Alloc>;
+
 public:
 	typedef Type element_type;
 	typedef msgq_opt_data<element_type> opt_element_type;
@@ -710,8 +716,8 @@ public:
 		return;
 	}
 
-	template<typename... Args>
-	prepare_hold(alloc_type& alloc, Args&&... args) noexcept
+	template<typename AllocType, typename... Args>
+	prepare_hold(AllocType& alloc, Args&&... args) noexcept
 	:	prepare_hold()
 	{
 		this->m_alloc = &alloc;
@@ -825,11 +831,11 @@ template<typename MQ, typename ElemType = typename MQ::element_type>
 class prepared_push
 :	private MQ::in_refpointer,
 	private prepare_hold<typename MQ::ll_data_type,
-	    typename MQ::allocator_type>
+	    typename MQ::mq_plain_alloc>
 {
 private:
 	typedef prepare_hold<typename MQ::ll_data_type,
-	    typename MQ::allocator_type> parent_type;
+	    typename MQ::mq_plain_alloc> parent_type;
 	typedef MQ msgq_type;
 
 public:
