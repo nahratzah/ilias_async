@@ -38,6 +38,10 @@ class msgq_ll_data :
 {
 public:
 	typedef Type value_type;
+	typedef value_type& reference;
+	typedef const value_type& const_reference;
+	typedef value_type* pointer;
+	typedef const value_type* const_pointer;
 
 private:
 	value_type m_value;
@@ -57,6 +61,30 @@ public:
 	    std::is_nothrow_copy_constructible<value_type>::value)
 	{
 		return std::move_if_noexcept(this->m_value);
+	}
+
+	reference
+	operator*() noexcept
+	{
+		return this->m_value;
+	}
+
+	const_reference
+	operator*() const noexcept
+	{
+		return this->m_value;
+	}
+
+	pointer
+	operator->() noexcept
+	{
+		return &this->m_value;
+	}
+
+	const_pointer
+	operator->() const noexcept
+	{
+		return &this->m_value;
 	}
 };
 
@@ -831,9 +859,9 @@ public:
 	prepared_push(const typename msgq_type::in_refpointer& self,
 	    Args&&... args)
 	:	msgq_type::in_refpointer(self),
-		parent_type(self, std::forward<Args>(args)...),
+		parent_type(*self, std::forward<Args>(args)...),
 		m_assigned(sizeof...(args) > 0),
-		m_lck(self)
+		m_lck(*self)
 	{
 		/* Empty body. */
 	}
@@ -1118,6 +1146,18 @@ public:
 		if (!this->empty())
 			this->read_event();
 	}
+
+	void
+	clear_push_ev() noexcept
+	{
+		this->push_ev = nullptr;
+	}
+
+	void
+	clear_pop_ev() noexcept
+	{
+		this->pop_ev = nullptr;
+	}
 };
 
 
@@ -1283,7 +1323,7 @@ public:
 		if (!this->m_input || !this->m_output)
 			return;
 
-		typename MQ_out::prepared_push pp = { this->m_output };
+		typename MQ_out::prepared_push pp{ this->m_output };
 		auto v = this->m_input->pop();
 
 		if (v) {
@@ -1331,12 +1371,12 @@ mqtf_transform(workq_ptr wq, const MQ_in& in_ptr, const MQ_out& out_ptr,
 
 /* Create a message queue pair. */
 template<typename Type, typename Alloc = std::allocator<Type>>
-std::pair<typename msg_queue<Type, Alloc>::in_ref_pointer,
-    typename msg_queue<Type, Alloc>::out_ref_pointer>
+std::pair<typename msg_queue<Type, Alloc>::in_refpointer,
+    typename msg_queue<Type, Alloc>::out_refpointer>
 make_msg_queue()
 {
-	std::pair<typename msg_queue<Type, Alloc>::in_ref_pointer,
-	    typename msg_queue<Type, Alloc>::out_ref_pointer> rv;
+	std::pair<typename msg_queue<Type, Alloc>::in_refpointer,
+	    typename msg_queue<Type, Alloc>::out_refpointer> rv;
 
 	auto ptr = new msg_queue<Type, Alloc>();
 	rv.first = ptr;		/* Claim ownership. */
@@ -1344,34 +1384,26 @@ make_msg_queue()
 	return rv;
 }
 
-/* Create a message queue which generates a sequence of numbers. */
-template<typename Type, typename Alloc>
-typename msg_queue<Type, Alloc>::out_ref_pointer
-make_msgq_generator(workq_ptr wq, Type begin, Type end, Type step = Type(1))
+/*
+ * Create a generator which will inject all elements in an iterator range
+ * into the message queue.
+ */
+template<typename MQ, typename Iter>
+void
+make_msgq_generator(workq_ptr wq, MQ& mq_ptr, Iter begin, Iter end)
 {
-	typename msg_queue<Type, Alloc>::out_ref_pointer out;
-	typename msg_queue<Type, Alloc>::in_ref_pointer in;
-
-	std::tie(in, out) = make_msg_queue<Type, Alloc>();
-
 	class generator
 	{
-	public:
-		typedef typename msg_queue<Type, Alloc>::in_ref_pointer
-		    in_type;
-
 	private:
-		in_type in;
-		Type begin;
-		const Type end;
-		const Type step;
+		MQ in;
+		Iter begin;
+		const Iter end;
 
 	public:
-		generator(Type begin, Type end, Type step, in_type in) noexcept
+		generator(Iter begin, Iter end, MQ in) noexcept
 		:	in(in),
 			begin(begin),
-			end(end),
-			step(step)
+			end(end)
 		{
 			/* Empty body. */
 		}
@@ -1385,23 +1417,20 @@ make_msgq_generator(workq_ptr wq, Type begin, Type end, Type step = Type(1))
 		operator()() noexcept
 		{
 			try {
-				this->in->push(begin);
+				this->in->push(*this->begin);
 			} catch (...) {
 				return;
 			}
-			this->begin += this->step;
+			++this->begin;
 			if (this->begin == this->end)
 				this->in.reset();
 		}
 	};
 
 	std::function<void()> ev = std::bind(&workq_job::activate,
-	    new_workq_job(std::move(wq), generator(std::move(begin),
-	      std::move(end), std::move(step), std::move(in))),
+	    wq->new_job(generator{ std::move(begin), std::move(end), mq_ptr }),
 	    workq_job::ACT_IMMED);
-	in->assign_push_ev(ev);
-
-	return out;
+	mq_ptr->assign_push_ev(ev);
 }
 
 
