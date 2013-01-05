@@ -76,21 +76,21 @@ public:
 	}
 
 	val_iter&
-	operator++(int) noexcept
+	operator++() noexcept
 	{
-		++m_val;
+		++this->m_val;
 		return *this;
 	}
 
 	val_iter&
-	operator--(int) noexcept
+	operator--() noexcept
 	{
-		--m_val;
+		--this->m_val;
 		return *this;
 	}
 
 	val_iter
-	operator++() noexcept
+	operator++(int) noexcept
 	{
 		val_iter clone = *this;
 		++*this;
@@ -98,7 +98,7 @@ public:
 	}
 
 	val_iter
-	operator--() noexcept
+	operator--(int) noexcept
 	{
 		val_iter clone = *this;
 		--*this;
