@@ -1049,8 +1049,10 @@ public:
 		std::for_each(this->m_coroutines.begin(),
 		    this->m_coroutines.end(),
 		    [](const std::function<void()>& fn) {
-			if (!fn)
-				throw std::invalid_argument("workq coroutine job: invalid functor");
+			if (!fn) {
+				throw std::invalid_argument(
+				    "workq coroutine job: invalid functor");
+			}
 		});
 	}
 
