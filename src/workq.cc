@@ -43,6 +43,8 @@ const unsigned int workq_job::TYPE_MASK;
 
 const unsigned int workq_job::ACT_IMMED;
 
+const unsigned int ACT_IMMED_MAX_STACK = 64;
+
 
 workq_error::~workq_error() noexcept
 {
@@ -144,6 +146,7 @@ friend class publish_wqs;
 
 	workq_service* wqs;
 	wq_stack* stack;
+	unsigned int stack_depth;
 
 	const wq_stack*
 	find(const workq& wq) const noexcept
@@ -170,11 +173,13 @@ friend class publish_wqs;
 	{
 		s.pred = this->stack;
 		this->stack = &s;
+		++stack_depth;
 	}
 
 	void
 	pop(wq_stack& s) noexcept
 	{
+		--stack_depth;
 		assert(this->stack == &s);
 		this->stack = s.pred;
 		s.pred = nullptr;
@@ -543,6 +548,9 @@ workq_job::activate(unsigned int flags) noexcept
 		this->get_workq()->job_to_runq(this);
 
 	if (flags & ACT_IMMED && !(this->m_type & TYPE_NO_AID)) {
+		if (get_wq_tls().stack_depth >= ACT_IMMED_MAX_STACK)
+			return;
+
 		workq_detail::wq_run_lock rlck(*this);
 		if (rlck.is_locked()) {
 			assert(rlck.get_wq_job().get() == this);
