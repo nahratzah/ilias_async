@@ -116,4 +116,7 @@ main()
 		    new prime_reader(wqs, mq.second));	/* XXX wrong pointer type. */
 		mq.second = nullptr;
 	}
+
+	while (wqs->aid(128));
+	return 0;
 }
