@@ -28,13 +28,13 @@ msg_queue_size::begin_insert() noexcept
 		if (v == 0)
 			return false;
 	} while (!this->m_eff_avail.compare_exchange_weak(v, v - 1, std::memory_order_acquire, std::memory_order_relaxed));
-	return true;
 
 	/*
 	 * We increment eff_size right now, to avoid a race between ll_list.pop_front() -> commit_remove()
 	 * and the eff_size not having been updated.
 	 */
 	this->m_eff_size.fetch_add(1, std::memory_order_release);
+	return true;
 }
 
 void
