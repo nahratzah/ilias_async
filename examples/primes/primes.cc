@@ -84,6 +84,12 @@ private:
 			cout << *v << endl;
 			try {
 				inject_mq(*v);
+			} catch (const std::exception& e) {
+				cout << "Exception during "
+				    "message queue injection: " <<
+				    e.what() << endl;
+				m_input.reset();
+				return;
 			} catch (...) {
 				cout << "Exception during "
 				    "message queue injection." << endl;
