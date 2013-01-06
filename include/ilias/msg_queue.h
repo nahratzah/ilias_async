@@ -202,13 +202,13 @@ public:
 	pointer
 	get() noexcept
 	{
-		return (this->m_has_value ? nullptr : &this->m_value.impl);
+		return (this->m_has_value ? &this->m_value.impl : nullptr);
 	}
 
 	const_pointer
 	get() const noexcept
 	{
-		return (this->m_has_value ? nullptr : &this->m_value.impl);
+		return (this->m_has_value ? &this->m_value.impl : nullptr);
 	}
 
 	reference
