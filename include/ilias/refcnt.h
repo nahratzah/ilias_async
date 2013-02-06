@@ -107,7 +107,8 @@ protected:
 		const refcount_base& self = o;
 		if (self.m_refcount.fetch_sub(1,
 		    std::memory_order_release) == 1) {
-			Deleter deleter = std::move_if_noexcept(self.m_deleter);
+			Deleter deleter =
+			    std::move_if_noexcept(self.m_deleter);
 			deleter(&o);
 		}
 	}
