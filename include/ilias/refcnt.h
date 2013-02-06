@@ -73,8 +73,7 @@ protected:
 	}
 
 	refcount_base(const refcount_base&) noexcept :
-		m_refcount(0),
-		m_deleter()
+		refcount_base()
 	{
 		/* Empty body. */
 	}
