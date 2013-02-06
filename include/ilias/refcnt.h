@@ -157,21 +157,27 @@ public:
 private:
 	pointer m_ptr;
 
+	/* Shortcuts to avoid lengthy no-except specifiers. */
+	static constexpr bool noexcept_acquire = noexcept(AcqRel::acquire);
+	static constexpr bool noexcept_release = noexcept(AcqRel::release);
+	static constexpr bool noexcept_acqrel =
+	    noexcept_acquire && noexcept_release;
+
 public:
-	refpointer() noexcept
+	constexpr refpointer() noexcept
 	:	m_ptr(nullptr)
 	{
-		return;
+		/* Empty body. */
 	}
 
-	refpointer(std::nullptr_t, bool = true) noexcept
+	constexpr refpointer(std::nullptr_t, bool = true) noexcept
 	:	m_ptr(nullptr)
 	{
-		return;
+		/* Empty body. */
 	}
 
 	refpointer(const refpointer& o) noexcept(
-	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
+	    noexcept_acquire)
 	:	m_ptr(nullptr)
 	{
 		this->reset(o);
@@ -185,58 +191,59 @@ public:
 
 	template<typename U, typename U_AcqRel>
 	refpointer(const refpointer<U, U_AcqRel>& o) noexcept(
-	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
+	    noexcept_acquire)
 	:	m_ptr(nullptr)
 	{
 		this->reset(o.get());
 	}
 
 	refpointer(pointer p, bool do_acquire = true) noexcept(
-	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
+	    noexcept_acquire)
 	:	m_ptr(nullptr)
 	{
 		this->reset(p, do_acquire);
 	}
 
-	~refpointer() noexcept(
-	    noexcept(AcqRel().release(*(Type*)nullptr)))
+	~refpointer() noexcept
 	{
 		this->reset();
 	}
 
 	void
 	reset() noexcept(
-	    noexcept(AcqRel().release(*(Type*)nullptr)))
+	    noexcept_release)
 	{
-		if (this->m_ptr) {
-			this->AcqRel::release(*this->m_ptr);
-			this->m_ptr = nullptr;
-		}
+		using std::swap;
+
+		pointer tmp = nullptr;
+		swap(tmp, this->m_ptr);
+		if (tmp)
+			this->AcqRel::release(*tmp);
 	}
 
 	void
 	reset(const refpointer& o) noexcept(
-	    noexcept(AcqRel().release(*(Type*)nullptr)) &&
-	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
+	    noexcept_acqrel)
 	{
-		const pointer old = this->m_ptr;
-		if (o.m_ptr) {
-			this->AcqRel::acquire(*o.m_ptr);
-			this->m_ptr = o.m_ptr;
-		} else
-			this->m_ptr = nullptr;
+		using std::swap;
 
-		if (old)
-			this->AcqRel::release(*old);
+		pointer tmp = o.m_ptr;
+		if (tmp)
+			this->AcqRel::acquire(*tmp);
+		swap(tmp, this->m_ptr);
+		if (tmp)
+			this->AcqRel::release(*tmp);
 	}
 
 	void
 	reset(refpointer&& o) noexcept(
-	    noexcept(AcqRel().release(*(Type*)nullptr)))
+	    noexcept_release)
 	{
-		const pointer old = this->m_ptr;
-		this->m_ptr = o.m_ptr;
-		o.m_ptr = nullptr;
+		using std::swap;
+
+		pointer old = nullptr;
+		swap(old, this->m_ptr);
+		swap(this->m_ptr, o.m_ptr);
 
 		if (old)
 			this->AcqRel::release(*old);
@@ -244,33 +251,29 @@ public:
 
 	void
 	reset(pointer p, bool do_acquire = true) noexcept(
-	    noexcept(AcqRel().release(*(Type*)nullptr)) &&
-	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
+	    noexcept_acqrel)
 	{
-		const pointer old = this->m_ptr;
-		if (p) {
-			if (do_acquire)
-				this->AcqRel::acquire(*p);
-			this->m_ptr = p;
-		} else
-			this->m_ptr = nullptr;
+		using std::swap;
 
-		if (old)
-			this->AcqRel::release(*old);
+		if (do_acquire && p)
+			this->AcqRel::acquire(*p);
+		pointer tmp = p;
+		swap(tmp, this->m_ptr);
+		if (tmp)
+			this->AcqRel::release(*tmp);
 	}
 
 	template<typename U, typename U_AcqRel>
 	void
 	reset(const refpointer<U, U_AcqRel>& o) noexcept(
-	    noexcept(AcqRel().release(*(Type*)nullptr)) &&
-	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
+	    noexcept_acqrel)
 	{
 		this->reset(o.get(), true);
 	}
 
 	refpointer&
 	operator=(std::nullptr_t) noexcept(
-	    noexcept(AcqRel().release(*(Type*)nullptr)))
+	    noexcept(this->reset()))
 	{
 		this->reset();
 		return *this;
@@ -278,8 +281,7 @@ public:
 
 	refpointer&
 	operator=(const refpointer& o) noexcept(
-	    noexcept(AcqRel().release(*(Type*)nullptr)) &&
-	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
+	    noexcept(this->reset(o)))
 	{
 		this->reset(o);
 		return *this;
@@ -287,7 +289,7 @@ public:
 
 	refpointer&
 	operator=(refpointer&& o) noexcept(
-	    noexcept(AcqRel().release(*(Type*)nullptr)))
+	    noexcept(this->reset(o)))
 	{
 		this->reset(o);
 		return *this;
@@ -295,8 +297,7 @@ public:
 
 	refpointer&
 	operator=(pointer p) noexcept(
-	    noexcept(AcqRel().release(*(Type*)nullptr)) &&
-	    noexcept(AcqRel().acquire(*(Type*)nullptr)))
+	    noexcept(this->reset(p)))
 	{
 		this->reset(p);
 		return *this;
@@ -343,8 +344,10 @@ public:
 	pointer
 	release() noexcept
 	{
-		const pointer rv = this->m_ptr;
-		this->m_ptr = nullptr;
+		using std::swap;
+
+		pointer rv = nullptr;
+		swap(rv, this->m_ptr);
 		return rv;
 	}
 
@@ -378,39 +381,46 @@ public:
 
 template<typename U, typename T, typename AcqRel>
 refpointer<U, AcqRel>
-static_pointer_cast(const refpointer<T, AcqRel>& ptr) noexcept
+static_pointer_cast(const refpointer<T, AcqRel>& p) noexcept
 {
-	return refpointer<U, AcqRel>(static_cast<typename refpointer<U, AcqRel>::pointer>(ptr.get()));
+	return refpointer<U, AcqRel>(
+	    static_cast<typename refpointer<U, AcqRel>::pointer>(p.get()));
 }
 
 template<typename U, typename T, typename AcqRel>
 refpointer<U, AcqRel>
-static_pointer_cast(refpointer<T, AcqRel>&& ptr) noexcept
+static_pointer_cast(refpointer<T, AcqRel>&& p) noexcept
 {
-	return refpointer<U, AcqRel>(static_cast<typename refpointer<U, AcqRel>::pointer>(ptr.release()), false);
-}
-
-
-template<typename U, typename T, typename AcqRel>
-refpointer<U, AcqRel>
-dynamic_pointer_cast(const refpointer<T, AcqRel>& ptr) noexcept
-{
-	return refpointer<U, AcqRel>(dynamic_cast<typename refpointer<U, AcqRel>::pointer>(ptr.get()));
+	return refpointer<U, AcqRel>(
+	    static_cast<typename refpointer<U, AcqRel>::pointer>(p.release()),
+	    false);
 }
 
 
 template<typename U, typename T, typename AcqRel>
 refpointer<U, AcqRel>
-const_pointer_cast(const refpointer<T, AcqRel>& ptr) noexcept
+dynamic_pointer_cast(const refpointer<T, AcqRel>& p) noexcept
 {
-	return refpointer<U, AcqRel>(const_cast<typename refpointer<U, AcqRel>::pointer>(ptr.get()));
+	return refpointer<U, AcqRel>(
+	    dynamic_cast<typename refpointer<U, AcqRel>::pointer>(p.get()));
+}
+
+
+template<typename U, typename T, typename AcqRel>
+refpointer<U, AcqRel>
+const_pointer_cast(const refpointer<T, AcqRel>& p) noexcept
+{
+	return refpointer<U, AcqRel>(
+	    const_cast<typename refpointer<U, AcqRel>::pointer>(p.get()));
 }
 
 template<typename U, typename T, typename AcqRel>
 refpointer<U, AcqRel>
-const_pointer_cast(refpointer<T, AcqRel>&& ptr) noexcept
+const_pointer_cast(refpointer<T, AcqRel>&& p) noexcept
 {
-	return refpointer<U, AcqRel>(const_cast<typename refpointer<U, AcqRel>::pointer>(ptr.release()), false);
+	return refpointer<U, AcqRel>(
+	    const_cast<typename refpointer<U, AcqRel>::pointer>(p.release()),
+	    false);
 }
 
 
