@@ -34,6 +34,11 @@ if (CMAKE_COMPILER_IS_GNUCC)
 	set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3")
 	set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 	set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -Wno-missing-noreturn -Wno-unused -Wsign-compare -Wuninitialized -Wno-unused-value")
+
+	# Enable GCC -fpermissive, since g++ yields an error
+	# when a void function returns a void value (which is
+	# allowed in c++, but not in c).
+	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive")
 elseif (WIN32)
 	# MSVC compiler
 	set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Zi")
