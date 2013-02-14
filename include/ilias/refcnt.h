@@ -273,7 +273,7 @@ public:
 
 	refpointer&
 	operator=(std::nullptr_t) noexcept(
-	    noexcept(this->reset()))
+	    noexcept_release)
 	{
 		this->reset();
 		return *this;
@@ -281,7 +281,7 @@ public:
 
 	refpointer&
 	operator=(const refpointer& o) noexcept(
-	    noexcept(this->reset(o)))
+	    noexcept_acqrel)
 	{
 		this->reset(o);
 		return *this;
@@ -289,15 +289,15 @@ public:
 
 	refpointer&
 	operator=(refpointer&& o) noexcept(
-	    noexcept(this->reset(o)))
+	    noexcept_release)
 	{
-		this->reset(o);
+		this->reset(std::move(o));
 		return *this;
 	}
 
 	refpointer&
 	operator=(pointer p) noexcept(
-	    noexcept(this->reset(p)))
+	    noexcept_acqrel)
 	{
 		this->reset(p);
 		return *this;
