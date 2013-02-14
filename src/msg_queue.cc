@@ -153,25 +153,3 @@ msg_queue_size::set_max_size(msg_queue_size::size_type newsz) noexcept
 
 
 }} /* namespace ilias::msg_queue_detail */
-
-
-template class ilias::msg_queue_detail::msgq_ll_data<int>;
-template class ilias::msg_queue_detail::msgq_opt_data<int>;
-template class ilias::msg_queue_detail::msg_queue_alloc<int, std::allocator<int> >;
-template class ilias::msg_queue_detail::msg_queue_data<int, std::allocator<int> >;
-template class ilias::msg_queue_detail::msg_queue_data<void, void>;
-
-template class ilias::msg_queue<int>;
-template class ilias::msg_queue<void>;
-template class ilias::msg_queue_detail::prepared_push<ilias::msg_queue<int> >;
-template class ilias::msg_queue_detail::prepared_push<ilias::msg_queue<void> >;
-
-void
-foo()
-{
-	ilias::workq_ptr wq;
-	ilias::msg_queue<int>::out_refpointer source;
-	ilias::msg_queue<void>::in_refpointer drain;
-
-	ilias::mqtf_transform(wq, source, drain, [](int) -> void {});
-}
