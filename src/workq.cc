@@ -41,7 +41,7 @@ workq_deadlock::~workq_deadlock() noexcept
 }
 
 void
-workq_deadlock::throw_me() throw (workq_deadlock)
+workq_deadlock::throw_me()
 {
 	throw workq_deadlock();
 }
@@ -52,13 +52,13 @@ workq_stack_error::~workq_stack_error() noexcept
 }
 
 void
-workq_stack_error::throw_me(const std::string& s) throw (workq_stack_error)
+workq_stack_error::throw_me(const std::string& s)
 {
 	throw workq_stack_error(s);
 }
 
 void
-workq_stack_error::throw_me(const char* s) throw (workq_stack_error)
+workq_stack_error::throw_me(const char* s)
 {
 	throw workq_stack_error(s);
 }

@@ -77,7 +77,7 @@ public:
 		/* Empty body. */
 	}
 
-	static void throw_me() throw (workq_deadlock);
+	static void throw_me();
 	virtual ~workq_deadlock() noexcept;
 };
 
@@ -97,8 +97,8 @@ public:
 		/* Empty body. */
 	}
 
-	static void throw_me(const std::string&) throw (workq_stack_error);
-	static void throw_me(const char*) throw (workq_stack_error);
+	static void throw_me(const std::string&);
+	static void throw_me(const char*);
 	virtual ~workq_stack_error() noexcept;
 };
 

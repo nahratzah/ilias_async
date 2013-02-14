@@ -813,7 +813,7 @@ private:
 
 public:
 	prepared_push() noexcept
-	:	MQ::in_refpointer(),
+	:	msgq_type::in_refpointer(),
 		parent_type(),
 		m_assigned(false),
 		m_lck()
@@ -830,8 +830,7 @@ public:
 	template<typename... Args>
 	prepared_push(const typename msgq_type::in_refpointer& self,
 	    Args&&... args)
-	:	prepared_push(),
-		msgq_type::in_refpointer(&self),
+	:	msgq_type::in_refpointer(self),
 		parent_type(self, std::forward<Args>(args)...),
 		m_assigned(sizeof...(args) > 0),
 		m_lck(self)
