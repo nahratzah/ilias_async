@@ -158,8 +158,12 @@ private:
 	pointer m_ptr;
 
 	/* Shortcuts to avoid lengthy no-except specifiers. */
-	static constexpr bool noexcept_acquire = noexcept(AcqRel::acquire);
-	static constexpr bool noexcept_release = noexcept(AcqRel::release);
+	static constexpr bool noexcept_acquire = noexcept(
+		AcqRel().acquire(*pointer())
+	    );
+	static constexpr bool noexcept_release = noexcept(
+		AcqRel().release(*pointer())
+	    );
 	static constexpr bool noexcept_acqrel =
 	    noexcept_acquire && noexcept_release;
 
