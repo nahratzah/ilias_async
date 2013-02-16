@@ -28,7 +28,8 @@ msg_queue_events::_fire_empty() noexcept
 void
 msg_queue_events::_assign_output(workq_job_ptr job, bool fire) noexcept
 {
-	std::atomic_store(&this->ev_output, job, std::memory_order_relaxed);
+	std::atomic_store_explicit(&this->ev_output, job,
+	    std::memory_order_relaxed);
 	if (fire && job)
 		job->activate();
 }
@@ -36,7 +37,8 @@ msg_queue_events::_assign_output(workq_job_ptr job, bool fire) noexcept
 void
 msg_queue_events::_assign_empty(workq_job_ptr job, bool fire) noexcept
 {
-	std::atomic_store(&this->ev_empty, job, std::memory_order_relaxed);
+	std::atomic_store_explicit(&this->ev_empty, job,
+	    std::memory_order_relaxed);
 	if (fire && job)
 		job->activate();
 }
