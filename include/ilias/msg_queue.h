@@ -3,8 +3,10 @@
 
 #include <ilias/ilias_async_export.h>
 #include <ilias/ll.h>
+#include <ilias/workq.h>
 #include <cassert>
 #include <atomic>
+#include <functional>
 #include <type_traits>
 #include <memory>
 #include <string>
@@ -116,8 +118,15 @@ public:
 };
 
 
+/*
+ * Message queue events.
+ */
 class msg_queue_events
 {
+private:
+	workq_job_ptr ev_output;
+	workq_job_ptr ev_empty;
+
 protected:
 	msg_queue_events() = default;
 
@@ -125,12 +134,27 @@ protected:
 	msg_queue_events& operator=(const msg_queue_events&) = delete;
 	msg_queue_events(msg_queue_events&&) = delete;
 
-	~msg_queue_events() = default;
+	ILIAS_ASYNC_EXPORT ~msg_queue_events() noexcept;
+
+	ILIAS_ASYNC_EXPORT void _fire_output() noexcept;
+	ILIAS_ASYNC_EXPORT void _fire_empty() noexcept;
+
+	ILIAS_ASYNC_EXPORT void _assign_output(workq_job_ptr ptr,
+	    bool fire = true) noexcept;
+	ILIAS_ASYNC_EXPORT void _assign_empty(workq_job_ptr ptr,
+	    bool fire = true) noexcept;
+	ILIAS_ASYNC_EXPORT void _clear_events() noexcept;
 
 	void
-	_fire_output() noexcept
+	_clear_output() noexcept
 	{
-		/* XXX stub */
+		this->_assign_output(nullptr, false);
+	}
+
+	void
+	_clear_empty() noexcept
+	{
+		this->_assign_output(nullptr, false);
 	}
 };
 
@@ -152,7 +176,7 @@ private:
 	ILIAS_ASYNC_EXPORT uintptr_t _dequeue(uintptr_t max) noexcept;
 
 public:
-	constexpr void_msg_queue() noexcept
+	void_msg_queue() noexcept
 	:	m_size(0)
 	{
 		/* Empty body. */
@@ -161,6 +185,11 @@ public:
 	void_msg_queue(const void_msg_queue&) = delete;
 	void_msg_queue& operator=(const void_msg_queue&) = delete;
 	void_msg_queue(void_msg_queue&&) = delete;
+
+	~void_msg_queue() noexcept
+	{
+		this->_clear_events();
+	}
 
 	/* Test if the message queue is empty. */
 	bool
@@ -333,6 +362,7 @@ private:
 		  typename list_type::value_type>::value)
 	{
 		this->m_list.clear_and_dispose(_destroy(this->m_alloc, true));
+		this->_fire_empty();
 	}
 
 	void
@@ -372,6 +402,7 @@ public:
 
 	~msg_queue() noexcept
 	{
+		this->_clear_events();
 		this->_clear();
 	}
 
@@ -409,6 +440,8 @@ public:
 				break;
 			f(elem->move());
 		}
+		if (this->empty())
+			this->_fire_empty();
 		return f;
 	}
 };
