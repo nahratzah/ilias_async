@@ -99,7 +99,7 @@ endif ()
 # Test for atomic shared_ptr operations.
 file (READ "CMake/source/atomic_shared_ptr.cc" ATOMIC_SHARED_PTR_CC)
 mark_as_advanced (ATOMIC_SHARED_PTR_CC)
-check_cxx_source_runs ("${ATOMIC_SARED_PTR_CC}" ILIAS_ASYNC_HAS_ATOMIC_SHARED_PTR)
+check_cxx_source_compiles ("${ATOMIC_SARED_PTR_CC}" ILIAS_ASYNC_HAS_ATOMIC_SHARED_PTR)
 
 
 list (APPEND hdrs
