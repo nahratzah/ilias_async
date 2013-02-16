@@ -653,7 +653,7 @@ workq_detail::co_runnable::co_publish(std::size_t runcount) noexcept
 {
 	if (runcount > 0) {
 		this->m_rlck = get_wq_tls().steal_lock(*this);
-		this->m_runcount.store(runcount, std::memory_order_acq_rel);
+		this->m_runcount.exchange(runcount, std::memory_order_acq_rel);
 		this->get_workq_service()->co_to_runq(this, runcount);
 	} else {
 		/* Not publishing co-runnable, not eating lock,
@@ -1091,7 +1091,7 @@ coroutine_job::~coroutine_job() noexcept
 void
 coroutine_job::run() noexcept
 {
-	this->m_co_idx.store(0, std::memory_order_acq_rel);
+	this->m_co_idx.exchange(0, std::memory_order_acq_rel);
 	this->co_publish(this->m_coroutines.size());
 }
 
