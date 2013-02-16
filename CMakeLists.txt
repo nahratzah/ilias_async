@@ -126,7 +126,7 @@ list (APPEND hdrs
 	)
 
 # Actual library target.
-add_library (ilias_async
+add_library (ilias_async SHARED
 	${hdrs}
 	${srcs}
 	)
