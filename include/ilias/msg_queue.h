@@ -138,7 +138,13 @@ public:
 class msg_queue_events
 {
 private:
-	workq_job_ptr ev_output;
+	enum event {
+		MQ_EV_OUTPUT,
+		MQ_EV_EMPTY
+	};
+	static const unsigned int N_EVENTS = 2;
+
+	workq_job_ptr ev[N_EVENTS];
 	workq_job_ptr ev_empty;
 
 protected:
@@ -150,13 +156,36 @@ protected:
 
 	ILIAS_ASYNC_EXPORT ~msg_queue_events() noexcept;
 
-	ILIAS_ASYNC_EXPORT void _fire_output() noexcept;
-	ILIAS_ASYNC_EXPORT void _fire_empty() noexcept;
+private:
+	ILIAS_ASYNC_EXPORT void _fire(event ev) noexcept;
+	ILIAS_ASYNC_EXPORT void _assign(workq_job_ptr job,
+	    event ev, bool fire) noexcept;
 
-	ILIAS_ASYNC_EXPORT void _assign_output(workq_job_ptr ptr,
-	    bool fire = true) noexcept;
-	ILIAS_ASYNC_EXPORT void _assign_empty(workq_job_ptr ptr,
-	    bool fire = true) noexcept;
+protected:
+	void
+	_fire_output() noexcept
+	{
+		this->_fire(MQ_EV_OUTPUT);
+	}
+
+	void
+	_fire_empty() noexcept
+	{
+		this->_fire(MQ_EV_EMPTY);
+	}
+
+	void
+	_assign_output(workq_job_ptr ptr, bool fire = true) noexcept
+	{
+		this->_assign(ptr, MQ_EV_OUTPUT, fire);
+	}
+
+	void
+	_assign_empty(workq_job_ptr ptr, bool fire = true) noexcept
+	{
+		this->_assign(ptr, MQ_EV_EMPTY, fire);
+	}
+
 	ILIAS_ASYNC_EXPORT void _clear_events() noexcept;
 
 	void

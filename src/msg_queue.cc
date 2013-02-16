@@ -27,32 +27,19 @@ msg_queue_events::~msg_queue_events() noexcept
 }
 
 void
-msg_queue_events::_fire_output() noexcept
+msg_queue_events::_fire(event ev) noexcept
 {
-	workq_deactivate(this->ev_empty);
-	workq_activate(this->ev_output, workq_job::ACT_IMMED);
+	for (unsigned int i = 0; i != N_EVENTS; ++i) {
+		if (i != ev)
+			workq_deactivate(this->ev[i]);
+	}
+	workq_activate(this->ev[ev], workq_job::ACT_IMMED);
 }
 
 void
-msg_queue_events::_fire_empty() noexcept
+msg_queue_events::_assign(workq_job_ptr job, event ev, bool fire) noexcept
 {
-	workq_deactivate(this->ev_output);
-	workq_activate(this->ev_empty);
-}
-
-void
-msg_queue_events::_assign_output(workq_job_ptr job, bool fire) noexcept
-{
-	atomic_exchange_jobptr(this->ev_output, job,
-	    std::memory_order_relaxed);
-	if (fire && job)
-		job->activate();
-}
-
-void
-msg_queue_events::_assign_empty(workq_job_ptr job, bool fire) noexcept
-{
-	atomic_exchange_jobptr(this->ev_empty, job,
+	atomic_exchange_jobptr(this->ev[ev], job,
 	    std::memory_order_relaxed);
 	if (fire && job)
 		job->activate();
@@ -61,8 +48,11 @@ msg_queue_events::_assign_empty(workq_job_ptr job, bool fire) noexcept
 void
 msg_queue_events::_clear_events() noexcept
 {
-	this->_clear_output();
-	this->_clear_empty();
+	const workq_job_ptr nil = nullptr;
+	for (unsigned int i = 0; i != N_EVENTS; ++i) {
+		auto job = atomic_exchange_jobptr(this->ev[i], nil,
+		    std::memory_order_relaxed);
+	}
 }
 
 
