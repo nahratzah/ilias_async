@@ -69,8 +69,7 @@ endif ()
 find_package (Threads REQUIRED)
 if (CMAKE_USE_PTHREADS_INIT)
 	# XXX is this the correct way on all OSes?
-	set (CMAKE_REQUIRED_DEFINITIONS "-pthread")
-	set (CMAKE_REQUIRED_LIBRARIES "-pthread")
+	list (APPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
 endif ()
 list (APPEND extra_libs ${CMAKE_THREAD_LIBS_INIT})
 # FreeBSD requires inclusion of librt, linux requires it for clock_gettime (XXX in the future, not used yet).
