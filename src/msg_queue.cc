@@ -87,8 +87,4 @@ void_msg_queue::_dequeue(uintptr_t max) noexcept
 } /* namespace ilias::mq_detail */
 
 
-template class msg_queue<int>;
-template class msg_queue<std::string>;
-
-
 } /* namespace ilias */

@@ -24,7 +24,6 @@
 #include <functional>
 #include <type_traits>
 #include <memory>
-#include <string>
 #include <utility>
 
 
@@ -479,10 +478,6 @@ class msg_queue<void, Allocator>
 		/* Empty body. */
 	}
 };
-
-
-extern template class msg_queue<int>;
-extern template class msg_queue<std::string>;
 
 
 } /* namespace ilias */
