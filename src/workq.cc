@@ -1249,4 +1249,61 @@ workq_switch(const workq_pop_state& dst)
 }
 
 
+/*
+ * Implement locking for libraries missing
+ * atomic operations on shared pointers.
+ */
+#if !ILIAS_ASYNC_HAS_ATOMIC_SHARED_PTR
+namespace workq_detail {
+namespace {
+
+
+const unsigned int N_ATOMS = 16;
+std::atomic<bool> job_atomics[N_ATOMS];
+
+unsigned int
+job_atomics_idx(const void* p)
+{
+	return std::hash<void*>()(const_cast<void*>(p)) & (N_ATOMS - 1);
+}
+
+} /* namespace ilias::workq_detail::<unnamed> */
+
+/*
+ * Lock external spinlock for shared pointer,
+ * if std::shared_ptr has no atomic operations.
+ */
+unsigned int
+atom_lck::atomic_lock_jobptr(const void* p) noexcept
+{
+	/* Lookup index and global lock. */
+	const unsigned int idx = job_atomics_idx(p);
+	auto& atom = job_atomics[idx];
+
+	bool expect = false;
+	while (atom.compare_exchange_weak(expect, true,
+	    std::memory_order_acquire, std::memory_order_relaxed))
+		expect = false;
+
+	return idx;
+}
+
+/*
+ * Unlock external spinlock for shared pointer.
+ */
+void
+atom_lck::atomic_unlock_jobptr(unsigned int idx) noexcept
+{
+	assert(idx < N_ATOMS);
+	auto& atom = job_atomics[idx];
+
+	auto orig = atom.exchange(false, std::memory_order_release);
+	assert(orig);
+}
+
+
+} /* namespace ilias::workq_detail */
+#endif /* !ILIAS_ASYNC_ATOMIC_SHARED_PTR */
+
+
 } /* namespace ilias */

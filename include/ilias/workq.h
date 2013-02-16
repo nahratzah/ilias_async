@@ -192,17 +192,82 @@ struct wq_deleter
 
 class wq_run_lock;
 
+#if !ILIAS_ASYNC_HAS_ATOMIC_SHARED_PTR
+class atom_lck
+{
+private:
+	const unsigned int m_idx;
+
+	static unsigned int atomic_lock_jobptr(const void*) noexcept;
+	static void atomic_unlock_jobptr(unsigned int) noexcept;
+
+public:
+	atom_lck() = delete;
+	atom_lck(const atom_lck&) = delete;
+	atom_lck& operator=(const atom_lck&) = delete;
+	atom_lck(atom_lck&&) = delete;
+
+	template<typename T>
+	atom_lck(const std::shared_ptr<T>& ptr) noexcept
+	:	m_idx(atomic_lock_jobptr(&ptr))
+	{
+		/* Empty body. */
+	}
+
+	~atom_lck() noexcept
+	{
+		atomic_unlock_jobptr(this->m_idx);
+	}
+};
+#endif
+
 
 } /* namespace ilias::workq_detail */
 
 
 typedef std::shared_ptr<workq_job> workq_job_ptr;
 
+/*
+ * Atomically load shared pointer to job.
+ */
+template<typename T>
+std::shared_ptr<T>
+atomic_load_jobptr(const std::shared_ptr<T>& p,
+    std::memory_order mo = std::memory_order_seq_cst) noexcept
+{
+#if ILIAS_ASYNC_HAS_ATOMIC_SHARED_PTR
+	return std::atomic_load_explicit(&p, mo);
+#else
+	workq_detail::atom_lck lck{ p };
+	return p;
+#endif
+}
+
+/*
+ * Atomically exchange shared pointer to job.
+ */
+template<typename T>
+std::shared_ptr<T>
+atomic_exchange_jobptr(std::shared_ptr<T>& p, std::shared_ptr<T> new_val,
+    std::memory_order mo = std::memory_order_seq_cst) noexcept
+{
+#if ILIAS_ASYNC_HAS_ATOMIC_SHARED_PTR
+	return std::atomic_exchange_explicit(&p, std::move(new_val), mo);
+#else
+	using std::swap;
+
+	workq_detail::atom_lck lck{ p };
+	swap(p, new_val);
+	return new_val;
+#endif
+}
+
 template<typename JobType, typename... Args>
 std::shared_ptr<JobType>
-new_workq_job(const workq_ptr& wq, Args&&... args)
+new_workq_job(workq_ptr wq, Args&&... args)
 {
-	return std::shared_ptr<JobType>(new JobType(wq, std::forward<Args>(args)...), workq_detail::wq_deleter());
+	return std::shared_ptr<JobType>(new JobType(std::move(wq),
+	    std::forward<Args>(args)...), workq_detail::wq_deleter());
 }
 
 /* Thread-safe job activation. */
@@ -210,7 +275,7 @@ template<typename JobType>
 void
 workq_activate(const std::shared_ptr<JobType>& j, unsigned int how = 0) noexcept
 {
-	auto j_ = std::atomic_load_explicit(&j, std::memory_order_relaxed);
+	auto j_ = atomic_load_jobptr(j, std::memory_order_relaxed);
 	if (j_)
 		j_->activate(how);
 }
@@ -220,7 +285,7 @@ template<typename JobType>
 void
 workq_deactivate(const std::shared_ptr<JobType>& j) noexcept
 {
-	auto j_ = std::atomic_load_explicit(&j, std::memory_order_relaxed);
+	auto j_ = atomic_load_jobptr(j, std::memory_order_relaxed);
 	if (j_)
 		j_->deactivate();
 }

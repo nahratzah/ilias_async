@@ -96,6 +96,11 @@ else ()
 	add_definitions (-DHAS_TLS=1)
 endif ()
 
+# Test for atomic shared_ptr operations.
+file (READ "CMake/source/atomic_shared_ptr.cc" ATOMIC_SHARED_PTR_CC)
+mark_as_advanced (ATOMIC_SHARED_PTR_CC)
+check_cxx_source_runs ("${ATOMIC_SARED_PTR_CC}" ILIAS_ASYNC_HAS_ATOMIC_SHARED_PTR)
+
 
 list (APPEND hdrs
 	include/ilias/ll.h
@@ -112,6 +117,13 @@ list (APPEND srcs
 	src/workq.cc
 	)
 add_definitions (-Dilias_async_EXPORTS)		# Enable export of library interface.
+
+# Generate configuration file.
+configure_file (config_async.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/ilias/config_async.h)
+include_directories (${CMAKE_CURRENT_BINARY_DIR}/include)
+list (APPEND hdrs
+	${CMAKE_CURRENT_BINARY_DIR}/include/ilias/config_async.h
+	)
 
 # Actual library target.
 add_library (ilias_async

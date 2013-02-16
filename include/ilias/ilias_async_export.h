@@ -18,7 +18,7 @@
 
 
 /* Include ilias config here, so I won't keep tripping over missing include. */
-/* XXX #include <ilias/config.h> */
+#include <ilias/config_async.h>
 
 
 #if defined(WIN32)
