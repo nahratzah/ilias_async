@@ -99,7 +99,7 @@ protected:
 	friend void
 	refcnt_release(const Derived& o)
 		noexcept(
-		    noexcept(m_deleter(&o)) &&
+		    noexcept((*(Deleter*)nullptr)(&o)) &&
 		    (std::is_nothrow_move_constructible<Deleter>::value ||
 		     std::is_nothrow_copy_constructible<Deleter>::value) &&
 		    std::is_nothrow_destructible<Deleter>::value)
