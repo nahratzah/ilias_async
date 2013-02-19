@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012 Ariane van der Steldt <ariane@stack.nl>
+ * Copyright (c) 2012 - 2013 Ariane van der Steldt <ariane@stack.nl>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -18,1030 +18,794 @@
 
 #include <ilias/ilias_async_export.h>
 #include <ilias/refcnt.h>
-#include <ilias/workq.h>
 #include <atomic>
 #include <cassert>
-#include <utility>
-#include <memory>
-#include <vector>
 #include <mutex>
 #include <stdexcept>
-#include <exception>
-#include <type_traits>
 #include <thread>
-
-
-#ifdef _MSC_VER
-#pragma warning( push )
-#pragma warning( once: 4275 )
-#pragma warning( disable: 4251 )
-#pragma warning( disable: 4290 )
-#endif
+#include <vector>
 
 
 namespace ilias {
 
 
-class basic_promise;
-class basic_future;
-template<typename Result> class promise;
-template<typename Result> class future;
+template<typename Type> class promise;
+template<typename Type> class future;
 
 
-class ILIAS_ASYNC_EXPORT broken_promise :
-	public std::runtime_error
+class ILIAS_ASYNC_EXPORT broken_promise
+:	public std::runtime_error
 {
 public:
 	broken_promise();
-	virtual ~broken_promise() noexcept;
+	~broken_promise() noexcept;
 };
 
-class ILIAS_ASYNC_EXPORT uninitialized_promise :
-	public std::logic_error
+
+class ILIAS_ASYNC_EXPORT uninitialized_promise
+:	public std::logic_error
 {
 public:
-	/* Throw this exception. */
-	static void throw_me();
-
 	uninitialized_promise();
-	virtual ~uninitialized_promise() noexcept;
+	~uninitialized_promise();
 };
 
 
-/* Type-agnostic base of promise. */
-class ILIAS_ASYNC_EXPORT basic_promise
+class ILIAS_ASYNC_EXPORT promise_cb_installed
+:	public std::logic_error
 {
-friend class basic_future;
+public:
+	promise_cb_installed();
+	~promise_cb_installed();
+};
+
+
+namespace prom_detail {
+
+
+class base_prom_data
+{
+public:
+	typedef std::function<void(base_prom_data&)> execute_fn;
 
 protected:
-	class basic_state;
-
-private:
-	struct ILIAS_ASYNC_LOCAL mark_unreferenced
+	enum class state
+	:	int
 	{
-		void operator() (const basic_state*) const noexcept;
-
-		void acquire(const basic_state&) const noexcept;
-		void release(const basic_state&) const noexcept;
-		ILIAS_ASYNC_EXPORT void unreferenced(basic_state&) const noexcept;
+		S_NIL = 0,
+		S_BUSY = 1,
+		S_SET = 2,
+		S_BROKEN = 3,
+		S_EXCEPT = 4
 	};
 
-protected:
-	class ILIAS_ASYNC_EXPORT basic_state :
-		public refcount_base<basic_state>
+private:
+	enum class cb_state
+	:	int
 	{
-	friend struct basic_promise::mark_unreferenced;
-
-	private:
-		/*
-		 * ready_state_t is actually an enum, but it seems at least
-		 * clang-3.1 doesn't generate atomic instructions for
-		 * std::atomic<ready_state_t> (it calls an external function
-		 * instead).
-		 *
-		 * To help the compiler a bit, we use an int instead.
-		 *
-		 * enum ready_state_t {
-		 *	NIL,
-		 *	ASSIGNING,
-		 *	DONE
-		 * };
-		 */
-
-		typedef int ready_state_t;
-		static const ready_state_t NIL = 17;
-		static const ready_state_t ASSIGNING = 19;
-		static const ready_state_t DONE = 23;
-
-		std::exception_ptr m_except;
-		std::atomic<ready_state_t> m_ready;
-		mutable std::atomic<unsigned int> m_prom_refcnt;
-		std::atomic<bool> m_start;	/* Set if the promise needs to start. */
-
-	protected:
-		class ILIAS_ASYNC_LOCAL state_lock
-		{
-		private:
-			basic_state& self;
-			bool m_locked;
-
-		public:
-			state_lock(basic_state& self, bool acquire = true) noexcept :
-				self(self),
-				m_locked(false)
-			{
-				if (acquire)
-					this->lock();
-			}
-
-			~state_lock() noexcept
-			{
-				if (this->m_locked)
-					this->unlock();
-			}
-
-			bool
-			lock() noexcept
-			{
-				assert(!this->m_locked);
-				ready_state_t expect = NIL;
-				while (!this->self.m_ready.compare_exchange_weak(expect, ASSIGNING,
-				    std::memory_order_acquire, std::memory_order_relaxed)) {
-					if (expect == DONE)
-						return false;
-					expect = NIL;
-				}
-
-				this->m_locked = true;
-				return true;
-			}
-
-			void
-			unlock() noexcept
-			{
-				assert(this->m_locked);
-				ready_state_t old = this->self.m_ready.exchange(NIL, std::memory_order_release);
-				assert(old == ASSIGNING);
-				this->m_locked = false;
-			}
-
-			void
-			commit() noexcept
-			{
-				assert(this->m_locked);
-				ready_state_t old = this->self.m_ready.exchange(DONE, std::memory_order_release);
-				assert(old == ASSIGNING);
-				this->m_locked = false;
-
-				this->self.on_assign();
-			}
-
-			explicit operator bool() const noexcept
-			{
-				return this->m_locked;
-			}
-
-
-			state_lock(const state_lock&) = delete;
-			state_lock& operator=(const state_lock&) = delete;
-		};
-
-		basic_state() noexcept;
-
-	public:
-		virtual ~basic_state() noexcept;
-
-	protected:
-		virtual void on_assign() noexcept;
-		virtual bool has_lazy() const noexcept;
-
-	public:
-		virtual bool start(bool wait) noexcept;
-
-		bool
-		is_started() const noexcept
-		{
-			return this->m_start.load(std::memory_order_relaxed);
-		}
-
-		bool
-		ready() const noexcept
-		{
-			return (this->m_ready.load(std::memory_order_acquire) == DONE);
-		}
-
-		void
-		wait_ready() noexcept
-		{
-			this->start(true);
-			while (!this->ready())
-				std::this_thread::yield();
-		}
-
-		bool
-		has_exception() const noexcept
-		{
-			return this->ready() && this->m_except;
-		}
-
-		const std::exception_ptr&
-		get_exception() const noexcept
-		{
-			assert(this->ready());
-			return this->m_except;
-		}
-
-		bool
-		set_exception(const std::exception_ptr& p) noexcept
-		{
-			assert(p);
-
-			state_lock lck(*this);
-			if (!lck)
-				return false;
-
-			this->m_except = p;
-			lck.commit();
-			return true;
-		}
-
-		bool
-		set_exception(std::exception_ptr&& p) noexcept
-		{
-			assert(p);
-
-			state_lock lck(*this);
-			if (!lck)
-				return false;
-
-			this->m_except = std::move(p);
-			lck.commit();
-			return true;
-		}
-
-		template<typename Exception, typename... Args>
-		bool
-		emplace_exception(Args&&... args)
-		{
-			state_lock lck(*this);
-			if (!lck)
-				return false;
-
-			this->m_except = std::make_exception_ptr<Exception>(std::forward<Args>(args)...);
-			lck.commit();
-			return true;
-		}
-
-
-		basic_state(const basic_state&) = delete;
-		basic_state& operator=(const basic_state&) = delete;
+		CB_NONE,
+		CB_NEED,
+		CB_DONE
 	};
 
-	typedef ilias::refpointer<basic_state, mark_unreferenced> state_ptr_type;
+	std::atomic<state> m_state{ state::S_NIL };
+	cb_state m_cbstate{ cb_state::CB_NONE };
+	std::atomic<uintptr_t> m_promrefs{ 0 };
 
-private:
-	state_ptr_type m_state;
+	/* Protect callbacks. */
+	std::mutex m_cblck;
+	/* Promise fullfilling function. */
+	execute_fn m_execute;
+	/* Callbacks for once the promise completes. */
+	std::vector<execute_fn> m_callbacks;
+
+	/*
+	 * Wrapper around invoking execute_fn, so it can be put in
+	 * non-noexcept functions without messing with the exception paths.
+	 * (Callbacks are not allowed to throw!)
+	 */
+	void
+	invoke_execute_fn(const execute_fn& fn) noexcept
+	{
+		fn(*this);
+	}
 
 protected:
-	basic_promise() noexcept :
-		m_state()
+	~base_prom_data() = default;
+
+	state
+	current_state() const noexcept
 	{
-		/* Empty body. */
+		return this->m_state.load(std::memory_order_relaxed);
 	}
 
-	basic_promise(const basic_promise& p) noexcept :
-		m_state(p.m_state)
+	/*
+	 * Change prom_data to busy state.
+	 */
+	class lock
 	{
-		/* Empty body. */
-	}
-
-	basic_promise(basic_promise&& p) noexcept :
-		m_state(std::move(p.m_state))
-	{
-		/* Empty body. */
-	}
-
-	explicit basic_promise(state_ptr_type&& state_ptr) noexcept :
-		m_state(std::move(state_ptr))
-	{
-		/* Empty body. */
-	}
-
-	explicit basic_promise(const state_ptr_type& state_ptr) noexcept :
-		m_state(state_ptr)
-	{
-		/* Empty body. */
-	}
-
-	~basic_promise() noexcept;
-
-	basic_promise&
-	operator=(const basic_promise& p) noexcept
-	{
-		this->m_state = p.m_state;
-		return *this;
-	}
-
-	basic_promise&
-	operator= (basic_promise&& p) noexcept
-	{
-		this->m_state = std::move(p.m_state);
-		return *this;
-	}
-
-	basic_state*
-	get_state() const noexcept
-	{
-		return this->m_state.get();
-	}
-
-public:
-	bool
-	start() noexcept
-	{
-		basic_state*const s = this->get_state();
-		if (!s)
-			uninitialized_promise::throw_me();
-
-		return s->start(false);
-	}
-
-	bool
-	valid() const noexcept
-	{
-		return (this->get_state() != nullptr);
-	}
-
-	bool
-	set_exception(const std::exception_ptr& p)
-	{
-		basic_state*const s = this->get_state();
-		if (!s)
-			uninitialized_promise::throw_me();
-
-		return s->set_exception(std::move(p));
-	}
-
-	bool
-	set_exception(std::exception_ptr&& p)
-	{
-		basic_state*const s = this->get_state();
-		if (!s)
-			uninitialized_promise::throw_me();
-
-		return s->set_exception(std::move(p));
-	}
-
-	template<typename Exception, typename... Args>
-	bool
-	emplace_exception(Args&&... args)
-	{
-		basic_state*const s = this->get_state();
-		if (!s)
-			uninitialized_promise::throw_me();
-
-		return s->emplace_exception<Exception>(std::forward<Args>(args)...);
-	}
-};
-
-/* Promise refcount acquire method. */
-inline void
-basic_promise::mark_unreferenced::acquire(const basic_state& s) const noexcept
-{
-	if (s.m_prom_refcnt.fetch_add(1, std::memory_order_acquire) == 0)
-		refcnt_acquire(s);
-}
-
-/* Promise refcount release method: once no promises refer to the shared state, the shared state is marked unreferenced. */
-inline void
-basic_promise::mark_unreferenced::release(const basic_state& s) const noexcept
-{
-	const auto old = s.m_prom_refcnt.fetch_sub(1, std::memory_order_release);
-	assert(old > 0);
-	if (old == 1 && !s.has_lazy())
-		this->unreferenced(const_cast<basic_state&>(s));
-}
-
-class ILIAS_ASYNC_EXPORT basic_future
-{
-protected:
-	typedef basic_promise::basic_state basic_state;
-
-private:
-	refpointer<basic_state> m_state;
-
-protected:
-	/* Constructor with initial state. */
-	basic_future(refpointer<basic_state> s) noexcept :
-		m_state(std::move(s))
-	{
-		/* Empty body. */
-	}
-
-	basic_future() noexcept :
-		m_state()
-	{
-		/* Empty body. */
-	}
-
-	basic_future(const basic_future& f) noexcept :
-		m_state(f.m_state)
-	{
-		/* Empty body. */
-	}
-
-	basic_future(basic_future&& f) noexcept :
-		m_state(std::move(f.m_state))
-	{
-		/* Empty body. */
-	}
-
-	basic_future&
-	operator=(const basic_future& o) noexcept
-	{
-		this->m_state = o.m_state;
-		return *this;
-	}
-
-	basic_future&
-	operator=(basic_future&& o) noexcept
-	{
-		this->m_state = std::move(o.m_state);
-		return *this;
-	}
-
-	basic_state*
-	get_state() const noexcept
-	{
-		return this->m_state.get();
-	}
-
-public:
-	bool
-	start() noexcept
-	{
-		basic_state*const s = this->get_state();
-		if (!s)
-			uninitialized_promise::throw_me();
-
-		return s->start(false);
-	}
-
-	bool
-	valid() const noexcept
-	{
-		return (this->get_state() != nullptr);
-	}
-
-	bool ready() const noexcept;
-	bool has_exception() const noexcept;
-};
-
-
-template<typename Result>
-class promise :
-	public basic_promise
-{
-friend class future<Result>;
-
-public:
-	typedef const Result result_type;
-	typedef result_type& reference;
-	typedef result_type* pointer;
-
-private:
-	class state :
-		public basic_state
-	{
-	public:
-		/* Definition of how functors to initialize the promise should look. */
-		typedef typename std::remove_const<result_type>::type initfn_type();
-		typedef void callback_type(reference);
-
 	private:
-		typedef std::vector<std::function<callback_type> > direct_cb_list;
-
-		/* Using a union to allow late initialization of the value. */
-		union container {
-			typename std::remove_const<result_type>::type value;
-
-			container()
-			{
-				/* Nothing. */
-			}
-		};
-
-		std::atomic<bool> m_value_isset;
-
-		mutable std::mutex m_mtx;	/* Protect lazy resolvers. */
-		std::function<initfn_type> m_lazy;
-		workq_job_ptr m_lazy_job;
-
-		mutable std::mutex m_cbmtx;	/* Protect callback list. */
-		direct_cb_list m_direct_cb;
-
-		container m_container;
-
-		void
-		resolve_lazy(bool wait) noexcept
-		{
-			if (this->ready())
-				return;
-
-			/* Run lazy initializaton. */
-			if (this->m_lazy) {
-				try {
-					this->assign(this->m_lazy());
-				} catch (...) {
-					this->set_exception(std::current_exception());
-				}
-			}
-
-			/* Activate the workq job. */
-			workq_activate(this->m_lazy_job);
-		}
-
-	protected:
-		virtual void
-		on_assign() noexcept override
-		{
-			assert(this->ready());
-
-			/* Move the list out of the lock. */
-			std::unique_lock<std::mutex> lck(this->m_cbmtx);
-			direct_cb_list cbs = std::move(this->m_direct_cb);
-			lck.unlock();
-
-			/* Invoke each of the callbacks, iff the promise completed with a value. */
-			if (this->has_value()) {
-				for (const auto& cb : cbs)
-					cb(this->get_value());
-			}
-		}
+		base_prom_data* m_pd;
 
 	public:
-		state() noexcept :
-			basic_state(),
-			m_value_isset(false)
+		lock(const lock&) = delete;
+		lock& operator=(const lock&) = delete;
+
+		lock() noexcept
+		:	m_pd(nullptr)
 		{
 			/* Empty body. */
 		}
 
-		virtual ~state() noexcept
+		lock(lock&& l) noexcept
+		:	m_pd(l.m_pd)
 		{
-			if (this->m_value_isset)
-				this->m_container.value.~result_type();
+			l.m_pd = nullptr;
 		}
 
-		virtual bool
-		has_lazy() const noexcept override
+		lock(base_prom_data& pd) noexcept
+		:	lock()
 		{
-			std::lock_guard<std::mutex> lck(this->m_mtx);
-			return (this->m_lazy || this->m_lazy_job);
+			state s = state::S_NIL;
+			if (pd.m_state.compare_exchange_strong(s,
+			    state::S_BUSY,
+			    std::memory_order_acquire,
+			    std::memory_order_relaxed)) {
+				this->m_pd = &pd;
+			}
+		}
+
+		~lock() noexcept
+		{
+			assert(!this->m_pd);
+		}
+
+		explicit operator bool() const noexcept
+		{
+			return this->m_pd;
 		}
 
 		void
-		set_lazy(std::function<initfn_type> fn) throw (std::invalid_argument, std::logic_error)
+		release(state s) noexcept
 		{
-			if (!fn)
-				throw std::invalid_argument("promise: lazy resolution is invalid");
-
-			std::lock_guard<std::mutex> lck(this->m_mtx);
-			if (this->m_lazy || this->m_lazy_job)
-				throw std::logic_error("promise: lazy resolution set twice");
-			this->m_lazy = std::move(fn);
-
-			if (this->is_started())
-				this->resolve_lazy(false);
+			assert(s != state::S_BUSY && s != state::S_NIL);
+			assert(this->m_pd);
+			auto old = this->m_pd->m_state.exchange(s);
+			assert(old == state::S_BUSY);
+			this->m_pd->_on_complete();
+			this->m_pd = nullptr;
 		}
-
-	private:
-		struct wq_resolver
-		{
-			std::function<initfn_type> fn;
-			state& s;
-
-			wq_resolver(state& s, std::function<initfn_type> fn) noexcept :
-				fn(std::move(fn)),
-				s(s)
-			{
-				/* Empty body. */
-			}
-
-			wq_resolver(const wq_resolver& o) :
-				fn(o.fn),
-				s(o.s)
-			{
-				/* Empty body. */
-			}
-
-			wq_resolver(wq_resolver&& o) noexcept :
-				fn(std::move(o.fn)),
-				s(o.s)
-			{
-				/* Empty body. */
-			}
-
-			void
-			operator()() const noexcept
-			{
-				try {
-					s.assign(fn());
-				} catch (...) {
-					s.set_exception(std::current_exception());
-				}
-			}
-		};
-
-	public:
-		void
-		set_lazy(workq_ptr wq, unsigned int type, std::function<initfn_type> fn)
-		    throw (std::bad_alloc, std::invalid_argument, std::logic_error)
-		{
-			if (!fn)
-				throw std::invalid_argument("promise: lazy resolution is invalid");
-
-			std::lock_guard<std::mutex> lck(this->m_mtx);
-			if (this->m_lazy || this->m_lazy_job)
-				throw std::logic_error("promise: lazy resolution set twice");
-			this->m_lazy_job = wq->new_job(type | workq_job::TYPE_ONCE, wq_resolver(*this, std::move(fn)));
-
-			if (this->is_started())
-				this->resolve_lazy(false);
-		}
-
-		void
-		add_callback(std::function<callback_type> fn) throw (std::invalid_argument, std::bad_alloc)
-		{
-			/* Validate functor. */
-			if (!fn)
-				throw std::invalid_argument("promise: callback is invalid");
-
-			/*
-			 * Only push the callback on the list, if the promise is not ready.
-			 * Uses the doubly-checked lock pattern.
-			 */
-			if (!this->ready()) {
-				std::unique_lock<std::mutex> lck(this->m_cbmtx);
-				if (!this->ready()) {
-					this->m_direct_cb.push_back(std::move(fn));
-					return;
-				}
-			}
-
-			/*
-			 * Promise is ready, invoke functor now if it is ready.
-			 * Note that the functor is only invoked if a value is present.
-			 */
-			if (this->has_value())
-				fn(this->get_value());
-		}
-
-		virtual bool
-		start(bool wait) noexcept override
-		{
-			std::lock_guard<std::mutex> lck(this->m_mtx);
-			if (this->basic_state::start(wait)) {
-				this->resolve_lazy(wait);
-				return true;
-			}
-			return false;
-		}
-
-		bool
-		assign(const result_type& v)
-		{
-			state_lock lck(*this);
-			if (!lck)
-				return false;
-
-			if (this->m_value_isset)
-				return false;
-
-			new (&this->m_container.value) result_type(v);
-			this->m_value_isset = true;
-			lck.commit();
-			return true;
-		}
-
-		bool
-		assign(result_type&& v)
-		{
-			state_lock lck(*this);
-			if (!lck)
-				return false;
-
-			if (this->m_value_isset)
-				return false;
-
-			new (&this->m_container.value) result_type(std::move(v));
-			this->m_value_isset = true;
-			lck.commit();
-			return true;
-		}
-
-		template<typename... Args>
-		bool
-		assign(Args&&... args)
-		{
-			state_lock lck(*this);
-			if (!lck)
-				return false;
-
-			if (this->m_value_isset)
-				return false;
-
-			new (&this->m_container.value) result_type(std::move(args)...);
-			this->m_value_isset = true;
-			lck.commit();
-			return true;
-		}
-
-		bool
-		has_value() const noexcept
-		{
-			return this->ready() && this->m_value_isset;
-		}
-
-		reference
-		get_value() const noexcept
-		{
-			assert(this->has_value());
-			return this->m_container.value;
-		}
-
-
-		state(const state&) = delete;
-		state operator=(const state&) = delete;
 	};
 
 public:
-	typedef typename state::initfn_type initfn_type;
+	/*
+	 * Set execution callback.
+	 *
+	 * This callback is executed on demand, when the promise detects
+	 * it will be required.
+	 */
+	ILIAS_ASYNC_EXPORT void set_execute_fn(execute_fn fn);
+	/*
+	 * Start the promise.
+	 * If a callback is present, it will be executed immediately.
+	 * If a callback is installed later, it will be executed immediately.
+	 */
+	ILIAS_ASYNC_EXPORT void start() noexcept;
 
 private:
-	state*
-	get_state() const noexcept
-	{
-		basic_state* bs = this->basic_promise::get_state();
-		return (bs ? static_cast<state*>(bs) : nullptr);
-	}
-
-	static state_ptr_type
-	create_state() throw (std::bad_alloc)
-	{
-		return state_ptr_type(new state());
-	}
-
-	promise(state_ptr_type&& s) noexcept :
-		basic_promise(std::move(s))
-	{
-		/* Empty body. */
-	}
+	void _start() noexcept;
+	void _on_complete() noexcept;
 
 public:
-	static promise
-	new_promise() throw (std::bad_alloc)
-	{
-		return promise(create_state());
-	}
-
-	/* Create a new promise. */
-	promise() :
-		basic_promise(create_state())
-	{
-		/* Empty body. */
-	}
-
-	promise(const promise& p) noexcept :
-		basic_promise(p)
-	{
-		/* Empty body. */
-	}
-
-	/* Move constructor. */
-	promise(promise&& p) noexcept :
-		basic_promise(std::move(p))
-	{
-		/* Empty body. */
-	}
-
-	/* Move assignment. */
-	promise&
-	operator= (const promise& p) noexcept
-	{
-		this->basic_promise::operator= (p);
-		return *this;
-	}
-
-	/* Move assignment. */
-	promise&
-	operator= (promise&& p) noexcept
-	{
-		this->basic_promise::operator= (std::move(p));
-		return *this;
-	}
-
-	/* Set the value of the promise, using value_type copy constructor. */
-	bool
-	set(const typename std::remove_const<result_type>::type& v)
-	{
-		state*const s = this->get_state();
-		if (!s)
-			uninitialized_promise::throw_me();
-
-		return s->assign(v);
-	}
-
-	/* Set the value of the promise, using value_type move constructor. */
-	bool
-	set(typename std::remove_const<result_type>::type&& v)
-	{
-		state*const s = this->get_state();
-		if (!s)
-			uninitialized_promise::throw_me();
-
-		return s->assign(std::move(v));
-	}
-
-	/* Set the value of the promise, using value_type constructor. */
-	template<typename... Args>
-	bool
-	set(Args&&... args)
-	{
-		state*const s = this->get_state();
-		if (!s)
-			uninitialized_promise::throw_me();
-
-		return s->assign(std::forward<Args>(args)...);
-	}
-
-	template<typename Functor>
-	void
-	set_lazy(Functor f) throw (uninitialized_promise, std::invalid_argument, std::logic_error)
-	{
-		state* s = this->get_state();
-		if (!s)
-			uninitialized_promise::throw_me();
-		s->set_lazy(std::move(f));
-	}
-
-	template<typename Functor>
-	void
-	set_lazy(workq_ptr wq, unsigned int type, Functor f) throw (uninitialized_promise, std::invalid_argument, std::logic_error)
-	{
-		state* s = this->get_state();
-		if (!s)
-			uninitialized_promise::throw_me();
-		s->set_lazy(std::move(wq), type, std::move(f));
-	}
-
-	template<typename Functor>
-	void
-	add_callback(Functor f) throw (uninitialized_promise, std::invalid_argument, std::bad_alloc)
-	{
-		state* s = this->get_state();
-		if (!s)
-			uninitialized_promise::throw_me();
-		s->add_callback(std::move(f));
-	}
-
-
-	future<typename std::remove_const<result_type>::type>
-	get_future() const throw (uninitialized_promise)
-	{
-		refpointer<state> s = this->get_state();
-		if (!s)
-			uninitialized_promise::throw_me();
-		return future<typename std::remove_const<result_type>::type>(s);
-	}
-};
-
-template<typename Result>
-class future :
-	public basic_future
-{
-friend class promise<Result>;
-
-public:
-	typedef typename promise<Result>::result_type result_type;
-	typedef typename promise<Result>::reference reference;
-	typedef typename promise<Result>::pointer pointer;
-
-private:
-	typedef typename promise<Result>::state state;
-
-	state*
-	get_state() const noexcept
-	{
-		basic_state* bs = this->basic_future::get_state();
-		return (bs ? static_cast<state*>(bs) : nullptr);
-	}
-
-	/* Special constructor called by promise<Result>::get_future(). */
-	future(refpointer<state> s) noexcept :
-		basic_future(s)
-	{
-		/* Empty body. */
-	}
-
-public:
-	future() noexcept :
-		basic_future()
-	{
-		/* Empty body. */
-	}
-
-	future(const future& f) noexcept :
-		basic_future(f)
-	{
-		/* Empty body. */
-	}
-
-	future(future&& f) noexcept :
-		basic_future(f)
-	{
-		/* Empty body. */
-	}
-
-	future&
-	operator=(const future& f) noexcept
-	{
-		this->basic_future::operator=(f);
-		return *this;
-	}
-
-	future&
-	operator=(future&& f) noexcept
-	{
-		this->basic_future::operator=(std::move(f));
-		return *this;
-	}
-
-	reference
-	get() const
-	{
-		state*const s = this->get_state();
-		if (!s)
-			uninitialized_promise::throw_me();
-
-		s->wait_ready();
-		assert(s->ready());
-		assert((s->has_exception() ? 1 : 0) + (s->has_value() ? 1 : 0) == 1);
-
-		/* Test for value presence. */
-		if (s->has_value())
-			return s->get_value();
-
-		/* Test for exception presence. */
-		if (s->has_exception()) {
-			const std::exception_ptr& e = s->get_exception();
-			assert(e);	/* Exception must be set. */
-			std::rethrow_exception(e);
-		}
-
-		/* UNREACHABLE */
-		std::terminate();
-	}
+	/*
+	 * Add a callback to be executed once the promise is ready.
+	 *
+	 * Callback is incoked immediately if the promise is already complete.
+	 */
+	ILIAS_ASYNC_EXPORT void add_callback(execute_fn fn);
 
 	bool
 	has_value() const noexcept
 	{
-		state*const s = this->get_state();
-		return (s && s->has_value());
+		return this->current_state() == state::S_SET;
 	}
 
-	template<typename Functor>
-	void
-	add_callback(Functor f) throw (uninitialized_promise, std::invalid_argument, std::bad_alloc)
+	bool
+	has_exception() const noexcept
 	{
-		state* s = this->get_state();
-		if (!s)
-			uninitialized_promise::throw_me();
-		s->add_callback(std::move(f));
+		return this->current_state() == state::S_EXCEPT;
+	}
+
+	bool
+	is_broken_promise() const noexcept
+	{
+		return this->current_state() == state::S_BROKEN;
+	}
+
+	bool
+	ready() const noexcept
+	{
+		const auto s = this->current_state();
+		return s != state::S_NIL && s != state::S_BUSY;
+	}
+
+	void
+	wait() const noexcept
+	{
+		while (!this->ready())
+			std::this_thread::yield();
+	}
+
+	/* Inform promdata that there is one more promise referencing this. */
+	void
+	increment_promref() noexcept
+	{
+		this->m_promrefs.fetch_add(1, std::memory_order_acquire);
+	}
+
+	/* Inform promdata that there is one less promise referencing this. */
+	void
+	decrement_promref() noexcept
+	{
+		if (this->m_promrefs.fetch_sub(1,
+		    std::memory_order_release) == 0 &&
+		    !this->m_execute) {
+			/*
+			 * Promise cannot complete anymore.
+			 * Mark as broken.
+			 */
+			state s = state::S_NIL;
+			this->m_state.compare_exchange_strong(s,
+			    state::S_BROKEN,
+			    std::memory_order_release,
+			    std::memory_order_relaxed);
+		}
 	}
 };
 
 
-/* Create a new promise returning the given type. */
 template<typename Type>
-promise<Type>
-new_promise() throw (std::bad_alloc)
+class prom_data
+:	public base_prom_data,
+	public refcount_base<prom_data<Type>>
 {
-	return promise<Type>::new_promise();
-}
+public:
+	typedef Type value_type;
+	typedef value_type& reference;
+	typedef const value_type& const_reference;
 
-/* Create a future that will resolve when its get() or start() method is called. */
-template<typename Functor>
-auto
-lazy_future(Functor f) throw (std::bad_alloc)
-    -> future<typename std::remove_reference<typename std::remove_cv<decltype(f())>::type>::type>
+private:
+	union data_type {
+		value_type val;
+		std::exception_ptr exc;
+
+		~data_type() noexcept {};	/* Handled by prom_data. */
+	};
+
+	data_type m_data;
+
+	static constexpr bool noexcept_destroy =
+	    std::is_nothrow_destructible<value_type>::value;
+
+	template<typename T>
+	static void
+	destroy(T&& v) noexcept(std::is_nothrow_destructible<T>::value)
+	{
+		v.~T();
+	}
+
+	/* Assign exception to this promise data. */
+	void
+	_assign_exception(base_prom_data::lock lck, std::exception_ptr ptr)
+	    noexcept
+	{
+		assert(lck);
+		assert(ptr);
+		new (&this->m_data.exc) std::exception_ptr(std::move(ptr));
+		lck.release(state::S_EXCEPT);
+	}
+
+	/*
+	 * Construct promise value.
+	 * This implementation is for constructors that do not throw.
+	 */
+	template<typename... Args>
+	typename std::enable_if<std::is_nothrow_constructible<value_type,
+	    Args...>::value, void>::type
+	_assign_value(base_prom_data::lock lck, Args&&... args) noexcept
+	{
+		assert(lck);
+		new (&this->m_data.val)
+		    value_type(std::forward<Args>(args)...);
+		lck.release(state::S_SET);
+	}
+
+	/*
+	 * Construct promise value.
+	 * This implementation is for constructors that do throw.
+	 */
+	template<typename... Args>
+	typename std::enable_if<!std::is_nothrow_constructible<value_type,
+	    Args...>::value, void>::type
+	_assign_value(base_prom_data::lock lck, Args&&... args) noexcept
+	{
+		assert(lck);
+		try {
+			new (&this->m_data.val)
+			    value_type(std::forward<Args>(args)...);
+			lck.release(state::S_SET);
+		} catch (...) {
+			this->_assign_exception(std::move(lck),
+			    std::current_exception());
+		}
+	}
+
+public:
+	prom_data() = default;
+
+	~prom_data() noexcept(noexcept_destroy)
+	{
+		if (this->has_value())
+			destroy(std::move(this->m_data.val));
+		else if (this->has_exception())
+			destroy(std::move(this->m_data.exc));
+	}
+
+	prom_data(const prom_data&) = delete;
+	prom_data(prom_data&&) = delete;
+	prom_data& operator=(const prom_data&) = delete;
+
+	/*
+	 * Assign exception to promise data.
+	 *
+	 * Returns true if the promise transitioned from
+	 * unassigned to assigned.
+	 */
+	bool
+	assign_exception(std::exception_ptr exc)
+	{
+		if (!exc) {
+			throw std::invalid_argument("exception pointer "
+			    "is a nullptr");
+		}
+
+		base_prom_data::lock lck{ *this };
+		if (!lck)
+			return false;
+
+		_assign_exception(std::move(lck), exc);
+		return true;
+	}
+
+	/*
+	 * Assign value to promise data.
+	 *
+	 * Returns true if the promise transitioned from
+	 * unassigned to assigned.
+	 */
+	template<typename... Args>
+	bool
+	assign(Args&&... args)
+	    noexcept(std::is_nothrow_constructible<value_type, Args...>::value)
+	{
+		base_prom_data::lock lck{ *this };
+		if (!lck)
+			return false;
+
+		this->_assign_value(std::move(lck),
+		    std::forward<Args>(args)...);
+		return true;
+	}
+
+	/*
+	 * Block on the promise until it completes.
+	 * Returns the value the promise was set to.
+	 *
+	 * If the promise was assigned an exception,
+	 * the exception is thrown.
+	 * If the promise was broken, a broken_promise()
+	 * exception is thrown.
+	 */
+	const_reference
+	get() const
+	{
+		this->wait();
+
+		switch (this->current_state()) {
+		case state::S_NIL:
+		case state::S_BUSY:
+			assert(false);
+			while (true);	/* Undefined behaviour: spin. */
+		case state::S_SET:
+			std::atomic_thread_fence(std::memory_order_acquire);
+			return this->m_data.val;
+		case state::S_BROKEN:
+			throw broken_promise();
+		case state::S_EXCEPT:
+			std::atomic_thread_fence(std::memory_order_acquire);
+			std::rethrow_exception(this->m_data.exc);
+		}
+	}
+};
+
+
+template<>
+class prom_data<void>
+:	public base_prom_data,
+	public refcount_base<prom_data<void>>
 {
-	typedef typename std::remove_reference<typename std::remove_cv<decltype(f())>::type>::type result_type;
+public:
+	typedef void value_type;
+	typedef void reference;
+	typedef void const_reference;
 
-	auto p = new_promise<result_type>();
-	p.set_lazy(std::move(f));
-	return p.get_future();
-}
+private:
+	std::exception_ptr m_exc;
 
-template<typename Functor>
-auto
-lazy_future(workq_ptr wq, unsigned int type, Functor f) throw (std::invalid_argument, std::bad_alloc)
-    -> future<typename std::remove_reference<typename std::remove_cv<decltype(f())>::type>::type>
+public:
+	prom_data() = default;
+	~prom_data() = default;
+
+	prom_data(const prom_data&) = delete;
+	prom_data(prom_data&&) = delete;
+	prom_data& operator=(const prom_data&) = delete;
+
+	ILIAS_ASYNC_EXPORT bool assign_exception(std::exception_ptr exc);
+	ILIAS_ASYNC_EXPORT bool assign() noexcept;
+	ILIAS_ASYNC_EXPORT void get() const;
+};
+
+
+} /* namespace ilias::prom_detail */
+
+
+template<typename Type>
+class promise
 {
-	typedef typename std::remove_reference<typename std::remove_cv<decltype(f())>::type>::type result_type;
+friend class future<Type>;
+friend class prom_detail::prom_data<Type>;
 
-	auto p = new_promise<result_type>();
-	p.set_lazy(std::move(wq), type, std::move(f));
-	return p.get_future();
+public:
+	typedef typename prom_detail::prom_data<Type>::value_type value_type;
+	typedef typename prom_detail::prom_data<Type>::reference reference;
+	typedef typename prom_detail::prom_data<Type>::const_reference
+	    const_reference;
+
+private:
+	refpointer<prom_detail::prom_data<Type>> m_ptr;
+
+public:
+	friend void
+	swap(promise& p, promise& q) noexcept
+	{
+		using std::swap;
+
+		swap(p.m_ptr, q.m_ptr);
+	}
+
+	promise() = default;
+
+private:
+	promise(refpointer<prom_detail::prom_data<Type>> pd) noexcept
+	:	m_ptr(pd)
+	{
+		if (this->m_ptr)
+			this->m_ptr->increment_promref();
+	}
+
+	/*
+	 * Wrap a callback functor so it can be used by base_prom_data.
+	 */
+	template<typename Fn>
+	static prom_detail::base_prom_data::execute_fn
+	create_callback(Fn&& fn)
+	{
+		typedef prom_detail::base_prom_data::execute_fn execute_fn;
+
+		return execute_fn([fn](prom_detail::base_prom_data& bpd) {
+			promise p{
+			    &static_cast<prom_detail::prom_data<Type>&>(bpd) };
+			promise q = p;	/* In case fn decides to modify p. */
+			try {
+				fn(std::move(p));
+			} catch (...) {
+				q.set_exception(std::current_exception());
+			}
+		    });
+	}
+
+public:
+	promise(const promise& o) noexcept
+	:	promise(o.m_ptr)
+	{
+		/* Empty body. */
+	}
+
+	promise(promise&& o) noexcept
+	:	m_ptr(std::move(o.m_ptr))
+	{
+		/* Empty body. */
+	}
+
+	~promise() noexcept
+	{
+		if (this->m_ptr)
+			this->m_ptr->decrement_promref();
+	}
+
+	promise&
+	operator=(promise o) noexcept
+	{
+		swap(*this, o);
+		return *this;
+	}
+
+	bool
+	operator==(const promise& o) noexcept
+	{
+		return this->m_ptr == o.m_ptr;
+	}
+
+	/*
+	 * Create a callback which will assign to the promise.
+	 */
+	template<typename Fn>
+	void
+	set_callback(Fn&& fn)
+	{
+		if (!this->m_ptr)
+			throw uninitialized_promise();
+		this->m_ptr->set_execute_fn(create_callback(
+		    std::forward<Fn>(fn)));
+	}
+
+	/* Test if the promise is initialized. */
+	bool
+	is_initialized() const noexcept
+	{
+		return bool(this->m_ptr);
+	}
+
+	/* True iff the promise holds a value. */
+	bool
+	has_value() const noexcept
+	{
+		return this->m_ptr && this->m_ptr->has_value();
+	}
+
+	/*
+	 * True iff the promise holds an exception.
+	 *
+	 * Note: false if the promise is a broken promise.
+	 */
+	bool
+	has_exception() const noexcept
+	{
+		return this->m_ptr && this->m_ptr->has_exception();
+	}
+
+	/*
+	 * True iff the promise has completed.
+	 *
+	 * This is the same as:
+	 * has_value() || has_exception().
+	 *
+	 * Since a promise can only be assigned to once,
+	 * a ready promise cannot be assigned to.
+	 */
+	bool
+	ready() const noexcept
+	{
+		return this->m_ptr && this->m_ptr->ready();
+	}
+
+	/*
+	 * Assign a value to the promise.
+	 *
+	 * The value_type constructor will be called
+	 * with the specified arguments.
+	 *
+	 * Returns true if the promise was not ready prior to this call.
+	 */
+	template<typename... Args>
+	bool
+	set(Args&&... args)
+	{
+		if (!this->m_ptr)
+			throw uninitialized_promise();
+		return this->m_ptr->assign(std::forward<Args>(args)...);
+	}
+
+	/*
+	 * Assign an exception to the promise.
+	 *
+	 * Returns true if the promise was not ready prior to this call.
+	 */
+	bool
+	set_exception(std::exception_ptr ptr)
+	{
+		if (!this->m_ptr)
+			throw uninitialized_promise();
+		return this->m_ptr->assign_exception(std::move(ptr));
+	}
+};
+
+template<typename Type>
+class future
+{
+public:
+	typedef typename prom_detail::prom_data<Type>::value_type value_type;
+	typedef typename prom_detail::prom_data<Type>::reference reference;
+	typedef typename prom_detail::prom_data<Type>::const_reference
+	    const_reference;
+
+private:
+	refpointer<prom_detail::prom_data<Type>> m_ptr;
+
+	future(refpointer<prom_detail::prom_data<Type>> pd) noexcept
+	:	m_ptr(pd)
+	{
+		/* Empty body. */
+	}
+
+	/*
+	 * Wrap a callback functor so it can be used by base_prom_data.
+	 */
+	template<typename Fn>
+	static prom_detail::base_prom_data::execute_fn
+	create_callback(Fn&& fn)
+	{
+		typedef prom_detail::base_prom_data::execute_fn execute_fn;
+
+		return execute_fn([fn](prom_detail::base_prom_data& bpd) {
+			future p{
+			    &static_cast<prom_detail::prom_data<Type>&>(bpd) };
+			fn(std::move(p));
+		    });
+	}
+
+public:
+	friend void
+	swap(future& p, future& q) noexcept
+	{
+		using std::swap;
+		swap(p.m_ptr, q.m_ptr);
+	}
+
+	future() = default;
+	future(const future&) = default;
+	future(future&&) = default;
+
+	future(const promise<Type>& p)
+	:	m_ptr(p.m_ptr)
+	{
+		if (!this->m_ptr)
+			throw uninitialized_promise();
+	}
+
+	future&
+	operator=(future f) noexcept
+	{
+		swap(*this, f);
+		return *this;
+	}
+
+	future&
+	operator=(const promise<Type>& p)
+	{
+		return *this = future(p);
+	}
+
+	bool
+	operator==(const future& o) noexcept
+	{
+		return this->m_ptr == o.m_ptr;
+	}
+
+	bool
+	operator==(const promise<Type>& p) noexcept
+	{
+		return (this->m_ptr == p.m_ptr);
+	}
+
+	/*
+	 * Add a callback which will be called once the promise is complete.
+	 */
+	template<typename Fn>
+	void
+	add_callback(Fn&& fn)
+	{
+		if (!this->m_ptr)
+			throw uninitialized_promise();
+		this->m_ptr->add_callback(create_callback(
+		    std::forward<Fn>(fn)));
+	}
+
+	/* Test if the future is initialized. */
+	bool
+	is_initialized() const noexcept
+	{
+		return bool(this->m_ptr);
+	}
+
+	/* True iff the future holds a value. */
+	bool
+	has_value() const noexcept
+	{
+		return this->m_ptr && this->m_ptr->has_value();
+	}
+
+	/*
+	 * True iff the future holds an exception.
+	 *
+	 * Note: false if the future is a broken promise.
+	 */
+	bool
+	has_exception() const noexcept
+	{
+		return this->m_ptr && this->m_ptr->has_exception();
+	}
+
+	/* True iff the future is a broken promise. */
+	bool
+	is_broken_promise() const noexcept
+	{
+		return this->m_ptr && this->m_ptr->is_broken_promise();
+	}
+
+	/*
+	 * True iff the promise has completed.
+	 *
+	 * This is the same as:
+	 * has_value() || has_exception() || is_broken_promise()
+	 *
+	 * This call guarantees that wait() and get() will not block.
+	 */
+	bool
+	ready() const noexcept
+	{
+		return this->m_ptr && this->m_ptr->ready();
+	}
+
+	/*
+	 * Wait for the promise to become ready.
+	 * After this call, the promise will be ready,
+	 * unless this future was uninitialized.
+	 */
+	void
+	wait() const noexcept
+	{
+		if (this->m_ptr)
+			this->m_ptr->wait();
+	}
+
+	/*
+	 * Return the result of the promise.
+	 *
+	 * If the future holds an exception, the exception is thrown.
+	 * If the future is broken, a broken_promise exception is thrown.
+	 * If the future is uninitialized, a uninitialized_promise exception
+	 * is thrown.
+	 */
+	const_reference
+	get() const
+	{
+		if (!this->m_ptr)
+			throw uninitialized_promise();
+		return this->m_ptr->get();
+	}
+};
+
+
+template<typename Type>
+bool
+operator==(const future<Type>& p, const promise<Type>& q) noexcept
+{
+	return (q == p);
 }
 
 
 } /* namespace ilias */
-
-
-#ifdef _MSC_VER
-#pragma warning( pop )
-#endif
 
 
 #endif /* ILIAS_PROMISE_H */
