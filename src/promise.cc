@@ -136,7 +136,7 @@ base_prom_data::start() noexcept
 }
 
 void
-base_prom_data::add_callback(execute_fn fn)
+base_prom_data::add_callback(execute_fn fn, promise_start ps)
 {
 	if (!fn)
 		throw std::invalid_argument("nullptr callback function");
@@ -161,7 +161,8 @@ base_prom_data::add_callback(execute_fn fn)
 		 * Ensure the promise gets started,
 		 * since callbacks depend on it.
 		 */
-		this->_start(std::move(guard));
+		if (ps == PROM_START)
+			this->_start(std::move(guard));
 	}
 }
 

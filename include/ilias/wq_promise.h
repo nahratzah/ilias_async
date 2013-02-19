@@ -94,14 +94,14 @@ callback(promise<Type>& prom, workq_ptr wq, Functor&& fn,
 template<typename Type, typename Functor>
 void
 callback(future<Type>& fut, workq_ptr wq, Functor&& fn,
-    unsigned int fl = 0)
+    unsigned int fl = 0, prom_start ps = PROM_START)
 {
 	typedef wqprom_detail::wq_promise_event<future<Type>> event;
 	using namespace std::place_holders;
 
 	callback(fut, std::bind(&event::pfcb,
 	    new_workq_job<event>(std::move(wq), std::forward<Functor>(fn), fl),
-	    _1));
+	    _1), ps);
 }
 
 

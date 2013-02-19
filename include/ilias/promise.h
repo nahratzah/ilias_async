@@ -60,6 +60,17 @@ public:
 };
 
 
+/*
+ * Argument to future callback functions, which can be used to inhibit
+ * starting the promise.
+ */
+enum promise_start
+{
+	PROM_START,	/* Start promise immediately. */
+	PROM_DEFER	/* Don't start promise. */
+};
+
+
 namespace prom_detail {
 
 
@@ -202,7 +213,8 @@ public:
 	 *
 	 * Callback is incoked immediately if the promise is already complete.
 	 */
-	ILIAS_ASYNC_EXPORT void add_callback(execute_fn fn);
+	ILIAS_ASYNC_EXPORT void add_callback(execute_fn,
+	    promise_start = PROM_DEFER);
 
 	bool
 	has_value() const noexcept
@@ -735,12 +747,12 @@ public:
 	 */
 	template<typename Fn>
 	friend void
-	callback(future& f, Fn&& fn)
+	callback(future& f, Fn&& fn, promise_start ps = PROM_START)
 	{
 		if (!f.m_ptr)
 			throw uninitialized_promise();
 		f.m_ptr->add_callback(create_callback(
-		    std::forward<Fn>(fn)));
+		    std::forward<Fn>(fn)), ps);
 	}
 
 	/* Test if the future is initialized. */
