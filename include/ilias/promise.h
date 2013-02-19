@@ -483,6 +483,10 @@ public:
 		swap(p.m_ptr, q.m_ptr);
 	}
 
+	/*
+	 * Create a promise.
+	 * Note that the default constructed promise is uninitialized.
+	 */
 	promise() = default;
 
 private:
@@ -531,6 +535,15 @@ public:
 	{
 		if (this->m_ptr)
 			this->m_ptr->decrement_promref();
+	}
+
+	/*
+	 * Create an initialized promise.
+	 */
+	static promise
+	create()
+	{
+		return promise(new prom_detail::prom_data<Type>());
 	}
 
 	promise&
@@ -805,7 +818,42 @@ operator==(const future<Type>& p, const promise<Type>& q) noexcept
 }
 
 
-} /* namespace ilias */
+/* Attach callback to promise. */
+template<typename Type, typename Functor>
+void
+callback(promise<Type>& p, Functor&& fn)
+{
+	p.set_callback(std::forward<Functor>(fn));
+}
 
+/* Attach callback to future. */
+template<typename Type, typename Functor>
+void
+callback(future<Type>& f, Functor&& fn)
+{
+	f.set_callback(std::forward<Functor>(fn));
+}
+
+
+/* Create a new promise with the given result type. */
+template<typename Type>
+promise<Type>
+new_promise()
+{
+	return promise<Type>::create();
+}
+
+/* Create a new promise with an associated callback. */
+template<typename Type, typename... Args>
+promise<Type>
+new_promise(Args&&... args)
+{
+	auto rv = new_promise<Type>();
+	callback(rv, std::forward<Args>(args)...);
+	return rv;
+}
+
+
+} /* namespace ilias */
 
 #endif /* ILIAS_PROMISE_H */
