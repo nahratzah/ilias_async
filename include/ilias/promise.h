@@ -111,7 +111,7 @@ private:
 	}
 
 protected:
-	~base_prom_data() = default;
+	ILIAS_ASYNC_EXPORT ~base_prom_data() noexcept;
 
 	state
 	current_state() const noexcept

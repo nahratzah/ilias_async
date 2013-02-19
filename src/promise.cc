@@ -56,6 +56,11 @@ promise_cb_installed::~promise_cb_installed() noexcept
 
 namespace prom_detail {
 
+base_prom_data::~base_prom_data() noexcept
+{
+	/* Empty body. */
+}
+
 void
 base_prom_data::_start() noexcept
 {
@@ -135,7 +140,7 @@ base_prom_data::add_callback(execute_fn fn)
 		guard.unlock();
 		this->invoke_execute_fn(fn);
 	} else {
-		this->m_callbacks.push_back(std::move(fn));
+		this->m_callbacks.emplace_back(std::move(fn));
 		/*
 		 * Ensure the promise gets started,
 		 * since callbacks depend on it.
