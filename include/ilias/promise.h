@@ -641,6 +641,15 @@ public:
 			throw uninitialized_promise();
 		return this->m_ptr->assign_exception(std::move(ptr));
 	}
+
+	/* Start execution of the promise. */
+	void
+	start()
+	{
+		if (!this->m_ptr)
+			throw uninitialized_promise();
+		return this->m_ptr->start();
+	}
 };
 
 template<typename Type>
@@ -806,6 +815,15 @@ public:
 		if (!this->m_ptr)
 			throw uninitialized_promise();
 		return this->m_ptr->get();
+	}
+
+	/* Start execution of the promise. */
+	void
+	start()
+	{
+		if (!this->m_ptr)
+			throw uninitialized_promise();
+		return this->m_ptr->start();
 	}
 };
 
