@@ -102,6 +102,9 @@ base_prom_data::_on_complete() noexcept
 void
 base_prom_data::set_execute_fn(execute_fn fn)
 {
+	if (!fn)
+		throw std::invalid_argument("nullptr execute function");
+
 	std::lock_guard<std::mutex> guard{ this->m_cblck };
 
 	/* Don't allow multiple callbacks to get invoked. */
@@ -125,6 +128,9 @@ base_prom_data::start() noexcept
 void
 base_prom_data::add_callback(execute_fn fn)
 {
+	if (!fn)
+		throw std::invalid_argument("nullptr callback function");
+
 	/* Already complete?  Invoke immediately. */
 	if (this->ready()) {
 		this->invoke_execute_fn(fn);
