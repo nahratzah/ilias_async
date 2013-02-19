@@ -62,8 +62,12 @@ base_prom_data::~base_prom_data() noexcept
 }
 
 void
-base_prom_data::_start() noexcept
+base_prom_data::_start(std::unique_lock<std::mutex> guard) noexcept
 {
+	using std::move;
+
+	assert(bool(guard));
+
 	/*
 	 * Change state from CB_NONE to CB_NEED.
 	 * If an execute functor is present, invoke it immediately and
@@ -71,9 +75,11 @@ base_prom_data::_start() noexcept
 	 */
 	if (this->m_cbstate == cb_state::CB_NONE) {
 		if (this->m_execute) {
-			this->invoke_execute_fn(this->m_execute);
+			execute_fn fn;
+			swap(fn, this->m_execute);
 			this->m_cbstate = cb_state::CB_DONE;
-			this->m_execute = nullptr;
+			guard.unlock();
+			this->invoke_execute_fn(fn);
 		} else
 			this->m_cbstate = cb_state::CB_NEED;
 	}
@@ -93,6 +99,9 @@ base_prom_data::_on_complete() noexcept
 	{
 		std::lock_guard<std::mutex> guard{ this->m_cblck };
 		swap(cbs, this->m_callbacks);
+
+		/* Destroy execute callback. */
+		this->m_execute = nullptr;
 	}
 
 	for (auto& cb : cbs)
@@ -105,15 +114,16 @@ base_prom_data::set_execute_fn(execute_fn fn)
 	if (!fn)
 		throw std::invalid_argument("nullptr execute function");
 
-	std::lock_guard<std::mutex> guard{ this->m_cblck };
+	std::unique_lock<std::mutex> guard{ this->m_cblck };
 
 	/* Don't allow multiple callbacks to get invoked. */
 	if (this->m_cbstate == cb_state::CB_DONE || this->m_execute)
 		throw promise_cb_installed();
 
 	if (this->m_cbstate == cb_state::CB_NEED) {
-		this->invoke_execute_fn(fn);
 		this->m_cbstate == cb_state::CB_DONE;
+		guard.unlock();
+		this->invoke_execute_fn(fn);
 	} else
 		this->m_execute = std::move(fn);
 }
@@ -121,8 +131,8 @@ base_prom_data::set_execute_fn(execute_fn fn)
 void
 base_prom_data::start() noexcept
 {
-	std::lock_guard<std::mutex> guard{ this->m_cblck };
-	this->_start();
+	std::unique_lock<std::mutex> guard{ this->m_cblck };
+	this->_start(std::move(guard));
 }
 
 void
@@ -151,7 +161,7 @@ base_prom_data::add_callback(execute_fn fn)
 		 * Ensure the promise gets started,
 		 * since callbacks depend on it.
 		 */
-		this->_start();
+		this->_start(std::move(guard));
 	}
 }
 

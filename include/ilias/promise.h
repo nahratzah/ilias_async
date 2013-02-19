@@ -193,7 +193,7 @@ public:
 	ILIAS_ASYNC_EXPORT void start() noexcept;
 
 private:
-	void _start() noexcept;
+	void _start(std::unique_lock<std::mutex>) noexcept;
 	void _on_complete() noexcept;
 
 public:
