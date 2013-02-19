@@ -24,6 +24,12 @@ namespace ilias {
 namespace wqprom_detail {
 
 
+/*
+ * Workq based promise callback.
+ *
+ * Will execute at most once.
+ * If the promise is never started, the callback may never be invoked.
+ */
 template<typename PromType>
 class wq_promise_event
 :	public workq_job,
@@ -79,7 +85,7 @@ callback(promise<Type>& prom, workq_ptr wq, Functor&& fn,
 	typedef wqprom_detail::wq_promise_event<promise<Type>> event;
 	using namespace std::place_holders;
 
-	prom.set_callback(std::bind(&event::pfcb,
+	callback(prom, std::bind(&event::pfcb,
 	    new_workq_job<event>(std::move(wq), std::forward<Functor>(fn), fl),
 	    _1));
 }
@@ -93,7 +99,7 @@ callback(future<Type>& fut, workq_ptr wq, Functor&& fn,
 	typedef wqprom_detail::wq_promise_event<future<Type>> event;
 	using namespace std::place_holders;
 
-	fut.add_callback(std::bind(&event::pfcb,
+	callback(fut, std::bind(&event::pfcb,
 	    new_workq_job<event>(std::move(wq), std::forward<Functor>(fn), fl),
 	    _1));
 }

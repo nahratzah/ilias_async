@@ -563,12 +563,12 @@ public:
 	 * Create a callback which will assign to the promise.
 	 */
 	template<typename Fn>
-	void
-	set_callback(Fn&& fn)
+	friend void
+	callback(promise& p, Fn&& fn)
 	{
-		if (!this->m_ptr)
+		if (!p.m_ptr)
 			throw uninitialized_promise();
-		this->m_ptr->set_execute_fn(create_callback(
+		p.m_ptr->set_execute_fn(create_callback(
 		    std::forward<Fn>(fn)));
 	}
 
@@ -725,12 +725,12 @@ public:
 	 * Add a callback which will be called once the promise is complete.
 	 */
 	template<typename Fn>
-	void
-	add_callback(Fn&& fn)
+	friend void
+	callback(future& f, Fn&& fn)
 	{
-		if (!this->m_ptr)
+		if (!f.m_ptr)
 			throw uninitialized_promise();
-		this->m_ptr->add_callback(create_callback(
+		f.m_ptr->add_callback(create_callback(
 		    std::forward<Fn>(fn)));
 	}
 
@@ -815,23 +815,6 @@ bool
 operator==(const future<Type>& p, const promise<Type>& q) noexcept
 {
 	return (q == p);
-}
-
-
-/* Attach callback to promise. */
-template<typename Type, typename Functor>
-void
-callback(promise<Type>& p, Functor&& fn)
-{
-	p.set_callback(std::forward<Functor>(fn));
-}
-
-/* Attach callback to future. */
-template<typename Type, typename Functor>
-void
-callback(future<Type>& f, Functor&& fn)
-{
-	f.set_callback(std::forward<Functor>(fn));
 }
 
 
