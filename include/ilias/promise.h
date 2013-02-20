@@ -858,7 +858,7 @@ new_promise()
 
 /* Create a new promise with an associated callback. */
 template<typename Type, typename... Args>
-promise<Type>
+future<Type>
 new_promise(Args&&... args)
 {
 	auto rv = new_promise<Type>();
