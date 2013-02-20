@@ -19,7 +19,7 @@ namespace ilias {
 namespace wqprom_detail {
 
 
-template class ILIAS_ASYNC_EXPORT wq_promise_event<promise<void>>;
+template class wq_promise_event<promise<void>>;
 
 
 }} /* namespace ilias::wqprom_detail */
