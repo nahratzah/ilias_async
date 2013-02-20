@@ -294,7 +294,7 @@ private:
 		~data_type() noexcept {};	/* Handled by prom_data. */
 	};
 
-	data_type m_data;
+	data_type m_data{};
 
 	static constexpr bool noexcept_destroy =
 	    std::is_nothrow_destructible<value_type>::value;
