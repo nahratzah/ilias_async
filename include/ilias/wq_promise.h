@@ -13,11 +13,11 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-#ifndef ILIAS_PROMISE_H
-#define ILIAS_PROMISE_H
+#ifndef ILIAS_WQ_PROMISE_H
+#define ILIAS_WQ_PROMISE_H
 
 #include <ilias/workq.h>
-#include <ilias/future.h>
+#include <ilias/promise.h>
 #include <functional>
 
 namespace ilias {
@@ -33,20 +33,20 @@ namespace wqprom_detail {
 template<typename PromType>
 class wq_promise_event
 :	public workq_job,
-	public std::enable_shared_from_this<wq_promise_event>
+	public std::enable_shared_from_this<wq_promise_event<PromType>>
 {
 private:
 	PromType m_prom;
-	workq_ptr m_self;
-	std::function<void()> m_fn;
+	std::shared_ptr<wq_promise_event> m_self;
+	std::function<void(PromType)> m_fn;
 
 public:
-	wq_promise_event(workq_ptr wq, std::function<void()> fn,
+	wq_promise_event(workq_ptr wq, std::function<void(PromType)> fn,
 	    unsigned int flags)
 	:	workq_job(wq, flags | workq_job::TYPE_ONCE),
 		m_fn(std::move(fn))
 	{
-		if (flags & workq::TYPE_PERSIST) {
+		if (flags & workq_job::TYPE_PERSIST) {
 			throw std::invalid_argument(
 			    "promise workq job cannot be persistant");
 		}
@@ -68,9 +68,17 @@ public:
 	run() noexcept
 	{
 		this->m_self.reset();	/* Cancel our self reference. */
-		this->m_fn(this->m_prom);
+		PromType p = std::move(this->m_prom);
+		auto q = p;
+		try {
+			this->m_fn(std::move(p));
+		} catch (...) {
+			q.set_exception(std::current_exception());
+		}
 	}
 };
+
+extern template class ILIAS_ASYNC_EXPORT wq_promise_event<promise<void>>;
 
 
 } /* namespace ilias::wqprom_detail */
@@ -83,7 +91,7 @@ callback(promise<Type>& prom, workq_ptr wq, Functor&& fn,
     unsigned int fl = 0)
 {
 	typedef wqprom_detail::wq_promise_event<promise<Type>> event;
-	using namespace std::place_holders;
+	using namespace std::placeholders;
 
 	callback(prom, std::bind(&event::pfcb,
 	    new_workq_job<event>(std::move(wq), std::forward<Functor>(fn), fl),
@@ -94,10 +102,10 @@ callback(promise<Type>& prom, workq_ptr wq, Functor&& fn,
 template<typename Type, typename Functor>
 void
 callback(future<Type>& fut, workq_ptr wq, Functor&& fn,
-    unsigned int fl = 0, prom_start ps = PROM_START)
+    unsigned int fl = 0, promise_start ps = PROM_START)
 {
 	typedef wqprom_detail::wq_promise_event<future<Type>> event;
-	using namespace std::place_holders;
+	using namespace std::placeholders;
 
 	callback(fut, std::bind(&event::pfcb,
 	    new_workq_job<event>(std::move(wq), std::forward<Functor>(fn), fl),
@@ -107,4 +115,4 @@ callback(future<Type>& fut, workq_ptr wq, Functor&& fn,
 
 } /* namespace ilias */
 
-#endif /* ILIAS_PROMISE_H */
+#endif /* ILIAS_WQ_PROMISE_H */
