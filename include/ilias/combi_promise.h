@@ -56,6 +56,22 @@ struct visitor<Futures, 0U>
 	}
 };
 
+/* Implementation functor for check_initialized. */
+struct check_initialized_impl {
+	check_initialized_impl() = default;
+	check_initialized_impl(const check_initialized_impl&) = delete;
+	check_initialized_impl(check_initialized_impl&&) = default;
+
+	bool rv{ true };
+
+	template<typename T>
+	void
+	operator()(const future<T>& f) noexcept
+	{
+		this->rv = this->rv && f.is_initialized();
+	}
+};
+
 /* Visit each element. */
 template<typename Futures, typename Functor>
 Functor
@@ -69,22 +85,7 @@ template<typename Futures>
 bool
 check_initialized(const Futures& f) noexcept
 {
-	struct impl {
-		impl() = default;
-		impl(const impl&) = delete;
-		impl(impl&&) = default;
-
-		bool rv{ true };
-
-		template<typename T>
-		void
-		operator()(const future<T>& f) noexcept
-		{
-			this->rv = this->rv && f.is_initialized();
-		}
-	};
-
-	return visit(f, impl()).rv;
+	return visit(f, check_initialized_impl()).rv;
 }
 
 /* Functor, starts the argument promise/future. */
