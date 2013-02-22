@@ -18,7 +18,7 @@
 
 #include <ilias/ilias_async_export.h>
 #include <functional>
-#include <thread>
+#include <mutex>
 
 namespace ilias {
 namespace ev_detail {
