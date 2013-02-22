@@ -225,7 +225,7 @@ public:
 
 /* Specialized message queue for untyped messages. */
 class void_msg_queue
-:	private msg_queue_events
+:	public msg_queue_events
 {
 public:
 	typedef void element_type;
@@ -329,7 +329,7 @@ public:
 
 template<typename Type, typename Allocator = std::allocator<Type>>
 class msg_queue
-:	private mq_detail::msg_queue_events
+:	public mq_detail::msg_queue_events
 {
 private:
 	typedef ll_list<ll_base<mq_detail::mq_elem<Type>>> list_type;
