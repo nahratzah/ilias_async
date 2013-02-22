@@ -26,35 +26,6 @@ msg_queue_events::~msg_queue_events() noexcept
 	/* Empty body. */
 }
 
-void
-msg_queue_events::_fire(event ev) noexcept
-{
-	for (unsigned int i = 0; i != N_EVENTS; ++i) {
-		if (i != ev)
-			workq_deactivate(this->ev[i]);
-	}
-	workq_activate(this->ev[ev], workq_job::ACT_IMMED);
-}
-
-void
-msg_queue_events::_assign(workq_job_ptr job, event ev, bool fire) noexcept
-{
-	atomic_exchange_jobptr(this->ev[ev], job,
-	    std::memory_order_relaxed);
-	if (fire && job)
-		job->activate();
-}
-
-void
-msg_queue_events::_clear_events() noexcept
-{
-	const workq_job_ptr nil = nullptr;
-	for (unsigned int i = 0; i != N_EVENTS; ++i) {
-		auto job = atomic_exchange_jobptr(this->ev[i], nil,
-		    std::memory_order_relaxed);
-	}
-}
-
 
 uintptr_t
 void_msg_queue::_dequeue(uintptr_t max) noexcept

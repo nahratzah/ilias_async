@@ -17,6 +17,7 @@
 #define ILIAS_MSG_QUEUE_H
 
 #include <ilias/ilias_async_export.h>
+#include <ilias/eventset.h>
 #include <ilias/ll.h>
 #include <ilias/workq.h>
 #include <cassert>
@@ -138,14 +139,13 @@ public:
 class msg_queue_events
 {
 private:
-	enum event {
+	enum event : unsigned int {
 		MQ_EV_OUTPUT,
 		MQ_EV_EMPTY
 	};
-	static const unsigned int N_EVENTS = 2;
+	static constexpr unsigned int N_EVENTS = 2;
 
-	workq_job_ptr ev[N_EVENTS];
-	workq_job_ptr ev_empty;
+	eventset<N_EVENTS> ev{ event::MQ_EV_EMPTY };
 
 protected:
 	msg_queue_events() = default;
@@ -156,48 +156,69 @@ protected:
 
 	ILIAS_ASYNC_EXPORT ~msg_queue_events() noexcept;
 
-private:
-	ILIAS_ASYNC_EXPORT void _fire(event ev) noexcept;
-	ILIAS_ASYNC_EXPORT void _assign(workq_job_ptr job,
-	    event ev, bool fire) noexcept;
-
-protected:
 	void
 	_fire_output() noexcept
 	{
-		this->_fire(MQ_EV_OUTPUT);
+		this->ev.fire(event::MQ_EV_OUTPUT);
 	}
 
 	void
 	_fire_empty() noexcept
 	{
-		this->_fire(MQ_EV_EMPTY);
+		this->ev.fire(event::MQ_EV_EMPTY);
+	}
+
+public:
+	/* Set output event callback. */
+	void
+	assign_output(std::function<void()> fn) noexcept
+	{
+		this->ev.assign(event::MQ_EV_OUTPUT, fn);
+	}
+
+	/* Set empty event callback. */
+	void
+	assign_empty(std::function<void()> fn) noexcept
+	{
+		this->ev.assign(event::MQ_EV_EMPTY, fn);
+	}
+
+protected:
+	void
+	_deactivate() noexcept
+	{
+		this->ev.deactivate();
 	}
 
 	void
-	_assign_output(workq_job_ptr ptr, bool fire = true) noexcept
+	_deactivate_output() noexcept
 	{
-		this->_assign(ptr, MQ_EV_OUTPUT, fire);
+		this->ev.deactivate(event::MQ_EV_OUTPUT);
 	}
 
 	void
-	_assign_empty(workq_job_ptr ptr, bool fire = true) noexcept
+	_deactivate_empty() noexcept
 	{
-		this->_assign(ptr, MQ_EV_EMPTY, fire);
+		this->ev.deactivate(event::MQ_EV_EMPTY);
 	}
 
-	ILIAS_ASYNC_EXPORT void _clear_events() noexcept;
-
+public:
 	void
-	_clear_output() noexcept
+	clear_output() noexcept
 	{
-		this->_assign_output(nullptr, false);
+		this->ev.clear(event::MQ_EV_OUTPUT);
 	}
 
 	void
-	_clear_empty() noexcept
+	clear_empty() noexcept
 	{
-		this->_assign_output(nullptr, false);
+		this->ev.clear(event::MQ_EV_EMPTY);
+	}
+
+	void
+	clear_events() noexcept
+	{
+		this->ev.clear();
 	}
 };
 
@@ -231,7 +252,7 @@ public:
 
 	~void_msg_queue() noexcept
 	{
-		this->_clear_events();
+		this->clear_events();
 	}
 
 	/* Test if the message queue is empty. */
@@ -445,7 +466,7 @@ public:
 
 	~msg_queue() noexcept
 	{
-		this->_clear_events();
+		this->clear_events();
 		this->_clear();
 	}
 
