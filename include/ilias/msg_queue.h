@@ -19,8 +19,8 @@
 #include <ilias/ilias_async_export.h>
 #include <ilias/eventset.h>
 #include <ilias/ll.h>
-#include <ilias/workq.h>
 #include <cassert>
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <type_traits>
@@ -170,17 +170,33 @@ protected:
 
 public:
 	/* Set output event callback. */
-	void
-	assign_output(std::function<void()> fn) noexcept
+	friend void
+	output_callback(msg_queue_events& mqev, std::function<void()> fn)
+	    noexcept
 	{
-		this->ev.assign(event::MQ_EV_OUTPUT, fn);
+		mqev.ev.assign(event::MQ_EV_OUTPUT, std::move(fn));
 	}
 
 	/* Set empty event callback. */
-	void
-	assign_empty(std::function<void()> fn) noexcept
+	friend void
+	empty_callback(msg_queue_events& mqev, std::function<void()> fn)
+	    noexcept
 	{
-		this->ev.assign(event::MQ_EV_EMPTY, fn);
+		mqev.ev.assign(event::MQ_EV_EMPTY, std::move(fn));
+	}
+
+	/* Clear output event callback. */
+	friend void
+	output_callback(msg_queue_events& mqev, std::nullptr_t) noexcept
+	{
+		mqev.ev.clear(event::MQ_EV_OUTPUT);
+	}
+
+	/* Clear empty event callback. */
+	friend void
+	empty_callback(msg_queue_events& mqev, std::nullptr_t) noexcept
+	{
+		mqev.ev.clear(event::MQ_EV_EMPTY);
 	}
 
 protected:
@@ -203,18 +219,6 @@ protected:
 	}
 
 public:
-	void
-	clear_output() noexcept
-	{
-		this->ev.clear(event::MQ_EV_OUTPUT);
-	}
-
-	void
-	clear_empty() noexcept
-	{
-		this->ev.clear(event::MQ_EV_EMPTY);
-	}
-
 	void
 	clear_events() noexcept
 	{
@@ -528,6 +532,9 @@ class msg_queue<void, Allocator>
 		/* Empty body. */
 	}
 };
+
+
+using mq_detail::msg_queue_events;
 
 
 } /* namespace ilias */

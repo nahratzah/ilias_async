@@ -105,6 +105,7 @@ list (APPEND hdrs
 	include/ilias/eventset.h
 	include/ilias/ll.h
 	include/ilias/msg_queue.h
+	include/ilias/wq_msg_queue.h
 	include/ilias/promise.h
 	include/ilias/wq_promise.h
 	include/ilias/combi_promise.h
@@ -115,6 +116,7 @@ list (APPEND srcs
 	src/eventset.cc
 	src/ll.cc
 	src/msg_queue.cc
+	src/wq_msg_queue.cc
 	src/promise.cc
 	src/wq_promise.cc
 	src/combi_promise.cc
