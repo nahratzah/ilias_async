@@ -331,10 +331,15 @@ public:
 } /* namespace ilias::mq_detail */
 
 
+template<typename MQ> class prepare_enqueue;
+
+
 template<typename Type, typename Allocator = std::allocator<Type>>
 class msg_queue
 :	public mq_detail::msg_queue_events
 {
+friend class prepare_enqueue<msg_queue<Type, Allocator>>;
+
 private:
 	typedef ll_list<ll_base<mq_detail::mq_elem<Type>>> list_type;
 
@@ -360,11 +365,18 @@ private:
 	/* Destructor implementation. */
 	struct _destroy
 	{
-		allocator_type& m_alloc;
+		allocator_type* m_alloc;
 		bool m_call_destructor;
 
+		_destroy() noexcept
+		:	m_alloc(nullptr),
+			m_call_destructor(false)
+		{
+			/* Empty body. */
+		}
+
 		_destroy(allocator_type& alloc, bool call_destructor) noexcept
-		:	m_alloc(alloc),
+		:	m_alloc(&alloc),
 			m_call_destructor(call_destructor)
 		{
 			/* Empty body. */
@@ -375,11 +387,12 @@ private:
 		    noexcept(noexcept_destructible)
 		{
 			if (ptr) {
+				assert(this->m_alloc);
 				if (this->m_call_destructor) {
-					alloc_traits::destroy(this->m_alloc,
+					alloc_traits::destroy(*this->m_alloc,
 					    ptr);
 				}
-				alloc_traits::deallocate(this->m_alloc,
+				alloc_traits::deallocate(*this->m_alloc,
 				    ptr, 1);
 			}
 		}
@@ -436,7 +449,7 @@ private:
 	void
 	_enqueue(managed_pointer&& ptr) noexcept
 	{
-		assert(ptr);
+		assert(ptr && ptr.get_deleter().m_call_destructor);
 		const bool was_empty = this->m_list.empty();
 		this->m_list.push_back(*ptr.release());
 		if (was_empty)
@@ -535,6 +548,231 @@ class msg_queue<void, Allocator>
 
 
 using mq_detail::msg_queue_events;
+
+
+/*
+ * Prepared statement enqueue.
+ *
+ * Allows specifying an enqueue operation, with the guarantee that it will
+ * complete succesfully at commit (nothrow specification, iff correctly used).
+ *
+ * commit() will throw iff commit() is called on an unprepared message queue.
+ */
+template<typename MQ>
+class prepare_enqueue
+{
+public:
+	typedef MQ msg_queue;
+	typedef typename msg_queue::element_type element_type;
+
+private:
+	typedef typename msg_queue::managed_pointer pointer;
+
+	msg_queue *m_mq;
+	pointer m_ptr;
+
+public:
+	friend void
+	swap(prepare_enqueue& p, prepare_enqueue& q) noexcept
+	{
+		using std::swap;
+
+		swap(p.m_mq, q.m_mq);
+		swap(p.m_ptr, q.m_ptr);
+	}
+
+	/* Reset the prepared_enqueue to the uninitialized state. */
+	void
+	reset() noexcept
+	{
+		this->m_mq = nullptr;
+		this->m_ptr = nullptr;
+	}
+
+	/* Create an uninitialized prepared statement. */
+	prepare_enqueue()
+	:	m_mq(nullptr),
+		m_ptr(nullptr)
+	{
+		/* Empty body. */
+	}
+
+	/*
+	 * Create a prepared statement and pre-allocate storage for the
+	 * element type.
+	 */
+	prepare_enqueue(msg_queue& mq)
+	:	m_mq(&mq),
+		m_ptr(mq._allocate())
+	{
+		/* Empty body. */
+	}
+
+	/* Cannot copy a prepared statement. */
+	prepare_enqueue(const prepare_enqueue&) = delete;
+
+	/* Move constructor. */
+	prepare_enqueue(prepare_enqueue&& o) noexcept
+	:	prepare_enqueue()
+	{
+		using std::swap;
+
+		swap(*this, o);
+	}
+
+	/* Not copyable. */
+	prepare_enqueue& operator=(const prepare_enqueue&) = delete;
+
+	/*
+	 * Assign a prepared statement to this.
+	 */
+	prepare_enqueue&
+	operator=(prepare_enqueue&& o) noexcept
+	{
+		this->reset();
+		swap(*this, o);
+		return *this;
+	}
+
+	/*
+	 * Assign a value to a prepared statement.
+	 *
+	 * Overwrites a previous value assigned to the prepared statement.
+	 */
+	template<typename... Args>
+	void
+	assign(Args&&... args)
+	{
+		if (!this->m_ptr) {
+			throw std::logic_error("cannot assign "
+			    "to uninitialized prepared enqueue");
+		}
+
+		if (this->m_ptr.get_deleter().m_call_destructor) {
+			*this->m_ptr =
+			    element_type(std::forward<Args>(args)...);
+		} else {
+			this->m_ptr = this->m_mq->_create(
+			    std::move(this->m_ptr),
+			    std::forward<Args>(args)...);
+		}
+	}
+
+	/*
+	 * Create a prepared statement and assign it a value for commit.
+	 */
+	template<typename... Args>
+	prepare_enqueue(msg_queue& mq, Args&&... args)
+	:	prepare_enqueue(mq)
+	{
+		this->assign(std::forward<Args>(args)...);
+	}
+
+	/*
+	 * Commit the prepared statement.
+	 *
+	 * This adds the value to the message queue.
+	 * This function will not throw, unless:
+	 * - the prepared_enqueue is uninitialized,
+	 * - the value that is to be inserted is uninitialized.
+	 */
+	void
+	commit()
+	{
+		if (!this->m_ptr ||
+		    !this->m_ptr.get_deleter().m_call_destructor) {
+			throw std::logic_error("commit called on "
+			    "unintialized prepared enqueue");
+		}
+
+		assert(this->m_mq);
+		this->m_mq->_enqueue(std::move(this->m_ptr));
+		this->reset();
+	}
+};
+
+/*
+ * Prepare_enqueue specialization for void message queues.
+ *
+ * Note that unlike the typed prepare_enqueue, this has no distinction
+ * between allocation-only and initialized values.
+ */
+template<typename Allocator>
+class prepare_enqueue<msg_queue<void, Allocator>>
+{
+public:
+	typedef ilias::msg_queue<void, Allocator> msg_queue;
+	typedef typename msg_queue::element_type element_type;
+
+private:
+	msg_queue *m_mq;
+
+public:
+	friend void
+	swap(prepare_enqueue& p, prepare_enqueue& q) noexcept
+	{
+		using std::swap;
+
+		swap(p.m_mq, q.m_mq);
+	}
+
+	void
+	reset() noexcept
+	{
+		this->m_mq = nullptr;
+	}
+
+	constexpr prepare_enqueue()
+	:	m_mq(nullptr)
+	{
+		/* Empty body. */
+	}
+
+	prepare_enqueue(msg_queue& mq)
+	:	m_mq(&mq)
+	{
+		/* Empty body. */
+	}
+
+	prepare_enqueue(const prepare_enqueue&) = delete;
+
+	prepare_enqueue(prepare_enqueue&& o) noexcept
+	:	prepare_enqueue()
+	{
+		swap(*this, o);
+	}
+
+	prepare_enqueue& operator=(const prepare_enqueue&) = delete;
+
+	prepare_enqueue&
+	operator=(prepare_enqueue&& o) noexcept
+	{
+		this->reset();
+		swap(*this, o);
+		return *this;
+	}
+
+	void
+	assign()
+	{
+		if (!this->m_mq) {
+			throw std::logic_error("cannot assign "
+			    "to uninitialized prepared enqueue");
+		}
+	}
+
+	void
+	commit()
+	{
+		if (!this->m_mq) {
+			throw std::logic_error("commit called on "
+			    "uninitialized prepared enqueue");
+		}
+
+		this->m_mq->enqueue();
+		this->reset();
+	}
+};
 
 
 } /* namespace ilias */
