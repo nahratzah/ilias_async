@@ -146,3 +146,4 @@ set_property (TARGET ilias_async PROPERTY SOVERSION "0.0")
 # Enable examples.
 #
 add_subdirectory (examples)
+add_subdirectory (tools)
