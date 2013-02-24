@@ -425,7 +425,7 @@ private:
 			    std::forward<Args>(args)...);
 			ptr.get_deleter().m_call_destructor = true;
 		}
-		return ptr;
+		return std::move(ptr);
 	}
 
 	/* Returns a managed pointer. */
