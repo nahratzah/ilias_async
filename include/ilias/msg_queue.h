@@ -270,8 +270,8 @@ public:
 	void
 	enqueue_n(size_t n) noexcept
 	{
-		if (this->m_size.fetch_add(n, std::memory_order_relaxed) == 0)
-			this->_fire_output();
+		this->m_size.fetch_add(n, std::memory_order_release);
+		this->_fire_output();
 	}
 
 	/* Enqueue an untyped message. */
@@ -444,6 +444,8 @@ private:
 	{
 		this->m_list.clear_and_dispose(_destroy(this->m_alloc, true));
 		this->_fire_empty();
+		if (!this->empty())
+			this->_fire_output();
 	}
 
 	void
@@ -452,8 +454,7 @@ private:
 		assert(ptr && ptr.get_deleter().m_call_destructor);
 		const bool was_empty = this->m_list.empty();
 		this->m_list.push_back(*ptr.release());
-		if (was_empty)
-			this->_fire_output();
+		this->_fire_output();
 	}
 
 public:
@@ -521,8 +522,21 @@ public:
 				break;
 			f(elem->move());
 		}
+
+		/*
+		 * Checking if the queue is empty and subsequent firing is
+		 * a race: between the check and the event firing, an
+		 * enqueue could happen making the empty-event wrong.
+		 *
+		 * The race is solved by immediately checking after firing
+		 * the event, if it still holds.  If not, an output event is
+		 * generated immediately after.
+		 */
 		if (this->empty())
 			this->_fire_empty();
+		if (!this->empty())
+			this->_fire_output();
+
 		return f;
 	}
 };

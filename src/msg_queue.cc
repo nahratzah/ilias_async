@@ -39,8 +39,15 @@ void_msg_queue::_dequeue(uintptr_t max) noexcept
 		subtract = std::min(sz, max);
 	} while (!this->m_size.compare_exchange_weak(sz, sz - subtract,
 	    std::memory_order_relaxed, std::memory_order_relaxed));
+
+	/*
+	 * Solve the race between checking for empty and firing empty event.
+	 */
 	if (sz == subtract)
 		this->_fire_empty();
+	if (!this->empty())
+		this->_fire_output();
+
 	return subtract;
 }
 
