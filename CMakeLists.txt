@@ -110,6 +110,7 @@ list (APPEND hdrs
 	include/ilias/wq_promise.h
 	include/ilias/combi_promise.h
 	include/ilias/threadpool.h
+	include/ilias/tuple.h
 	include/ilias/workq.h
 	)
 list (APPEND srcs
@@ -121,6 +122,7 @@ list (APPEND srcs
 	src/wq_promise.cc
 	src/combi_promise.cc
 	src/threadpool.cc
+	src/tuple.cc
 	src/workq.cc
 	)
 add_definitions (-Dilias_async_EXPORTS)		# Enable export of library interface.

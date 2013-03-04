@@ -55,22 +55,21 @@ struct unpack
 
 	template<typename Functor, typename... Args>
 	static auto
-	invoke(Tuple&& t, Functor&& f, Args&&... args)
+	invoke(Tuple& t, Functor&& f, Args&&... args)
 	noexcept(
-		noexcept(unpack<Tuple, N + 1>::invoke(std::move(t),
+		noexcept(unpack<Tuple, N + 1>::invoke(std::forward<Tuple>(t),
 		    std::forward<Functor>(f),
 		    std::forward<Args>(args)...,
 		    std::move(std::get<N>(t))))) ->
-	decltype(unpack<Tuple, N + 1>::invoke(std::move(t),
+	decltype(unpack<Tuple, N + 1>::invoke(std::forward<Tuple>(t),
 		    std::forward<Functor>(f),
 		    std::forward<Args>(args)...,
 		    std::move(std::get<N>(t))))
 	{
-		auto append = std::move(std::get<N>(t));
-		return unpack<Tuple, N + 1>::invoke(std::move(t),
+		return unpack<Tuple, N + 1>::invoke(std::forward<Tuple>(t),
 		    std::forward<Functor>(f),
 		    std::forward<Args>(args)...,
-		    std::move(append));
+		    std::get<N>(t));
 	}
 };
 /*
@@ -101,7 +100,7 @@ struct tail
 {
 	template<typename T0, typename... Types>
 	std::tuple<Types...>
-	operator()(const T0& v0, Types&&... types)
+	operator()(T0&& v0, Types&... types)
 	noexcept(noexcept(std::make_tuple(std::forward<Types>(types)...)))
 	{
 		return std::make_tuple(std::forward<Types>(types)...);
@@ -140,14 +139,14 @@ struct slice<0U, End>
 	operator()(T0&& v0, Types&&... t)
 	noexcept(noexcept(std::tuple_cat(
 		    std::make_tuple(std::forward<T0>(v0)),
-		    slice<0U, End - 1>()(std::forward<Types>(t))))) ->
+		    slice<0U, End - 1>()(std::forward<Types>(t)...)))) ->
 	decltype(std::tuple_cat(
 		    std::make_tuple(std::forward<T0>(v0)),
-		    slice<0U, End - 1>()(std::forward<Types>(t))))
+		    slice<0U, End - 1>()(std::forward<Types>(t)...)))
 	{
 		return std::tuple_cat(
 		    std::make_tuple(std::forward<T0>(v0)),
-		    slice<0U, End - 1>()(std::forward<Types>(t)));
+		    slice<0U, End - 1>()(std::forward<Types>(t)...));
 	}
 };
 
@@ -180,12 +179,20 @@ struct visit_args
 		/* Empty body. */
 	}
 
+	void
+	operator()() const noexcept
+	{
+		/* Empty body. */
+	}
+
 	template<typename T0, typename... T>
 	void
 	operator()(T0&& v0, T&&... v)
+	noexcept(noexcept(functor(std::forward<T0>(v0))) &&
+		noexcept((*this)(std::forward<T>(v)...)))
 	{
 		functor(std::forward<T0>(v0));
-		(*this)(std::forward<T>(v));
+		(*this)(std::forward<T>(v)...);
 	}
 };
 
