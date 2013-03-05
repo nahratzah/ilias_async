@@ -69,6 +69,7 @@ Additional specializations may be provided for different callback implementation
 The callback installed via ```output_callback``` is called whenever a new element is enqueued.  The empty callback is called when the message queue becomes empty (from a call to dequeue).  These calls may fire spuriously (i.e. the empty-callback is invoked while the message queue is not empty, or the output-callback is invoked while the message queue has no pending messages).
 
 Example: a callback that appends messages to a global vector:
+
 	ilias::msg_queue<int> my_msg_queue;
 	std::vector<int> global_vector;
 
