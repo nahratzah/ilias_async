@@ -1,13 +1,13 @@
-ilias_async
-===========
+IliasAsync
+==========
 
-Asynchronous message queues and events.
-
+Asynchronous event-loops, promises and message queues.
 
 This library provides primitives for asynchronous code:
-- workq - an strand of related jobs, none of which may execute concurrently (except for specific cases).
-- workq_job - a routine which executes a small amount of work;  can be activated and deactivated.
-- workq_service - a manager for multiple workqs, implements scheduling of work units.
-- promise - an event-based promise (I may in the future replace this with boost code, if I can figure out the event handling)
-- msg_queue - a message queue implementation (WIP)
-- refcnt - reference counted pointers
+- [workq](documentation/workq.md "workq documentation")
+- [promise](documentation/promise.md "promise and future documentation")
+- [message queues](documentation/msg_queue.md "message queue documentation")
+- refcnt (intrusive reference counting pointers, used a lot inside the library)
+- ll (a lock-free linked list, used internally to reduce the need for locking)
+
+Each of the subsystems can be used on its own, be integrated in existing code bases or be used in combination with eachother.
