@@ -56,12 +56,14 @@ The read concept for a message queue ```MQ``` provides:
 The ```empty()``` method can be used to test if the message queue has pending messages.  The ```dequeue()``` method can be used to read up to ```n``` messages from the queue, with each message being visited by the template Functor.
 
 Furthermore, the MessageQueueRead aspect has two event callbacks:
+
 	class MQ {
 		friend void output_callback(MQ& mq, std::function<void()> callback) noexcept;
 		friend void empty_callback(MQ& mq, std::function<void()> callback) noexcept;
 		friend void output_callback(MQ& mq, std::nullptr_t) noexcept;
 		friend void empty_callback(MQ& mq, std::nullptr_t) noexcept;
 	};
+
 Additional specializations may be provided for different callback implementations, which would be implemented in terms of the above.
 
 The callback installed via ```output_callback``` is called whenever a new element is enqueued.  The empty callback is called when the message queue becomes empty (from a call to dequeue).  These calls may fire spuriously (i.e. the empty-callback is invoked while the message queue is not empty, or the output-callback is invoked while the message queue has no pending messages).
