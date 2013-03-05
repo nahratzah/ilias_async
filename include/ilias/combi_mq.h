@@ -1,3 +1,26 @@
+/*
+ * Copyright (c) 2013 Ariane van der Steldt <ariane@stack.nl>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+#include <ilias/ilias_async_export.h>
+#include <ilias/msg_queue.h>
+#include <ilias/tuple.h>
+#include <functional>
+#include <mutex>
+#include <tuple>
+#include <utility>
+
 namespace ilias {
 namespace combiner_detail {
 
@@ -13,9 +36,9 @@ class combiner_opt
 public:
 	using element_type = Type;
 	using pointer = element_type*;
-	using const pointer = const element_type*;
+	using const_pointer = const element_type*;
 	using reference = element_type&;
-	using const reference = const element_type&;
+	using const_reference = const element_type&;
 
 private:
 	union impl
@@ -33,7 +56,7 @@ private:
 	static constexpr bool noexcept_move =
 	    std::is_nothrow_move_constructible<element_type>::value;
 	static constexpr bool noexcept_move_assign =
-	    std::is_nothrow_move_assignible<element_type>::value;
+	    std::is_nothrow_move_assignable<element_type>::value;
 	static constexpr bool noexcept_destroy =
 	    std::is_nothrow_destructible<element_type>::value;
 	static constexpr bool moveable =
@@ -150,8 +173,9 @@ public:
 	 * Implement move constructor
 	 * iff element_type is move constructible.
 	 */
-	combiner_opt(const std::enable_if<moveable>::value,
-	    combiner_opt&>::type o) noexcept(noexcept_move && noexcept_destroy)
+	combiner_opt(const typename std::enable_if<moveable,
+	    combiner_opt&>::type o)
+	noexcept(noexcept_move && noexcept_destroy)
 	{
 		if (o.m_isset) {
 			new (&this->m_impl.v) element_type(
@@ -274,22 +298,26 @@ public:
 template<typename T>
 auto
 combi_opt_as_tuple(combiner_opt<T>&& v)
+noexcept((std::make_tuple(v.move()))) ->
+decltype(std::make_tuple(v.move()))
 {
 	return std::make_tuple(v.move());
 }
 template<typename T>
 auto
 combi_opt_as_tuple(const combiner_opt<T>& v)
+noexcept(noexcept(std::make_tuple(*v))) ->
+decltype(std::make_tuple(*v))
 {
 	return std::make_tuple(*v);
 }
 std::tuple<>
-combi_opt_as_tuple(const combiner_opt<void>& v)
+combi_opt_as_tuple(const combiner_opt<void>& v) noexcept
 {
 	return std::make_tuple();
 }
 std::tuple<>
-combi_opt_as_tuple(combiner_opt<void>& v)
+combi_opt_as_tuple(combiner_opt<void>& v) noexcept
 {
 	v.reset();
 	return std::make_tuple();
@@ -302,7 +330,7 @@ combi_opt_as_tuple(combiner_opt<void>& v)
  */
 struct combi_opt_as_tuple_support
 {
-	template<typename MQ..., typename... T>
+	template<typename... MQ, typename... T>
 	auto
 	operator()(std::tuple<MQ, T>&&... v) const
 	noexcept(noexcept(std::tuple_cat(
@@ -314,7 +342,7 @@ struct combi_opt_as_tuple_support
 		    combi_opt_as_tuple(std::move(std::get<1>(v)))...);
 	}
 
-	template<typename MQ..., typename... T>
+	template<typename... MQ, typename... T>
 	auto
 	operator()(const std::tuple<MQ, T>&... v) const
 	noexcept(noexcept(std::tuple_cat(
@@ -329,18 +357,18 @@ struct combi_opt_as_tuple_support
 
 
 /* Convert a tuple of combiner_opt elements to their deferenced values. */
-template<typename... Types>
+template<typename... MQ, typename... Types>
 auto
-combi_opt_as_tuple(std::tuple<combiner_opt<Types>...>&& t)
+combi_opt_as_tuple(std::tuple<std::tuple<MQ, combiner_opt<Types>>...>&& t)
 noexcept(noexcept(unpack(std::move(t), combi_opt_as_tuple_support()))) ->
 decltype(unpack(std::move(t), combi_opt_as_tuple_support()))
 {
 	return unpack(std::move(t), combi_opt_as_tuple_support());
 }
 /* Convert a tuple of combiner_opt elements to their deferenced values. */
-template<typename... Types>
+template<typename... MQ, typename... Types>
 auto
-combi_opt_as_tuple(const std::tuple<combiner_opt<Types>...>& t)
+combi_opt_as_tuple(const std::tuple<std::tuple<MQ, combiner_opt<Types>>...>& t)
 noexcept(noexcept(unpack(t, combi_opt_as_tuple_support()))) ->
 decltype(unpack(t, combi_opt_as_tuple_support()))
 {
@@ -396,6 +424,28 @@ none(const Tuple& t) noexcept
 }
 
 
+namespace {
+
+/* Simple functor for declval declaring a no-except functor. */
+template<typename T>
+struct noexcept_functor
+{
+	void operator()(T v) const noexcept {};
+};
+
+/*
+ * Simple functor for declval declaring a no-except functor
+ * without arguments.
+ */
+template<>
+struct noexcept_functor<void>
+{
+	void operator()() const noexcept {};
+};
+
+} /* namespace ilias::combiner_detail::<unnamed> */
+
+
 /*
  * Support function for combiner.
  * Given a tuple<mq, combiner_opt>, it will fetch a value from mq and
@@ -405,13 +455,17 @@ none(const Tuple& t) noexcept
  */
 struct fetcher
 {
+private:
 	template<typename T, typename U>
 	bool
 	operator()(std::tuple<T, combiner_opt<U>>& v) const
-	noexcept(noexcept(
-		std::get<0>(v).dequeue([&v](typename T::element_type value) {
-			std::get<1>(v).assign(value);
-		    }, 1)))
+	noexcept(
+		noexcept(std::get<0>(v).dequeue(
+		    std::declval<noexcept_functor<typename T::element_type>>()
+		    )) &&
+		noexcept(std::get<1>(v).assign(
+		    std::declval<typename T::element_type&&>())) &&
+		std::is_nothrow_destructible<typename T::element_type>::value)
 	{
 		bool rv = false;
 		if (!std::get<1>(v)) {
@@ -427,10 +481,10 @@ struct fetcher
 	template<typename T>
 	bool
 	operator()(std::tuple<T, combiner_opt<void>>& v) const
-	noexcept(noexcept(
-		std::get<0>(v).dequeue([&v]() {
-			std::get<1>(v).assign();
-		    }, 1)))
+	noexcept(
+		noexcept(std::get<0>(v).dequeue(
+		    std::declval<noexcept_functor<void>>())) &&
+		noexcept(std::get<1>(v).assign()))
 	{
 		bool rv = false;
 		if (!std::get<1>(v)) {
@@ -463,13 +517,16 @@ template<typename... MQ>
 class combiner
 :	public msg_queue_events
 {
+static_assert(sizeof...(MQ) > 0,
+    "Cannot combine messages without input queues.");
+
 private:
 	using opts = std::tuple<std::tuple<MQ&,
 	    combiner_detail::combiner_opt<typename MQ::element_type>>...>;
 
 public:
-	using element_type =
-	    decltype(combiner_detail::combi_opt_as_tuple(opts()));
+	using element_type = decltype(
+	    combiner_detail::combi_opt_as_tuple(std::declval<opts>()));
 
 private:
 	std::mutex m_mtx;
@@ -544,7 +601,7 @@ public:
 				/* Empty body. */
 			}
 
-			template<typename... Types>
+			template<typename T0, typename... Types>
 			void
 			operator()(T0& v0, Types&&... tail) const
 			{
@@ -560,7 +617,7 @@ public:
 				T0* element = &v0;
 				std::function<void()> callback{
 				    [self, element]() {
-					fire = false;
+					bool fire = false;
 					{
 						std::lock_guard<std::mutex>
 						    guard{ self->m_mtx };
@@ -624,7 +681,10 @@ public:
 	template<typename Functor>
 	Functor
 	dequeue(Functor&& f, std::size_t n = 1)
-	noexcept(noexcept(this->_dequeue(lck, std::forward<Functor>(f), n)))
+	noexcept(
+		noexcept(this->_dequeue(
+		    std::declval<std::unique_lock<std::mutex>>(),
+		    std::forward<Functor>(f), n)))
 	{
 		std::unique_lock<std::mutex> lck(this->m_mtx);
 		auto rv = this->_dequeue(lck, std::forward<Functor>(f), n);
