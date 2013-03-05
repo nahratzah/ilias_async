@@ -7,6 +7,6 @@ A ```promise<T>``` is considered live (can be completed) if at least one thread 
 
 
 TODO
-[ ] Describe promise callback
-[ ] Describe future callbacks
-[ ] Describe promise start commands
+- [ ] Describe promise callback
+- [ ] Describe future callbacks
+- [ ] Describe promise start commands
