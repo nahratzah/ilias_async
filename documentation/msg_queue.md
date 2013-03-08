@@ -32,12 +32,15 @@ MessageQueueWrite
 A message queue implementing the *MessageQueueWrite* concept can be written to.
 
 A single message is written to a message queue by calling the enqueue method.  The example write a message (42) to the message queue:
+
 	ilias::msg_queue<int> mq;
 	mq.enqueue(42);
 
 The enqueue method is a template, which will cause the element type to be instantiated using the arguments provided.  For instance:
+
 	ilias::msg_queue<std::tuple<int, int>> mq;
 	mq.enqueue(6, 7);
+
 will enqueue a single message ```std::tuple<int, int>{ 6, 7 }``` on the queue.
 
 The enqueue method will provide the strong exception guarantee: in case an exception is thrown, the message queue will not be altered.
@@ -51,8 +54,10 @@ MessageQueueRead
 This concept describes read capability on a message queue.  Each message that was enqueued on the message queue will be read at most once.
 
 The read concept for a message queue ```MQ``` provides:
+
 	bool MQ::empty() const noexcept;
 	template<typename Functor> Functor MQ::dequeue(Functor f, std::size_t n = 1);
+
 The ```empty()``` method can be used to test if the message queue has pending messages.  The ```dequeue()``` method can be used to read up to ```n``` messages from the queue, with each message being visited by the template Functor.
 
 Furthermore, the MessageQueueRead aspect has two event callbacks:
