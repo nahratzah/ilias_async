@@ -21,7 +21,7 @@ This concept describes the general principles of a message queue.
 Each message queue (class MQ) is thread-safe container of messages.  Messages enter the message queue on one end and exit on the other end.  Message queues do not preserve the input order on their output: ```mq.enqueue(a); mq.enqueue(b);``` may yield outputs ```a``` and ```b``` in any order.  Most message queues do use FIFO semantics or make a best attempt at maintaining them, but don't count on a specific ordering.
 
 ```typename MQ::element_type``` declares the type of the messages in the message queue.
-```typename MQ::pointer```, ```typename MQ::const_pointer```, ```typename MQ::reference``` and ```typename MQ::const_reference``` describe respectively describe the pointer, const-pointer, reference and const-reference variant of ```element_type```.
+```typename MQ::pointer```, ```typename MQ::const_pointer```, ```typename MQ::reference``` and ```typename MQ::const_reference``` respectively describe the pointer, const-pointer, reference and const-reference variant of ```element_type```.
 
 Message queues cannot be copied, moved or assigned to (unless explicitly stated otherwise).
 
