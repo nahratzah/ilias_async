@@ -36,12 +36,26 @@ A default constructed promise is uninitialized (thus allowing copying/moving exi
 	};
 
 
-You can assign a value by calling the '''set()''' method, which performs in-place construction of the assigned value, using the provided arguments.  The set method will return if the assignment was succesful: if the assignment failed, the promise already holds a result.
+You can assign a value by calling the '''promise<T>::set()''' method, which performs in-place construction of the assigned value, using the provided arguments.  The set method will return if the assignment was succesful: if the assignment failed, the promise already holds a result.  If the constructor fails, the promise will be assigned the exception of the constructor instead *I may want to change that...*.
 
 	template<typename T>
 	class promise
 	{
-		template<typename... Args> bool set(Args&&... args) throw (uninitialized_promise, ...);
+		template<typename... Args>
+		bool
+		set(Args&&... args)
+		throw (uninitialized_promise,	// if the promise is used uninitialized
+		    ... /* Any exception thrown by constructor of T. */ );
+	};
+
+Instead of assigning a value, you can also assign an exception, using the '''promise<T>::set_exception''' method.  Like '''promise<T>::set''', the '''promise<T>::set_exception''' method will return true only if the promise was not assigned to.
+
+	template<typename T>
+	class promise
+	{
+		bool
+		set_exception(std::exception_ptr exception)
+		throw (uninitialized_promise);	// if the promise is used uninitialized
 	};
 
 
@@ -50,3 +64,4 @@ TODO
 - [ ] Describe promise callback
 - [ ] Describe future callbacks
 - [ ] Describe promise start commands
+- [ ] Describe is_initialized, has_value, has_exception, ready methods on both promise and future
