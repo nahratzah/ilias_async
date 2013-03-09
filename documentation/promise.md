@@ -9,7 +9,7 @@ A ```promise<T>``` is considered live (can be completed) if at least one thread 
 Promise
 -------
 
-'''class promise<T>''' declares the intent to yield a value of type '''T'''.  A promise is immutable once assigned.  Instead of assigning a value you can assign exception.
+```class promise<T>``` declares the intent to yield a value of type ```T```.  A promise is immutable once assigned.  Instead of assigning a value you can assign exception.
 
 	template<typename T>
 	class promise
@@ -23,7 +23,7 @@ Promise
 	};
 
 
-A default constructed promise is uninitialized (thus allowing copying/moving existing promises into existing variables).  When an initialized promise is copied, both promises refer to the same shared state.  A new, initialized promise can be constructed by calling '''promise<Type>::create()'''.
+A default constructed promise is uninitialized (thus allowing copying/moving existing promises into existing variables).  When an initialized promise is copied, both promises refer to the same shared state.  A new, initialized promise can be constructed by calling ```promise<Type>::create()```.
 
 	template<typename T>
 	class promise
@@ -36,7 +36,7 @@ A default constructed promise is uninitialized (thus allowing copying/moving exi
 	};
 
 
-You can assign a value by calling the '''promise<T>::set()''' method, which performs in-place construction of the assigned value, using the provided arguments.  The set method will return if the assignment was succesful: if the assignment failed, the promise already holds a result.  If the constructor fails, the promise will be assigned the exception of the constructor instead *I may want to change that...*.
+You can assign a value by calling the ```promise<T>::set()``` method, which performs in-place construction of the assigned value, using the provided arguments.  The set method will return if the assignment was succesful: if the assignment failed, the promise already holds a result.  If the constructor fails, the promise will be assigned the exception of the constructor instead *I may want to change that...*.
 
 	template<typename T>
 	class promise
@@ -48,7 +48,7 @@ You can assign a value by calling the '''promise<T>::set()''' method, which perf
 		    ... /* Any exception thrown by constructor of T. */ );
 	};
 
-Instead of assigning a value, you can also assign an exception, using the '''promise<T>::set_exception''' method.  Like '''promise<T>::set''', the '''promise<T>::set_exception''' method will return true only if the promise was not assigned to.
+Instead of assigning a value, you can also assign an exception, using the ```promise<T>::set_exception``` method.  Like ```promise<T>::set```, the ```promise<T>::set_exception``` method will return true only if the promise was not assigned to.
 
 	template<typename T>
 	class promise
