@@ -22,6 +22,9 @@ Promise
 		using const_reference = const value_type&;
 	};
 
+	template<typename Type>
+	promise<Type> new_promise();
+
 
 A default constructed promise is uninitialized (thus allowing copying/moving existing promises into existing variables).  When an initialized promise is copied, both promises refer to the same shared state.  A new, initialized promise can be constructed by calling ```promise<Type>::create()``` or preferably by calling ```new_promise<Type>(...)```.
 
