@@ -67,12 +67,14 @@ Futures
 
 A future represents the (asynchronous) outcome of a promise.  When a promise is assigned a value to, all futures bound to it will be able to access the assigned value.
 
-The default constructor of future creates an uninitialized future (i.e. one not bound to (the shared state of) a promise).  Futures can be derived from promises either by invoking their constructor with the promise.
+The default constructor of future creates an uninitialized future (i.e. one not bound to (the shared state of) a promise).  Futures can be derived from promises either by invoking their constructor with the promise or by calling ```new_promise``` with a callback.
 
 	promise<int> p = new_promise<int>();  // Create an initialized promise.
 	future<int> f1;  // An uninitialized future.
 	future<int> f2 = p;  // Promise bound to future p.
 	f1 = p;  // Assign future corresponding to promise p.
+
+	future<int> f = new_promise<int>(my_callback);  // See callbacks on futures and promises.
 
 
 A future can be used to read the value that the promise assigned.  ```future<T>::get()``` will return the value.  If the promise assigned an exception, the exception will be thrown instead.  The ```future<T>::get()``` method will block until the promise is ready.
@@ -137,4 +139,3 @@ TODO
 - [ ] Describe promise callback
 - [ ] Describe future callbacks
 - [ ] Describe promise start commands
-- [ ] Describe is_initialized, has_value, has_exception, ready methods on both promise and future
