@@ -191,7 +191,7 @@ Instead of creating a promise and then installing a callback, these two actions 
 
 	future<int> the_answer = new_promise<int>([](promise<int> p) {
 		p.set(42);
-	    });
+	  });
 
 
 Future events
@@ -224,4 +224,84 @@ If a callback is installed on a future that is ready, the callback will be invok
 		} catch (...) {
 			std::cerr << "Failed to find the answer to the life, the universe and everything." << std::endl;
 		}
-	    });
+	  });
+
+
+Composing promises
+------------------
+
+Promises increase their power by combining them.  This process is called *promise composition*.
+
+The combine method handles all details behind the scenes:
+
+	template<typename Type, typename Functor, typename... Futures>
+	future<Type> combine(Functor&& functor, Futures&&... input_futures);
+
+	template<typename Type, typename Functor, typename... Futures>
+	future<Type> combine(Functor&& functor, std::tuple<Futures...>&& input_futures);
+
+This function will create a ```future<Type>```.  The promise associated with the returned future will have a promise callback installed, which will execute once the returned future is started and each of the input futures completes.  None of the input futures will be started until the returned future is started.
+
+The functor is user-provided code that will calculate the promised value from the input futures.  Its prototype must be: ```void functor(promise<Type>, std::tuple<...> input_futures)```.
+
+Suppose we have a document, that may only be read by an authenticated user.  We need to ask the user for their login and password and only produce the document if it matches.
+
+	using login_promise = promise<std::string>;
+	using password_promise = promise<std::string>;
+	using document_promise = promise<document_type>;
+	using login_future = future<std::string>;
+	using password_future = future<std::string>;
+	using document_future = future<document_type>;
+
+	/* Declare base promises: login, password and document. */
+	login_future login = new_promise<std::string>([](login_promise l) {
+		l.set(ask_user_for_login());
+	  });
+	password_future password = new_promise<std::string>([](password_promise p) {
+		p.set(ask_user_for_password());
+	  });
+	document_future doc = new_promise<document_type>([](document_promise d) {
+		d.set(load_document());
+	  });
+
+	/* Authenticate future: yields login name iff authentication is succesful. */
+	future<std::string> authenticate = combine<std::string>(
+	  [](promise<std::string> auth, std::tuple<login_future, password_future> lp) {
+		using std::get;
+
+		auto& login = std::get<0>(lp);
+		auto& password = std::get<1>(lp);
+		if (authenticate_user(login, password))
+			auth.set(std::get<0>(lp));
+		else
+			throw authentication_failed();
+	  },
+	  login, password);
+
+	/* Create a document promise that only returns the document on succesful authentication. */
+	document_future auth_doc = combine<document_type>(
+	  [](document_promise out, std::tuple<future<std::string>, document_future> auth_and_doc) {
+		using std::get;
+
+		auto& login = std::get<0>(auth_and_doc);
+		auto& doc = std::get<1>(auth_and_doc);
+
+		/*
+		 * Test if authentication was succesful,
+		 * by invoking get() method
+		 * (it will throw and thus cascade
+		 * the exception on authentication faulure).
+		 */
+		login.get();
+
+		out.set(doc.get());
+	  },
+	  authenticate, doc);
+
+	/*
+	 * The auth_doc future will hold the document iff
+	 * - a login name was provided
+	 * - a password was provided
+	 * - authentication was succesful
+	 * - the document could be loaded
+	 */
