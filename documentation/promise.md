@@ -39,7 +39,7 @@ A default constructed promise is uninitialized (thus allowing copying/moving exi
 	};
 
 
-You can assign a value by calling the ```promise<T>::set()``` method, which performs in-place construction of the assigned value, using the provided arguments.  The set method will return if the assignment was succesful: if the assignment failed, the promise already holds a result.  If the constructor fails, the promise will be assigned the exception of the constructor instead *I may want to change that...*.
+You can assign a value by calling the ```promise<T>::set()``` method, which performs in-place construction of the assigned value, using the provided arguments.  The set method will return if the assignment was succesful: if the assignment failed, the promise already holds a result.  If the constructor fails, the promise will be assigned the exception of the constructor instead (this because the promise starts blocking assignments during the operation and the promise may not transition from that state back to unassigned).
 
 	template<typename T>
 	class promise
