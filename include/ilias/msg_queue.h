@@ -32,15 +32,6 @@ namespace ilias {
 namespace mq_detail {
 
 
-/* Input or output side of message queue. */
-enum mq_side
-{
-	MQ_IN = 0,
-	MQ_OUT = 1
-};
-const unsigned int MQ_NSIDES = 2;
-
-
 template<typename Type>
 class mq_elem
 :	public ll_base_hook<>
