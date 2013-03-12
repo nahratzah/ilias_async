@@ -59,6 +59,40 @@ Instead of assigning a value, you can also assign an exception, using the ```pro
 	};
 
 
+Futures
+-------
+
+A future represents the (asynchronous) outcome of a promise.  When a promise is assigned a value to, all futures bound to it will be able to access the assigned value.
+
+The default constructor of future creates an uninitialized future (i.e. one not bound to (the shared state of) a promise).  Futures can be derived from promises either by invoking their constructor with the promise.
+
+	promise<int> p = promise<int>::create();  // Create an initialized promise.
+	future<int> f1;  // An uninitialized future.
+	future<int> f2 = p;  // Promise bound to future p.
+	f1 = p;  // Assign future corresponding to promise p.
+
+
+A future can be used to read the value that the promise assigned.  ```future<T>::get()``` will return the value.  If the promise assigned an exception, the exception will be thrown instead.  The ```future<T>::get()``` method will block until the promise is ready.
+
+	promise<int> p = promise<int>::create();
+	future<int> f = p;
+	p.set(42);
+	f.get();  // Returns 42.
+
+	promise<int> p = promise<int>::create();
+	future<int> f = p;
+	p.set_exception(std::make_exception_ptr(std::exception()));
+	f.get();  // Throws std::exception.
+
+	promise<int> p = promise<int>::create();
+	future<int> f = p;
+	f.get();  // Blocks until p is assigned to (which in this example takes forever).
+
+	future<int> f = promise<int>::create();
+	f.get();  // Throws ilias::broken_promise, since no assignment to the original promise is possible.
+
+
+
 TODO
 ----
 - [ ] Describe promise callback
