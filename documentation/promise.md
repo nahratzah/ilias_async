@@ -133,9 +133,91 @@ The ```ready()``` method tests if the promise has completed.  Once a promise has
 Note that ```is_initialized()```, ```has_value()```, ```has_exception()``` and ```ready()``` will return false when used on an uninitialized promise or future.
 
 
+Asynchronous promise resulution
+-------------------------------
 
-TODO
-----
-- [ ] Describe promise callback
-- [ ] Describe future callbacks
-- [ ] Describe promise start commands
+Instead of using promise and future directly, they can be used via events, which are installed via the global ```callback()``` methods.  This enables asynchronous or lazy resolution of a promise.
+
+	template<typename Type, typename Functor>
+	void callback(promise<Type>& f, Functor&& cb);
+
+	class promise<T> {
+		void start() noexcept;
+	};
+	class future<T> {
+		void start() noexcept;
+	};
+
+Calling callback methods on uninitialized promises or futures will result in an ```uninitialized_promise``` exception being thrown.  The callback functions may fail if insufficient memory is available, in which case ```std::bad_alloc``` will be thrown.
+
+A callback on a promise is used to asynchronously resolve a promise.  The callback must accept invocation as: ```void callback(promise<T> p);```.  The callback will be called at most once, if the promise is started.  Note that the promise callback, in contrast to the asynchronous resolution in the standard, does not return the to-be-assigned value.  By not requiring the to-be-assigned value to be specified immediately, the callback can defer the actual assignment to a later time, or possibly to another thread, simply by passing its ```promise<T>``` argument around.
+
+If the promise callback throws an exception, the exception is assigned to the promise.  Likewise, if the callback returns without assigning a value, the promise will be considered broken once the last reference goes away.
+
+
+The ```start()``` method on a promise or future, can be used to initiate asynchronous resolution.  The order in which a callback is installed and the promise is started makes no difference:
+
+	void
+	install_and_start()
+	{
+		using the_answer = promise<int>;
+		the_answer p;
+		callback(p, [](promise<int> arg) { p.set(42); });
+		p.start();  // Invokes installed callback.
+	}
+
+	void
+	start_and_install()
+	{
+		/* Installing the callback on a started promise will invoke the callback as soon as it is installed. */
+		using the_answer = promise<int>;
+		the_answer p;
+		p.start();
+		callback(p, [](promise<int> arg) { p.set(42); });  // Invoked immediately, since the promise was already started.
+	}
+
+Calling ```future<T>::start()``` will have the same effect as calling ```promise<T>::start()```, both will start resolution of the promise.  The ```future<T>::wait()``` and ```future<T>::get()``` methods will implicitly start their associated promise.  When a promise completes (i.e. is assigned to) the promise callback will be destroyed and no new callback can be installed.
+
+
+Instead of creating a promise and then installing a callback, these two actions are best combined at promise construction, using the global ```new_promise(...)``` function.
+
+	template<typename Type, typename... CallbackArgs>
+	future<Type> new_promise(CallbackArgs&&... cb_args)
+	{
+		promise<Type> p = new_promise<Type>();
+		callback(p, std::forward<CallbackArgs>(cb_args)...);
+		return future<Type>{ p };
+	}
+
+	future<int> the_answer = new_promise<int>([](promise<int> p) {
+		p.set(42);
+	    });
+
+
+Future events
+-------------
+
+The way promises can be resolved asynchronously, also applies to futures.  By installing a callback on a future, the callback will be invoked once the promise completes.  Callbacks installed on futures will be invoked exactly once, when the promise is ready.
+
+	enum promise_start {
+		PROM_START,
+		PROM_DEFER
+	};
+
+	template<typename Type, typename Functor>
+	void callback(future<Type>& f, Functor&& cb, promise_start ps = PROM_START);
+
+The callback must have a signature ```void callback(future<Type> f) noexcept```.  The callback will be destroyed after it completes.
+
+Contrary to a promise, a future can have multiple callbacks installed which each will fire.
+
+The ```promise_start``` argument is used to determine if the promise must be started.  ```PROM_START``` (the default) will start the promise, as if by calling ```future<T>::start()```.  ```PROM_DEFER``` will not start the promise.
+
+If a callback is installed on a future that is ready, the callback will be invoked immediately:
+
+	promise<int> p = new_promise<int>();
+	future<int> f = p;
+	p.set(42);
+	callback(f, [](future<int> cb_arg) {
+		std::cout << "The answer to the life, the universe and everything is " << cb_arg.get() << "." << std::endl;
+	    });
