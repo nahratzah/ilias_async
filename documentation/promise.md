@@ -219,5 +219,9 @@ If a callback is installed on a future that is ready, the callback will be invok
 	future<int> f = p;
 	p.set(42);
 	callback(f, [](future<int> cb_arg) {
-		std::cout << "The answer to the life, the universe and everything is " << cb_arg.get() << "." << std::endl;
+		try {
+			std::cout << "The answer to the life, the universe and everything is " << cb_arg.get() << "." << std::endl;
+		} catch (...) {
+			std::cerr << "Failed to find the answer to the life, the universe and everything." << std::endl;
+		}
 	    });
