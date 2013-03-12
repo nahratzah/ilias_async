@@ -17,7 +17,6 @@
 #define ILIAS_MSG_QUEUE_H
 
 #include <ilias/ilias_async_export.h>
-#include <ilias/eventset.h>
 #include <ilias/ll.h>
 #include <cassert>
 #include <algorithm>
@@ -25,6 +24,7 @@
 #include <functional>
 #include <type_traits>
 #include <memory>
+#include <mutex>
 #include <utility>
 
 
@@ -127,106 +127,167 @@ public:
 /*
  * Message queue events.
  */
+template<typename Derived>
 class msg_queue_events
 {
 private:
-	enum event : unsigned int {
-		MQ_EV_OUTPUT,
-		MQ_EV_EMPTY
+	enum class state : int {
+		IDLE,
+		BUSY,
+		AGAIN
 	};
-	static constexpr unsigned int N_EVENTS = 2;
 
-	eventset<N_EVENTS> ev{ event::MQ_EV_EMPTY };
+	std::atomic<state> m_state{ state::IDLE };
+
+	std::mutex m_evmtx;
+	bool m_ev_restore{ false };		/* Protected by m_evmtx. */
+	std::function<void (Derived&)> m_ev;	/* Protected by m_evmtx. */
+
+	/*
+	 * Inner function: fires m_ev.
+	 * Not safe against concurrent invocations.
+	 */
+	void
+	_fire_event() noexcept
+	{
+		std::function<void (Derived&)> tmp;
+		std::unique_lock<std::mutex> guard{ this->m_evmtx };
+
+		swap(tmp, this->m_ev);
+		if (tmp) {
+			this->m_ev_restore = true;
+			guard.unlock();
+
+			/*
+			 * Invoke function (which is temporarily copied to tmp,
+			 * to prevent it from being deleted from within its
+			 * invocation.
+			 */
+			tmp(static_cast<Derived&>(*this));
+
+			guard.lock();
+			if (this->m_ev_restore) {
+				swap(this->m_ev, tmp);
+				this->m_ev_restore = false;
+			} else {
+				/* Destroy event outside of event lock. */
+				guard.unlock();
+				tmp = nullptr;
+				guard.lock();
+			}
+		}
+	}
 
 protected:
 	msg_queue_events() = default;
 
 	msg_queue_events(const msg_queue_events&) = delete;
 	msg_queue_events& operator=(const msg_queue_events&) = delete;
-	msg_queue_events(msg_queue_events&&) = delete;
 
-	ILIAS_ASYNC_EXPORT ~msg_queue_events() noexcept;
-
-	void
-	_fire_output() noexcept
+	/* Move constructor. */
+	msg_queue_events(msg_queue_events&& mqe) noexcept
+	:	m_ev(std::move(mqe.m_ev))
 	{
-		this->ev.fire(event::MQ_EV_OUTPUT);
+		assert(mqe.m_state == state::IDLE);
 	}
 
-	void
-	_fire_empty() noexcept
+	~msg_queue_events() noexcept
 	{
-		this->ev.fire(event::MQ_EV_EMPTY);
+		assert(this->m_state == state::IDLE);
+	}
+
+	/*
+	 * Fire message queue event.
+	 *
+	 * If the event is already running, make sure it will run again
+	 * once it completes (to prevent missed wakeups).
+	 */
+	void
+	_fire() noexcept
+	{
+		/* Lacking using statement to import class members... */
+		constexpr state IDLE = state::IDLE;
+		constexpr state BUSY =  state::BUSY;
+		constexpr state AGAIN = state::AGAIN;
+
+		/*
+		 * We always transition to AGAIN.
+		 * If it turns out we transitioned from the IDLE state,
+		 * we immediately transition to BUSY and
+		 * start executing the event.
+		 */
+		state s = this->m_state.exchange(AGAIN,
+		    std::memory_order_acq_rel);
+		if (s == IDLE) {
+			do {
+				/*
+				 * Force to BUSY: we are going to execute.
+				 * Multiple invocations up to now will result
+				 * in a single event.
+				 */
+				this->m_state.store(BUSY,
+				    std::memory_order_release);
+				std::atomic_thread_fence(
+				    std::memory_order_acquire);
+
+				this->_fire_event();
+
+				/*
+				 * Transition from BUSY to IDLE.
+				 * Fails if set to AGAIN, in which case we need
+				 * to execute the event again.
+				 */
+				s = BUSY;
+			} while (!this->m_state.compare_exchange_strong(s,
+			    IDLE,
+			    std::memory_order_release,
+			    std::memory_order_relaxed));
+		}
 	}
 
 public:
 	/* Set output event callback. */
 	friend void
-	output_callback(msg_queue_events& mqev, std::function<void()> fn)
+	callback(msg_queue_events& mqev, std::function<void (Derived&)> fn)
 	    noexcept
 	{
-		mqev.ev.assign(event::MQ_EV_OUTPUT, std::move(fn));
-	}
+		std::unique_lock<std::mutex> guard{ mqev.m_evmtx };
+		swap(mqev.m_ev, fn);
 
-	/* Set empty event callback. */
-	friend void
-	empty_callback(msg_queue_events& mqev, std::function<void()> fn)
-	    noexcept
-	{
-		mqev.ev.assign(event::MQ_EV_EMPTY, std::move(fn));
+		if (mqev.m_ev_restore) {
+			/* Make new event fire after old event completes. */
+			mqev.m_ev_restore = false;
+			mqev.m_state.store(state::AGAIN,
+			    std::memory_order_release);
+		} else {
+			/* This message queue is not empty, fire event. */
+			guard.unlock();
+			if (!static_cast<Derived&>(mqev).empty())
+				mqev._fire();
+		}
 	}
 
 	/* Clear output event callback. */
 	friend void
-	output_callback(msg_queue_events& mqev, std::nullptr_t) noexcept
+	callback(msg_queue_events& mqev, std::nullptr_t) noexcept
 	{
-		mqev.ev.clear(event::MQ_EV_OUTPUT);
-	}
-
-	/* Clear empty event callback. */
-	friend void
-	empty_callback(msg_queue_events& mqev, std::nullptr_t) noexcept
-	{
-		mqev.ev.clear(event::MQ_EV_EMPTY);
-	}
-
-protected:
-	void
-	_deactivate() noexcept
-	{
-		this->ev.deactivate();
-	}
-
-	void
-	_deactivate_output() noexcept
-	{
-		this->ev.deactivate(event::MQ_EV_OUTPUT);
-	}
-
-	void
-	_deactivate_empty() noexcept
-	{
-		this->ev.deactivate(event::MQ_EV_EMPTY);
-	}
-
-public:
-	void
-	clear_events() noexcept
-	{
-		this->ev.clear();
+		std::function<void (Derived&)> tmp;
+		std::lock_guard<std::mutex> guard{ mqev.m_evmtx };
+		swap(mqev.m_ev, tmp);
+		mqev.m_ev_restore = false;
 	}
 };
 
 
 /* Specialized message queue for untyped messages. */
 class void_msg_queue
-:	public msg_queue_events
+:	public msg_queue_events<void_msg_queue>
 {
 public:
 	typedef void element_type;
 
 private:
-	std::atomic<uintptr_t> m_size;
+	std::atomic<uintptr_t> m_size{ 0 };
 
 	/*
 	 * Dequeue up to max messages at once and return the number of messages
@@ -235,20 +296,12 @@ private:
 	ILIAS_ASYNC_EXPORT uintptr_t _dequeue(uintptr_t max) noexcept;
 
 public:
-	void_msg_queue() noexcept
-	:	m_size(0)
-	{
-		/* Empty body. */
-	}
-
+	void_msg_queue() = default;
 	void_msg_queue(const void_msg_queue&) = delete;
 	void_msg_queue& operator=(const void_msg_queue&) = delete;
-	void_msg_queue(void_msg_queue&&) = delete;
 
-	~void_msg_queue() noexcept
-	{
-		this->clear_events();
-	}
+	/* Move constructor. */
+	ILIAS_ASYNC_EXPORT void_msg_queue(void_msg_queue&&) noexcept;
 
 	/* Test if the message queue is empty. */
 	bool
@@ -258,12 +311,7 @@ public:
 	}
 
 	/* Enqueue multiple untyped messages. */
-	void
-	enqueue_n(size_t n) noexcept
-	{
-		this->m_size.fetch_add(n, std::memory_order_release);
-		this->_fire_output();
-	}
+	ILIAS_ASYNC_EXPORT void enqueue_n(size_t n) noexcept;
 
 	/* Enqueue an untyped message. */
 	void
@@ -327,7 +375,7 @@ template<typename MQ> class prepare_enqueue;
 
 template<typename Type, typename Allocator = std::allocator<Type>>
 class msg_queue
-:	public mq_detail::msg_queue_events
+:	public mq_detail::msg_queue_events<msg_queue<Type, Allocator>>
 {
 friend class prepare_enqueue<msg_queue<Type, Allocator>>;
 
@@ -434,18 +482,14 @@ private:
 		  typename list_type::value_type>::value)
 	{
 		this->m_list.clear_and_dispose(_destroy(this->m_alloc, true));
-		this->_fire_empty();
-		if (!this->empty())
-			this->_fire_output();
 	}
 
 	void
 	_enqueue(managed_pointer&& ptr) noexcept
 	{
 		assert(ptr && ptr.get_deleter().m_call_destructor);
-		const bool was_empty = this->m_list.empty();
 		this->m_list.push_back(*ptr.release());
-		this->_fire_output();
+		this->_fire();
 	}
 
 public:
@@ -453,8 +497,6 @@ public:
 	    noexcept(
 		std::is_nothrow_constructible<list_type>::value &&
 		std::is_nothrow_constructible<allocator_type>::value)
-	:	m_alloc(),
-		m_list()
 	{
 		/* Empty body. */
 	}
@@ -464,8 +506,7 @@ public:
 	    noexcept(
 		std::is_nothrow_constructible<list_type>::value &&
 		std::is_nothrow_constructible<allocator_type, Args...>::value)
-	:	m_alloc(std::forward<Args>(args)...),
-		m_list()
+	:	m_alloc(std::forward<Args>(args)...)
 	{
 		/* Empty body. */
 	}
@@ -473,9 +514,26 @@ public:
 	msg_queue(const msg_queue&) = delete;
 	msg_queue& operator=(const msg_queue&) = delete;
 
+	/* Move constructor. */
+	msg_queue(msg_queue&& mq)
+	    noexcept(
+		std::is_nothrow_constructible<list_type>::value &&
+		std::is_nothrow_constructible<allocator_type>::value)
+	:	mq_detail::msg_queue_events<msg_queue>(std::move(mq)),
+		m_alloc(std::move(mq.m_alloc))
+	{
+		/* Move elements between queues. */
+		bool was_empty = true;
+		while (auto elem = this->m_list.pop_front()) {
+			this->m_list.push_back(*elem);
+			was_empty = false;
+		}
+		if (!was_empty)
+			this->_fire();
+	}
+
 	~msg_queue() noexcept
 	{
-		this->clear_events();
 		this->_clear();
 	}
 
@@ -513,21 +571,6 @@ public:
 				break;
 			f(elem->move());
 		}
-
-		/*
-		 * Checking if the queue is empty and subsequent firing is
-		 * a race: between the check and the event firing, an
-		 * enqueue could happen making the empty-event wrong.
-		 *
-		 * The race is solved by immediately checking after firing
-		 * the event, if it still holds.  If not, an output event is
-		 * generated immediately after.
-		 */
-		if (this->empty())
-			this->_fire_empty();
-		if (!this->empty())
-			this->_fire_output();
-
 		return f;
 	}
 };
@@ -544,6 +587,13 @@ class msg_queue<void, Allocator>
 {
 	msg_queue() = default;
 
+	msg_queue(msg_queue&& mq) noexcept
+	:	mq_detail::void_msg_queue(std::move(mq))
+	{
+		/* Empty body. */
+	}
+
+	/* Ignore allocator arguments, since we don't use one. */
 	template<typename... Args>
 	msg_queue(Args&&... args) noexcept
 	{

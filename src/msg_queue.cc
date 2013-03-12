@@ -21,12 +21,6 @@ namespace ilias {
 namespace mq_detail {
 
 
-msg_queue_events::~msg_queue_events() noexcept
-{
-	/* Empty body. */
-}
-
-
 uintptr_t
 void_msg_queue::_dequeue(uintptr_t max) noexcept
 {
@@ -39,20 +33,26 @@ void_msg_queue::_dequeue(uintptr_t max) noexcept
 		subtract = std::min(sz, max);
 	} while (!this->m_size.compare_exchange_weak(sz, sz - subtract,
 	    std::memory_order_relaxed, std::memory_order_relaxed));
-
-	/*
-	 * Solve the race between checking for empty and firing empty event.
-	 */
-	if (sz == subtract)
-		this->_fire_empty();
-	if (!this->empty())
-		this->_fire_output();
-
 	return subtract;
 }
 
+void_msg_queue::void_msg_queue(void_msg_queue&& vmq) noexcept
+:	msg_queue_events<void_msg_queue>(std::move(vmq))
+{
+	const auto move_count = vmq.m_size.exchange(0,
+	    std::memory_order_relaxed);
+	if (move_count)
+		this->enqueue_n(move_count);
+}
 
-} /* namespace ilias::mq_detail */
+void
+void_msg_queue::enqueue_n(size_t n) noexcept
+{
+	if (n) {
+		this->m_size.fetch_add(n, std::memory_order_acquire);
+		this->_fire();
+	}
+}
 
 
-} /* namespace ilias */
+}} /* namespace ilias::mq_detail */
