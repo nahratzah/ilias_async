@@ -63,15 +63,13 @@ The ```empty()``` method can be used to test if the message queue has pending me
 Furthermore, the MessageQueueRead aspect has two event callbacks:
 
 	class MQ {
-		friend void output_callback(MQ& mq, std::function<void()> callback) noexcept;
-		friend void empty_callback(MQ& mq, std::function<void()> callback) noexcept;
-		friend void output_callback(MQ& mq, std::nullptr_t) noexcept;
-		friend void empty_callback(MQ& mq, std::nullptr_t) noexcept;
+		friend void callback(MQ& mq, std::function<void(MQ&)> callback_functor) noexcept;
+		friend void callback(MQ& mq, std::nullptr_t) noexcept;
 	};
 
 Additional specializations may be provided for different callback implementations, which would be implemented in terms of the above.
 
-The callback installed via ```output_callback``` is called whenever a new element is enqueued.  The empty callback is called when the message queue becomes empty (from a call to dequeue).  These calls may fire spuriously (i.e. the empty-callback is invoked while the message queue is not empty, or the output-callback is invoked while the message queue has no pending messages).
+The functor installed via ```callback``` is called whenever a new element is enqueued.  When multiple messages are enqueued, the message queue may fire less often, but each enqueued message will invoke the callback afterwards.  A callback must be prepared to handle multiple messages.
 
 Example: a callback that appends messages to a global vector:
 
@@ -81,7 +79,7 @@ Example: a callback that appends messages to a global vector:
 	int
 	main()
 	{
-		output_callback(my_msg_queue, []() {
+		callback(my_msg_queue, []() {
 			my_msg_queue.dequeue([](int i) {
 				global_vector.push_back(i);
 			    }, SIZE_MAX);
