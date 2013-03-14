@@ -58,7 +58,7 @@ public:
 		mq_type* mq = this->m_args.load(std::memory_order_relaxed);
 		assert(mq);
 		if (mq->empty())
-			mq->deactivate();
+			this->deactivate();
 		else
 			this->m_functor(*mq);
 	}
