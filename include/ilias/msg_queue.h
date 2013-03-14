@@ -597,15 +597,18 @@ public:
  */
 template<typename Allocator>
 class msg_queue<void, Allocator>
-:	public mq_detail::void_msg_queue,
-	public mq_detail::msg_queue_events<msg_queue<void, Allocator>>
+:	public mq_detail::msg_queue_events<msg_queue<void, Allocator>>,
+	public mq_detail::void_msg_queue
 {
 	msg_queue() = default;
 
 	msg_queue(msg_queue&& mq) noexcept
-	:	mq_detail::void_msg_queue(std::move(mq))
+	:	mq_detail::msg_queue_events<msg_queue<void, Allocator>>(
+		    std::move(mq)),
+		mq_detail::void_msg_queue(std::move(mq)),
 	{
-		/* Empty body. */
+		if (!this->empty())
+			this->_fire();
 	}
 
 	/* Ignore allocator arguments, since we don't use one. */
