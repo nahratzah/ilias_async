@@ -32,26 +32,8 @@ void_msg_queue::_dequeue(uintptr_t max) noexcept
 			return 0;
 		subtract = std::min(sz, max);
 	} while (!this->m_size.compare_exchange_weak(sz, sz - subtract,
-	    std::memory_order_relaxed, std::memory_order_relaxed));
+	    std::memory_order_acquire, std::memory_order_relaxed));
 	return subtract;
-}
-
-void_msg_queue::void_msg_queue(void_msg_queue&& vmq) noexcept
-:	msg_queue_events<void_msg_queue>(std::move(vmq))
-{
-	const auto move_count = vmq.m_size.exchange(0,
-	    std::memory_order_relaxed);
-	if (move_count)
-		this->enqueue_n(move_count);
-}
-
-void
-void_msg_queue::enqueue_n(size_t n) noexcept
-{
-	if (n) {
-		this->m_size.fetch_add(n, std::memory_order_acquire);
-		this->_fire();
-	}
 }
 
 

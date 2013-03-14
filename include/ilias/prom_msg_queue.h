@@ -98,26 +98,12 @@ public:
 	 */
 	template<typename... Args>
 	friend void
-	output_callback(promise_msg_queue& self, Args&&... args)
+	callback(promise_msg_queue& self, Args&&... args)
 	    noexcept(
 		noexcept(output_callback(*self.impl(),
 		    std::forward<Args>(args)...)))
 	{
 		output_callback(*self.impl(), std::forward<Args>(args)...);
-	}
-
-	/*
-	 * Allow all callbacks to be installed on
-	 * the implementation message queue.
-	 */
-	template<typename... Args>
-	friend void
-	empty_callback(promise_msg_queue& self, Args&&... args)
-	    noexcept(
-		noexcept(empty_callback(*self.impl(),
-		    std::forward<Args>(args)...)))
-	{
-		empty_callback(*self.impl(), std::forward<Args>(args)...);
 	}
 };
 

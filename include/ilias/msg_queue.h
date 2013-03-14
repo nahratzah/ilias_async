@@ -127,7 +127,7 @@ public:
 /*
  * Message queue events.
  */
-template<typename Derived>
+template<typename MqType>
 class msg_queue_events
 {
 private:
@@ -141,16 +141,16 @@ private:
 
 	std::mutex m_evmtx;
 	bool m_ev_restore{ false };		/* Protected by m_evmtx. */
-	std::function<void (Derived&)> m_ev;	/* Protected by m_evmtx. */
+	std::function<void (MqType&)> m_ev;	/* Protected by m_evmtx. */
 
 	/*
 	 * Inner function: fires m_ev.
 	 * Not safe against concurrent invocations.
 	 */
 	void
-	_fire_event() noexcept
+	_fire_event(MqType& ev_arg) noexcept
 	{
-		std::function<void (Derived&)> tmp;
+		std::function<void (MqType&)> tmp;
 		std::unique_lock<std::mutex> guard{ this->m_evmtx };
 
 		swap(tmp, this->m_ev);
@@ -163,7 +163,7 @@ private:
 			 * to prevent it from being deleted from within its
 			 * invocation.
 			 */
-			tmp(static_cast<Derived&>(*this));
+			tmp(ev_arg);
 
 			guard.lock();
 			if (this->m_ev_restore) {
@@ -205,10 +205,16 @@ protected:
 	void
 	_fire() noexcept
 	{
+		static_assert(std::is_base_of<msg_queue_events, MqType>::value,
+		    "msg_queue_events<MQ> must be a base of MQ");
+
 		/* Lacking using statement to import class members... */
 		constexpr state IDLE = state::IDLE;
 		constexpr state BUSY =  state::BUSY;
 		constexpr state AGAIN = state::AGAIN;
+
+		/* Argument on event: derived type of event. */
+		MqType& ev_arg = static_cast<MqType&>(*this);
 
 		/*
 		 * We always transition to AGAIN.
@@ -230,7 +236,7 @@ protected:
 				std::atomic_thread_fence(
 				    std::memory_order_acquire);
 
-				this->_fire_event();
+				this->_fire_event(ev_arg);
 
 				/*
 				 * Transition from BUSY to IDLE.
@@ -248,9 +254,12 @@ protected:
 public:
 	/* Set output event callback. */
 	friend void
-	callback(msg_queue_events& mqev, std::function<void (Derived&)> fn)
+	callback(msg_queue_events& mqev, std::function<void (MqType&)> fn)
 	    noexcept
 	{
+		static_assert(std::is_base_of<msg_queue_events, MqType>::value,
+		    "msg_queue_events<MQ> must be a base of MQ");
+
 		std::unique_lock<std::mutex> guard{ mqev.m_evmtx };
 		swap(mqev.m_ev, fn);
 
@@ -262,7 +271,7 @@ public:
 		} else {
 			/* This message queue is not empty, fire event. */
 			guard.unlock();
-			if (!static_cast<Derived&>(mqev).empty())
+			if (!static_cast<MqType&>(mqev).empty())
 				mqev._fire();
 		}
 	}
@@ -271,7 +280,7 @@ public:
 	friend void
 	callback(msg_queue_events& mqev, std::nullptr_t) noexcept
 	{
-		std::function<void (Derived&)> tmp;
+		std::function<void (MqType&)> tmp;
 		std::lock_guard<std::mutex> guard{ mqev.m_evmtx };
 		swap(mqev.m_ev, tmp);
 		mqev.m_ev_restore = false;
@@ -279,9 +288,11 @@ public:
 };
 
 
-/* Specialized message queue for untyped messages. */
+/*
+ * Specialized message queue for untyped messages.
+ * Has no events (since that is only kept in the derivation instance).
+ */
 class void_msg_queue
-:	public msg_queue_events<void_msg_queue>
 {
 public:
 	typedef void element_type;
@@ -301,7 +312,11 @@ public:
 	void_msg_queue& operator=(const void_msg_queue&) = delete;
 
 	/* Move constructor. */
-	ILIAS_ASYNC_EXPORT void_msg_queue(void_msg_queue&&) noexcept;
+	void_msg_queue(void_msg_queue&& vmq) noexcept
+	:	m_size(vmq.m_size.exchange(0, std::memory_order_relaxed))
+	{
+		/* Empty body. */
+	}
 
 	/* Test if the message queue is empty. */
 	bool
@@ -310,16 +325,15 @@ public:
 		return (this->m_size.load(std::memory_order_relaxed) == 0);
 	}
 
+protected:
 	/* Enqueue multiple untyped messages. */
-	ILIAS_ASYNC_EXPORT void enqueue_n(size_t n) noexcept;
-
-	/* Enqueue an untyped message. */
 	void
-	enqueue() noexcept
+	enqueue_n(size_t n) noexcept
 	{
-		this->enqueue_n(1);
+		this->m_size.fetch_add(n, std::memory_order_release);
 	}
 
+public:
 	/*
 	 * Dequeue up to N messages and apply functor on each.
 	 *
@@ -489,7 +503,7 @@ private:
 	{
 		assert(ptr && ptr.get_deleter().m_call_destructor);
 		this->m_list.push_back(*ptr.release());
-		this->_fire();
+		this->_fire(*this);
 	}
 
 public:
@@ -583,7 +597,8 @@ public:
  */
 template<typename Allocator>
 class msg_queue<void, Allocator>
-:	public mq_detail::void_msg_queue
+:	public mq_detail::void_msg_queue,
+	public mq_detail::msg_queue_events<msg_queue<void, Allocator>>
 {
 	msg_queue() = default;
 
@@ -598,6 +613,23 @@ class msg_queue<void, Allocator>
 	msg_queue(Args&&... args) noexcept
 	{
 		/* Empty body. */
+	}
+
+	/* Enqueue multiple untyped messages. */
+	void
+	enqueue_n(size_t n) noexcept
+	{
+		if (n > 0) {
+			this->mq_detail::void_msg_queue::enqueue_n(n);
+			this->_fire(*this);
+		}
+	}
+
+	/* Enqueue a single untyped message. */
+	void
+	enqueue() noexcept
+	{
+		this->enqueue_n(1);
 	}
 };
 

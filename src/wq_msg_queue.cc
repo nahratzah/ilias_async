@@ -16,39 +16,10 @@
 #include <ilias/wq_msg_queue.h>
 
 namespace ilias {
-namespace {
 
 
-/* Activation method for callback implementation. */
-void
-activate_job(workq_job_ptr ptr, unsigned int flags) noexcept
-{
-	if (ptr)
-		ptr->activate(flags);
-}
-
-/* Create a callback from a workq_job. */
-std::function<void()>
-create_callback(workq_job_ptr job, unsigned int flags)
-{
-	return std::bind(&activate_job, std::move(job), flags);
-}
-
-
-} /* namespace ilias::<unnamed> */
-
-
-void
-output_callback(msg_queue_events& mqev, workq_job_ptr job, unsigned int flags)
-{
-	output_callback(mqev, create_callback(std::move(job), flags));
-}
-
-void
-empty_callback(msg_queue_events& mqev, workq_job_ptr job, unsigned int flags)
-{
-	empty_callback(mqev, create_callback(std::move(job), flags));
-}
+template void callback(msg_queue_events<msg_queue<void>>&, workq_ptr,
+    std::function<void(msg_queue<void>&)>, unsigned int);
 
 
 } /* namespace ilias */
