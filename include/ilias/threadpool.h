@@ -61,6 +61,7 @@ public:
 	ILIAS_ASYNC_EXPORT ~threadpool() noexcept;
 
 	ILIAS_ASYNC_EXPORT bool curthread_is_threadpool() noexcept;
+	ILIAS_ASYNC_EXPORT void wakeup(unsigned int = 1U) noexcept;
 
 
 	threadpool() = delete;

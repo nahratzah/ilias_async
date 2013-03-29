@@ -450,8 +450,8 @@ wq_run_lock::lock(workq_service& wqs) noexcept
 			break;		/* GUARD */
 		} else {
 			/*
-			 * No job acquired, workq is depleted and (automatically)
-			 * removed from the runq:
+			 * No job acquired, workq is depleted and
+			 * (automatically) removed from the runq:
 			 * wq is unlinked when scope of the loop ends.
 			 */
 		}
@@ -828,13 +828,6 @@ workq::aid(unsigned int count) noexcept
 }
 
 
-bool
-workq_service::threadpool_work() noexcept
-{
-	publish_wqs pub(*this);
-	return this->aid(32);
-}
-
 workq_service::workq_service()
 :	workq_service(threadpool::default_thread_count())
 {
@@ -842,17 +835,27 @@ workq_service::workq_service()
 }
 
 workq_service::workq_service(unsigned int threads)
-:	m_workers(std::bind(&workq_service::threadpool_pred, this),
-	    std::bind(&workq_service::threadpool_work, this),
+:	m_workers(std::bind(&workq_service::empty, this),
+	    [this]() -> bool {
+		publish_wqs pub(*this);
+		return this->aid(32);
+	      },
 	    threads)
 {
-	return;
+	this->m_wakeup_cb = [this](workq_service_ptr, std::size_t n_threads) {
+		this->m_workers.wakeup(n_threads);
+	    };
 }
 
 workq_service::~workq_service() noexcept
 {
 	assert(this->m_wq_runq.empty());
 	assert(this->m_co_runq.empty());
+
+	{
+		std::lock_guard<std::mutex> lck{ this->m_wakeup_lck };
+		this->m_wakeup_cb = nullptr;
+	}
 }
 
 void
@@ -876,7 +879,14 @@ workq_service::co_to_runq(
 void
 workq_service::wakeup(std::size_t count) noexcept
 {
-	/* STUB */
+	/*
+	 * During this call, workq_service is guaranteed referenced by at least
+	 * one workq_service_ptr, therefore the pointer can be safely
+	 * constructed as argument to the callback.
+	 */
+	std::lock_guard<std::mutex> lck{ this->m_wakeup_lck };
+	if (this->m_wakeup_cb)
+		this->m_wakeup_cb(this, count);
 }
 
 workq_ptr
@@ -908,7 +918,7 @@ workq_service::aid(unsigned int count) noexcept
 				/* Release list refcount,
 				 * so co_runnable::release() can unlink. */
 				co = this->m_co_runq.end();
-				
+
 				if (co_ptr->co_run())
 					++i;
 				co = this->m_co_runq.begin();
@@ -935,6 +945,20 @@ workq_service::aid(unsigned int count) noexcept
 	}
 
 	return (i > 0);
+}
+
+bool
+workq_service::empty() const noexcept
+{
+	return (this->m_wq_runq.empty() && this->m_co_runq.empty());
+}
+
+void
+callback(const workq_service_ptr& wqs,
+    std::function<void(workq_service_ptr, std::size_t)> cb) noexcept
+{
+	std::lock_guard<std::mutex> lck{ wqs->m_wakeup_lck };
+	wqs->m_wakeup_cb = std::move(cb);
 }
 
 

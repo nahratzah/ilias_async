@@ -80,6 +80,21 @@ threadpool::~threadpool() noexcept
 	this->m_all.clear();
 }
 
+void
+threadpool::wakeup(unsigned int n) noexcept
+{
+	using std::begin;
+	using std::end;
+
+	auto& idle = *this->m_idle;
+	for (auto thr = begin(idle);
+	    n > 0 && thr != end(idle);
+	    ++thr) {
+		if (thr->wakeup())
+			--n;
+	}
+}
+
 bool
 threadpool::curthread_is_threadpool() noexcept
 {

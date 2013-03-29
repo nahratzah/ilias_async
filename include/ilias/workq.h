@@ -25,6 +25,7 @@
 #include <functional>
 #include <stdexcept>
 #include <memory>
+#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -687,6 +688,8 @@ private:
 	wq_runq m_wq_runq;
 	co_runq m_co_runq;
 	threadpool m_workers;	/* Must be the last member variable in this class. */
+	std::mutex m_wakeup_lck;	/* XXX change to read-write-lock. */
+	std::function<void(workq_service_ptr, std::size_t)> m_wakeup_cb;
 
 	ILIAS_ASYNC_LOCAL workq_service();
 	ILIAS_ASYNC_LOCAL explicit workq_service(unsigned int threads);
@@ -696,17 +699,13 @@ private:
 	ILIAS_ASYNC_LOCAL void co_to_runq(workq_detail::workq_intref<workq_detail::co_runnable>, std::size_t) noexcept;
 	ILIAS_ASYNC_LOCAL void wakeup(std::size_t = 1) noexcept;
 
-	bool
-	threadpool_pred() noexcept
-	{
-		return !this->m_wq_runq.empty() || !this->m_co_runq.empty();
-	}
-
-	ILIAS_ASYNC_LOCAL bool threadpool_work() noexcept;
-
 public:
 	ILIAS_ASYNC_EXPORT workq_ptr new_workq() throw (std::bad_alloc);
 	ILIAS_ASYNC_EXPORT bool aid(unsigned int = 1) noexcept;
+	ILIAS_ASYNC_EXPORT bool empty() const noexcept;
+
+	friend ILIAS_ASYNC_EXPORT void callback(const workq_service_ptr&,
+	    std::function<void(workq_service_ptr, std::size_t)>) noexcept;
 
 
 	workq_service(const workq_service&) = delete;
