@@ -34,6 +34,28 @@
 namespace ilias {
 
 
+namespace refpointer_detail {
+
+struct atom_lck
+{
+public:
+	struct impl;
+
+private:
+	impl& m_impl;
+
+public:
+	ILIAS_ASYNC_EXPORT atom_lck(const void*) noexcept;
+	ILIAS_ASYNC_EXPORT ~atom_lck() noexcept;
+
+	atom_lck(const atom_lck&) = delete;
+	atom_lck(atom_lck&&) = delete;
+	atom_lck& operator=(const atom_lck&) = delete;
+};
+
+} /* namespace ilias::refpointer_detail */
+
+
 /*
  * Reference counted base class.
  *
@@ -380,6 +402,59 @@ public:
 	{
 		lhs.swap(rhs);
 	}
+
+	/*
+	 * Atomic primitives.
+	 */
+	friend bool
+	atomic_is_lock_free(const refpointer*) noexcept
+	{
+		return false;
+	}
+
+	friend refpointer
+	atomic_load(const refpointer* p) noexcept(noexcept_acquire)
+	{
+		refpointer_detail::atom_lck lck{ p };
+		return *p;
+	}
+
+	friend refpointer
+	atomic_store(refpointer* p, refpointer v) noexcept(noexcept_release)
+	{
+		refpointer_detail::atom_lck lck{ p };
+		*p = std::move(v);
+	}
+
+	friend refpointer
+	atomic_exchange(refpointer* p, refpointer v) noexcept
+	{
+		{
+			refpointer_detail::atom_lck{ p };
+			p->swap(v);
+		}
+		return v;
+	}
+
+	friend bool
+	atomic_compare_exchange_strong(refpointer* p, refpointer* expect,
+	    refpointer v) noexcept(noexcept_acqrel)
+	{
+		refpointer_detail::atom_lck{ p };
+		if (*p == *expect) {
+			*p = std::move(v);
+			return true;
+		}
+		*expect = *p;
+		return false;
+	}
+
+	friend bool
+	atomic_compare_exchange_weak(refpointer* p, refpointer* expect,
+	    refpointer v) noexcept(noexcept_acqrel)
+	{
+		return atomic_compare_exchange_strong(p, expect, std::move(v));
+	}
 };
 
 
@@ -447,6 +522,53 @@ struct refpointer_release
 		return p.release();
 	}
 };
+
+
+template<typename T, typename A>
+refpointer<T, A>
+atomic_load_explicit(const refpointer<T, A>* p, std::memory_order)
+noexcept(noexcept(atomic_load(p)))
+{
+	return atomic_load(p);
+}
+
+template<typename T, typename A>
+void
+atomic_store_explicit(const refpointer<T, A>* p, refpointer<T, A> v,
+    std::memory_order)
+noexcept(noexcept(atomic_store(p, std::move(v))))
+{
+	atomic_store(p, std::move(v));
+}
+
+template<typename T, typename A>
+refpointer<T, A>
+atomic_exchange_explicit(const refpointer<T, A>* p, refpointer<T, A> v,
+    std::memory_order)
+noexcept(noexcept(atomic_exchange(p, std::move(v))))
+{
+	return atomic_exchange(p, std::move(v));
+}
+
+template<typename T, typename A>
+bool
+atomic_compare_exchange_strong_explicit(const refpointer<T, A>* p,
+    refpointer<T, A>* expect, refpointer<T, A> v,
+    std::memory_order, std::memory_order)
+noexcept(noexcept(atomic_compare_exchange_strong(p, expect, std::move(v))))
+{
+	return atomic_compare_exchange_strong(p, expect, std::move(v));
+}
+
+template<typename T, typename A>
+bool
+atomic_compare_exchange_weak_explicit(const refpointer<T, A>* p,
+    refpointer<T, A>* expect, refpointer<T, A> v,
+    std::memory_order, std::memory_order)
+noexcept(noexcept(atomic_compare_exchange_weak(p, expect, std::move(v))))
+{
+	return atomic_compare_exchange_weak(p, expect, std::move(v));
+}
 
 
 } /* namespace ilias */
