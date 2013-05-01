@@ -109,6 +109,7 @@ list (APPEND hdrs
 	include/ilias/promise.h
 	include/ilias/wq_promise.h
 	include/ilias/combi_promise.h
+	include/ilias/threadpool_intf.h
 	include/ilias/threadpool.h
 	include/ilias/workq.h
 	)
@@ -120,6 +121,7 @@ list (APPEND srcs
 	src/promise.cc
 	src/wq_promise.cc
 	src/combi_promise.cc
+	src/threadpool_intf.cc
 	src/threadpool.cc
 	src/workq.cc
 	)
