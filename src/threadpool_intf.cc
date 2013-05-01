@@ -6,6 +6,18 @@ namespace ilias {
 namespace threadpool_intf_detail {
 
 
+bool
+threadpool_intf_refcnt::has_service() const noexcept
+{
+	return this->_has_service();
+}
+
+bool
+threadpool_intf_refcnt::has_client() const noexcept
+{
+	return this->_has_client();
+}
+
 void
 client_acqrel::acquire(const threadpool_client_intf& tpc) const noexcept
 {
@@ -16,8 +28,10 @@ client_acqrel::acquire(const threadpool_client_intf& tpc) const noexcept
 void
 client_acqrel::release(const threadpool_client_intf& tpc) const noexcept
 {
-	if (tpc.client_release())
+	if (tpc.client_release()) {
+		tpc.client_lock_wait();
 		release(tpc);
+	}
 }
 
 void
@@ -30,8 +44,10 @@ service_acqrel::acquire(const threadpool_service_intf& tps) const noexcept
 void
 service_acqrel::release(const threadpool_service_intf& tps) const noexcept
 {
-	if (tps.service_release())
+	if (tps.service_release()) {
+		tps.service_lock_wait();
 		release(tps);
+	}
 }
 
 bool
@@ -66,6 +82,18 @@ refcount::client_release() const noexcept
 	if (last)
 		const_cast<refcount*>(this)->on_client_detach();
 	return last;
+}
+
+bool
+refcount::_has_service() const noexcept
+{
+	return (this->m_service_refcnt.load(std::memory_order_relaxed) > 0U);
+}
+
+bool
+refcount::_has_client() const noexcept
+{
+	return (this->m_service_refcnt.load(std::memory_order_relaxed) > 0U);
 }
 
 threadpool_intf_refcnt::~threadpool_intf_refcnt() noexcept
@@ -201,6 +229,11 @@ tp_service_set::threadpool_service::wakeup(unsigned int n) noexcept
 	if (n == 0)
 		return 0;
 
+	threadpool_service_lock lck(*this);
+
+	if (!this->has_service())
+		return 0;
+
 	this->m_work_avail.exchange(work_avail::YES,
 	    std::memory_order_acq_rel);
 	this->m_self.m_active.push_back(*this);
@@ -210,6 +243,11 @@ tp_service_set::threadpool_service::wakeup(unsigned int n) noexcept
 void
 tp_service_set::threadpool_service::on_client_detach() noexcept
 {
+	threadpool_service_lock lck(*this);
+
+	if (!this->has_service())
+		return;
+
 	this->m_work_avail.store(work_avail::DETACHED);
 	this->m_self.m_active.unlink_robust(
 	    this->m_self.m_active.iterator_to(*this));

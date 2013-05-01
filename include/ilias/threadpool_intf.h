@@ -8,6 +8,8 @@ namespace ilias {
 
 class threadpool_client_intf;
 class threadpool_service_intf;
+class threadpool_service_lock;
+class threadpool_client_lock;
 
 
 namespace threadpool_intf_detail {
@@ -15,8 +17,34 @@ namespace threadpool_intf_detail {
 
 class threadpool_intf_refcnt
 {
+friend class ::ilias::threadpool_service_lock;
+friend class ::ilias::threadpool_client_lock;
+
 private:
 	mutable std::atomic<uintptr_t> m_refcnt{ 0U };
+	mutable std::atomic<unsigned int> m_client_locks{ 0U };
+	mutable std::atomic<unsigned int> m_service_locks{ 0U };
+
+	/* Implementation provided by combiner. */
+	virtual bool _has_service() const noexcept = 0;
+	virtual bool _has_client() const noexcept = 0;
+
+protected:
+	/* Spin-wait until all client locks are released. */
+	void
+	client_lock_wait() const noexcept
+	{
+		while (this->m_client_locks.load(std::memory_order_acquire) !=
+		    0U);
+	}
+
+	/* Spin-wait until all service locks are released. */
+	void
+	service_lock_wait() const noexcept
+	{
+		while (this->m_client_locks.load(std::memory_order_acquire) !=
+		    0U);
+	}
 
 public:
 	threadpool_intf_refcnt() = default;
@@ -47,6 +75,11 @@ public:
 		if (c == 1U)
 			delete &self;
 	}
+
+	/* Test if the service is attached. */
+	ILIAS_ASYNC_EXPORT bool has_service() const noexcept;
+	/* Test if the client is attached. */
+	ILIAS_ASYNC_EXPORT bool has_client() const noexcept;
 };
 
 /* Client acquisition/release. */
@@ -71,6 +104,69 @@ class refcount;
 
 
 } /* namespace ilias::threadpool_intf_detail */
+
+
+/*
+ * Prevent service from releasing its pointer completely.
+ * As long as each service-intf is properly deleted prior to deleting
+ * the actual service,
+ * this will guarantee that the service stays resident if has_service() returns
+ * true.
+ */
+class threadpool_service_lock
+{
+private:
+	const threadpool_intf_detail::threadpool_intf_refcnt& ti;
+
+public:
+	threadpool_service_lock(
+	    const threadpool_intf_detail::threadpool_intf_refcnt& ti) noexcept
+	:	ti(ti)
+	{
+		ti.m_service_locks.fetch_add(1U, std::memory_order_acquire);
+	}
+
+	~threadpool_service_lock() noexcept
+	{
+		ti.m_service_locks.fetch_sub(1U, std::memory_order_acquire);
+	}
+
+	threadpool_service_lock(const threadpool_service_lock&) = delete;
+	threadpool_service_lock& operator=(const threadpool_service_lock&) =
+	    delete;
+	threadpool_service_lock(threadpool_service_lock&&) = delete;
+};
+
+/*
+ * Prevent client from releasing its pointer completely.
+ * As long as each client-intf is properly deleted prior to deleting
+ * the actual client,
+ * this will guarantee that the client stays resident if has_client() returns
+ * true.
+ */
+class threadpool_client_lock
+{
+private:
+	const threadpool_intf_detail::threadpool_intf_refcnt& ti;
+
+public:
+	threadpool_client_lock(
+	    const threadpool_intf_detail::threadpool_intf_refcnt& ti) noexcept
+	:	ti(ti)
+	{
+		ti.m_client_locks.fetch_add(1U, std::memory_order_acquire);
+	}
+
+	~threadpool_client_lock() noexcept
+	{
+		ti.m_client_locks.fetch_sub(1U, std::memory_order_acquire);
+	}
+
+	threadpool_client_lock(const threadpool_client_lock&) = delete;
+	threadpool_client_lock& operator=(const threadpool_client_lock&) =
+	    delete;
+	threadpool_client_lock(threadpool_client_lock&&) = delete;
+};
 
 
 /*
@@ -119,9 +215,6 @@ class threadpool_client_intf
 friend struct threadpool_intf_detail::client_acqrel;
 friend class threadpool_intf_detail::refcount;
 
-private:
-	std::atomic<uintptr_t> m_refcnt;
-
 public:
 	static constexpr unsigned int WAKE_ALL = UINT_MAX;
 
@@ -164,6 +257,9 @@ public:
 private:
 	mutable std::atomic<uintptr_t> m_service_refcnt{ 0U };
 	mutable std::atomic<uintptr_t> m_client_refcnt{ 0U };
+
+	bool _has_service() const noexcept override final;
+	bool _has_client() const noexcept override final;
 
 public:
 	bool service_acquire() const noexcept override final;
