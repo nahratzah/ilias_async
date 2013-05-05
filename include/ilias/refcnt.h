@@ -458,6 +458,18 @@ public:
 };
 
 
+/*
+ * Create a new refpointer holding type.
+ */
+template<typename Type, typename AcqRel = default_refcount_mgr<Type>,
+    typename... Args>
+refpointer<Type, AcqRel>
+make_refpointer(Args&&... args)
+{
+	return new Type(std::forward<Args>(args)...);
+}
+
+
 template<typename U, typename T, typename AcqRel>
 refpointer<U, AcqRel>
 static_pointer_cast(const refpointer<T, AcqRel>& p) noexcept
