@@ -373,6 +373,9 @@ private:
 	struct data_active {};
 
 public:
+	/*
+	 * Implementation of threadpool service provider.
+	 */
 	class threadpool_service
 	:	public virtual threadpool_service_intf,
 		public ll_base_hook<data_all>,
@@ -415,6 +418,21 @@ public:
 		/* When client detaches, remove this from the set. */
 		ILIAS_ASYNC_EXPORT void on_client_detach() noexcept override;
 	};
+
+	/*
+	 * Threadpool service provider interface.
+	 */
+	tp_service_set&
+	threadpool_service_arg() noexcept
+	{
+		return *this;
+	}
+
+	/*
+	 * Service provider attach functionality.
+	 */
+	ILIAS_ASYNC_EXPORT void attach(
+	    threadpool_service_ptr<threadpool_service>);
 
 
 	class listener
@@ -477,8 +495,6 @@ private:
 public:
 	ILIAS_ASYNC_EXPORT bool do_work() noexcept;
 	ILIAS_ASYNC_EXPORT bool has_work() noexcept;
-	ILIAS_ASYNC_EXPORT void attach(
-	    threadpool_service_ptr<threadpool_service>);
 
 	unsigned int
 	wakeup(unsigned int)
