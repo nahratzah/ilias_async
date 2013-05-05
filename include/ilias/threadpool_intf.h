@@ -381,8 +381,8 @@ threadpool_attach(Client& client, Service& service)
 	threadpool_service_ptr<service_intf> s_ptr{ impl };
 
 	/* Bind client/service pointers to argument client/service. */
-	service.attach(s_ptr);
-	client.attach(c_ptr);
+	service.attach(std::move(s_ptr));
+	client.attach(std::move(c_ptr));
 }
 
 
