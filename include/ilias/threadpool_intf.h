@@ -270,9 +270,6 @@ protected:
 };
 
 
-} /* namespace ilias::threadpool_intf_detail */
-
-
 /* Glue a client and service implementation together. */
 template<typename Client, typename Service>
 class threadpool_combiner
@@ -310,6 +307,63 @@ class threadpool_combiner
 
 	~threadpool_combiner() noexcept = default;
 };
+
+
+} /* namespace ilias::threadpool_intf_detail */
+
+
+/*
+ * Attach a client of a threadpool service to a provider of said service.
+ *
+ * Client:
+ * - has member type: threadpool_client:
+ *   public virtual threadpool_client_intf
+ * - has member function: threadpool_client_arg()
+ *   returning constructor arg for threadpool_client.
+ * - has member function:
+ *   attach(threadpool_client_ptr<threadpool_client_intf>)
+ *
+ * Service:
+ * - has member type:
+ *   threadpool_service: public virtual threadpool_service_intf
+ * - has member function: threadpool_service_arg()
+ *   returning constructor arg for threadpool_service.
+ * - has member function:
+ *   attach(threadpool_service_ptr<threadpool_service_intf>)
+ */
+template<typename Client, typename Service>
+void
+threadpool_attach(Client& client, Service& service)
+{
+	using client_intf = typename Client::threadpool_client;
+	using service_intf = typename Service::threadpool_service;
+	using impl_type = threadpool_intf_detail::threadpool_combiner<
+	    client_intf, service_intf>;
+
+	/* Implement combined type. */
+	const auto impl = make_refpointer<impl_type>(
+		do_noexcept([&client]() {
+			return client.threadpool_client_arg();
+		}),
+		do_noexcept([&service]() {
+			return service.threadpool_service_arg();
+		})
+	    );
+
+	/*
+	 * Bind to client/service pointers.
+	 *
+	 * This step is important: if the binding fails, both the client
+	 * and service must be informed of the failure (which is done
+	 * automatically by the client/service pointers).
+	 */
+	threadpool_client_ptr<client_intf> c_ptr{ impl };
+	threadpool_service_ptr<service_intf> s_ptr{ impl };
+
+	/* Bind client/service pointers to argument client/service. */
+	service.attach(s_ptr);
+	client.attach(c_ptr);
+}
 
 
 class tp_service_set
