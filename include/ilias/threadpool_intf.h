@@ -500,11 +500,13 @@ private:
 		}
 	};
 
+	/* All clients of the service set. */
 	using data_t = ll_smartptr_list<
 	    threadpool_service_ptr<threadpool_service>,
 	    ll_base<threadpool_service, data_all>,
 	    tps_acquire, tps_release>;
 
+	/* All active clients (i.e. the ones with work to do). */
 	using active_t = ll_list<ll_base<threadpool_service, data_active>>;
 
 	/* All clients. */

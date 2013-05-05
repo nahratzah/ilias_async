@@ -283,27 +283,23 @@ tp_service_set::threadpool_service::on_client_detach() noexcept
 bool
 tp_service_set::do_work() noexcept
 {
-	bool rv = false;
 	this->m_active.remove_and_dispose_if(
-	    [&rv](threadpool_service& s) -> bool {
-		if (!s.invoke_work())
-			return true;
-		rv = true;
-		return false;
+	    [](threadpool_service& s) -> bool {
+		return !s.invoke_work();
 	    },
 	    [](threadpool_service* s) -> void {
 		s->post_deactivate();
 	    });
-	return rv;
+	return !this->m_active.empty();
 }
 
 bool
 tp_service_set::has_work() noexcept
 {
 	this->m_active.remove_if([](threadpool_service& s) {
-		return s.invoke_test();
+		return !s.invoke_test();
 	    });
-	return this->m_active.empty();
+	return !this->m_active.empty();
 }
 
 void
