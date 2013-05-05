@@ -1,4 +1,5 @@
 #include <ilias/threadpool_intf.h>
+#include <ilias/util.h>
 #include <stdexcept>
 
 
@@ -6,16 +7,19 @@ namespace ilias {
 namespace threadpool_intf_detail {
 
 
-bool
-threadpool_intf_refcnt::has_service() const noexcept
+void
+acquire(const threadpool_intf_refcnt& self) noexcept
 {
-	return this->_has_service();
+	const auto c = self.m_refcnt.fetch_add(1U, std::memory_order_acquire);
+	assert(c + 1U != 0U);
 }
 
-bool
-threadpool_intf_refcnt::has_client() const noexcept
+void
+release(const threadpool_intf_refcnt& self) noexcept
 {
-	return this->_has_client();
+	const auto c = self.m_refcnt.fetch_sub(1U, std::memory_order_release);
+	if (c == 1U)
+		delete &self;
 }
 
 void
@@ -234,8 +238,14 @@ tp_service_set::threadpool_service::wakeup(unsigned int n) noexcept
 	if (!this->has_service())
 		return 0;
 
-	this->m_work_avail.exchange(work_avail::YES,
+	const auto c = this->m_work_avail.exchange(work_avail::YES,
 	    std::memory_order_acq_rel);
+	if (c == work_avail::DETACHED) {
+		this->m_work_avail.store(work_avail::DETACHED,
+		    std::memory_order_release);
+		return 0;
+	}
+
 	this->m_self.m_active.push_back(*this);
 	return this->m_self.wakeup(n);
 }
@@ -289,9 +299,11 @@ tp_service_set::attach(threadpool_service_ptr<threadpool_service> p)
 		    "null threadpool service");
 	}
 
-	this->m_data.push_back(p);
-	this->m_active.push_back(*p);
-	p->wakeup(threadpool_client_intf::WAKE_ALL);
+	do_noexcept([&]() {
+		this->m_data.push_back(p);
+		this->m_active.push_back(*p);
+		p->wakeup(threadpool_client_intf::WAKE_ALL);
+	    });
 }
 
 

@@ -59,27 +59,24 @@ public:
 
 	ILIAS_ASYNC_EXPORT virtual ~threadpool_intf_refcnt() noexcept;
 
-	friend void
-	acquire(const threadpool_intf_refcnt& self) noexcept
-	{
-		const auto c = self.m_refcnt.fetch_add(1U,
-		    std::memory_order_acquire);
-		assert(c + 1U != 0U);
-	}
-
-	friend void
-	release(const threadpool_intf_refcnt& self) noexcept
-	{
-		const auto c = self.m_refcnt.fetch_sub(1U,
-		    std::memory_order_release);
-		if (c == 1U)
-			delete &self;
-	}
+	ILIAS_ASYNC_EXPORT friend void acquire(const threadpool_intf_refcnt&)
+	    noexcept;
+	ILIAS_ASYNC_EXPORT friend void release(const threadpool_intf_refcnt&)
+	    noexcept;
 
 	/* Test if the service is attached. */
-	ILIAS_ASYNC_EXPORT bool has_service() const noexcept;
+	bool
+	has_service() const noexcept
+	{
+		return this->_has_service();
+	}
+
 	/* Test if the client is attached. */
-	ILIAS_ASYNC_EXPORT bool has_client() const noexcept;
+	bool
+	has_client() const noexcept
+	{
+		return this->_has_client();
+	}
 };
 
 /* Client acquisition/release. */
@@ -258,14 +255,18 @@ private:
 	mutable std::atomic<uintptr_t> m_service_refcnt{ 0U };
 	mutable std::atomic<uintptr_t> m_client_refcnt{ 0U };
 
-	bool _has_service() const noexcept override final;
-	bool _has_client() const noexcept override final;
+	ILIAS_ASYNC_EXPORT bool _has_service() const noexcept override final;
+	ILIAS_ASYNC_EXPORT bool _has_client() const noexcept override final;
 
-public:
-	bool service_acquire() const noexcept override final;
-	bool service_release() const noexcept override final;
-	bool client_acquire() const noexcept override final;
-	bool client_release() const noexcept override final;
+protected:
+	ILIAS_ASYNC_EXPORT bool service_acquire()
+	    const noexcept override final;
+	ILIAS_ASYNC_EXPORT bool service_release()
+	    const noexcept override final;
+	ILIAS_ASYNC_EXPORT bool client_acquire()
+	    const noexcept override final;
+	ILIAS_ASYNC_EXPORT bool client_release()
+	    const noexcept override final;
 };
 
 
@@ -372,6 +373,13 @@ public:
 		listener(tp_service_set& self)
 		:	m_self(self)
 		{
+			/* Empty body. */
+		}
+
+		void
+		run()
+		{
+			this->m_self.do_work();
 		}
 
 		virtual bool wakeup() const noexcept;
@@ -413,9 +421,10 @@ private:
 	active_t m_active;
 
 public:
-	bool do_work() noexcept;
-	bool has_work() noexcept;
-	void attach(threadpool_service_ptr<threadpool_service>);
+	ILIAS_ASYNC_EXPORT bool do_work() noexcept;
+	ILIAS_ASYNC_EXPORT bool has_work() noexcept;
+	ILIAS_ASYNC_EXPORT void attach(
+	    threadpool_service_ptr<threadpool_service>);
 
 	unsigned int
 	wakeup(unsigned int)
