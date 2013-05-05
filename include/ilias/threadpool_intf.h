@@ -413,7 +413,7 @@ public:
 
 	private:
 		/* When client detaches, remove this from the set. */
-		void on_client_detach() noexcept override;
+		ILIAS_ASYNC_EXPORT void on_client_detach() noexcept override;
 	};
 
 
