@@ -1,5 +1,6 @@
 cmake_minimum_required (VERSION 2.8)
 project (IliasAsync)
+include (CTest)
 
 # Declare list variables.
 list (APPEND extra_libs)	# Libs against which to link this library
@@ -142,6 +143,13 @@ add_library (ilias_async SHARED
 target_link_libraries (ilias_async ${extra_libs})
 set_property (TARGET ilias_async PROPERTY VERSION "0.0")
 set_property (TARGET ilias_async PROPERTY SOVERSION "0.0")
+
+
+#
+# Build and run test cases
+#
+enable_testing()
+add_subdirectory (test)
 
 
 #

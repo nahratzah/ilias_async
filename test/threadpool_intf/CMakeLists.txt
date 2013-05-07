@@ -1,0 +1,5 @@
+add_executable (test_threadpool_intf_instantiate
+	instantiate.cc
+	)
+target_link_libraries (test_threadpool_intf_instantiate ilias_async)
+add_test (test_threadpool_intf_instantiate test_threadpool_intf_instantiate)
