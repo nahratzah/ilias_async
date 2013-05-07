@@ -205,7 +205,7 @@ public:
 
 private:
 	void _start(std::unique_lock<std::mutex>) noexcept;
-	void _on_complete() noexcept;
+	ILIAS_ASYNC_EXPORT void _on_complete() noexcept;
 
 public:
 	/*
