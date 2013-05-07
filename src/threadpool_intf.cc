@@ -23,14 +23,14 @@ namespace threadpool_intf_detail {
 
 
 void
-acquire(const threadpool_intf_refcnt& self) noexcept
+refcnt_acquire(const threadpool_intf_refcnt& self) noexcept
 {
 	const auto c = self.m_refcnt.fetch_add(1U, std::memory_order_acquire);
 	assert(c + 1U != 0U);
 }
 
 void
-release(const threadpool_intf_refcnt& self) noexcept
+refcnt_release(const threadpool_intf_refcnt& self) noexcept
 {
 	const auto c = self.m_refcnt.fetch_sub(1U, std::memory_order_release);
 	if (c == 1U)
@@ -41,7 +41,7 @@ void
 client_acqrel::acquire(const threadpool_client_intf& tpc) const noexcept
 {
 	if (tpc.client_acquire())
-		acquire(tpc);
+		refcnt_acquire(tpc);
 }
 
 void
@@ -49,7 +49,7 @@ client_acqrel::release(const threadpool_client_intf& tpc) const noexcept
 {
 	if (tpc.client_release()) {
 		tpc.client_lock_wait();
-		release(tpc);
+		refcnt_release(tpc);
 	}
 }
 
@@ -57,7 +57,7 @@ void
 service_acqrel::acquire(const threadpool_service_intf& tps) const noexcept
 {
 	if (tps.service_acquire())
-		acquire(tps);
+		refcnt_acquire(tps);
 }
 
 void
@@ -65,8 +65,13 @@ service_acqrel::release(const threadpool_service_intf& tps) const noexcept
 {
 	if (tps.service_release()) {
 		tps.service_lock_wait();
-		release(tps);
+		refcnt_release(tps);
 	}
+}
+
+refcount::~refcount() noexcept
+{
+	/* Empty body. */
 }
 
 bool

@@ -35,7 +35,7 @@ class threadpool_client_lock;
 namespace threadpool_intf_detail {
 
 
-class threadpool_intf_refcnt
+class ILIAS_ASYNC_EXPORT threadpool_intf_refcnt
 {
 friend class ::ilias::threadpool_service_lock;
 friend class ::ilias::threadpool_client_lock;
@@ -68,7 +68,13 @@ protected:
 
 public:
 	threadpool_intf_refcnt() = default;
-	threadpool_intf_refcnt(const threadpool_intf_refcnt&) = delete;
+
+	threadpool_intf_refcnt(const threadpool_intf_refcnt&) noexcept
+	:	threadpool_intf_refcnt()
+	{
+		/* Empty body. */
+	}
+
 	threadpool_intf_refcnt(threadpool_intf_refcnt&&) = delete;
 
 	threadpool_intf_refcnt&
@@ -77,12 +83,12 @@ public:
 		return *this;
 	}
 
-	ILIAS_ASYNC_EXPORT virtual ~threadpool_intf_refcnt() noexcept;
+	virtual ~threadpool_intf_refcnt() noexcept;
 
-	ILIAS_ASYNC_EXPORT friend void acquire(const threadpool_intf_refcnt&)
-	    noexcept;
-	ILIAS_ASYNC_EXPORT friend void release(const threadpool_intf_refcnt&)
-	    noexcept;
+	ILIAS_ASYNC_EXPORT friend void refcnt_acquire(
+	    const threadpool_intf_refcnt&) noexcept;
+	ILIAS_ASYNC_EXPORT friend void refcnt_release(
+	    const threadpool_intf_refcnt&) noexcept;
 
 	/* Test if the service is attached. */
 	bool
@@ -145,7 +151,7 @@ public:
 
 	~threadpool_service_lock() noexcept
 	{
-		ti.m_service_locks.fetch_sub(1U, std::memory_order_acquire);
+		ti.m_service_locks.fetch_sub(1U, std::memory_order_release);
 	}
 
 	threadpool_service_lock(const threadpool_service_lock&) = delete;
@@ -176,7 +182,7 @@ public:
 
 	~threadpool_client_lock() noexcept
 	{
-		ti.m_client_locks.fetch_sub(1U, std::memory_order_acquire);
+		ti.m_client_locks.fetch_sub(1U, std::memory_order_release);
 	}
 
 	threadpool_client_lock(const threadpool_client_lock&) = delete;
@@ -193,18 +199,19 @@ public:
  *
  * Service must provide: unsigned int wakeup(unsigned int).
  */
-class threadpool_service_intf
-:	public threadpool_intf_detail::threadpool_intf_refcnt
+class ILIAS_ASYNC_EXPORT threadpool_service_intf
+:	public virtual threadpool_intf_detail::threadpool_intf_refcnt
 {
 friend struct threadpool_intf_detail::service_acqrel;
 friend class threadpool_intf_detail::refcount;
 
 public:
-	ILIAS_ASYNC_EXPORT virtual ~threadpool_service_intf() noexcept;
+	virtual ~threadpool_service_intf() noexcept;
 
-	/* Perform a unit of work for client. */
+protected:
+	/* Client supplied: perform a unit of work for client. */
 	virtual bool do_work() noexcept = 0;
-	/* Test if client has work available. */
+	/* Client supplied: test if client has work available. */
 	virtual bool has_work() noexcept = 0;
 
 private:
@@ -226,8 +233,8 @@ private:
  *
  * Provides methods that the client needs to invoke in order to use a service.
  */
-class threadpool_client_intf
-:	public threadpool_intf_detail::threadpool_intf_refcnt
+class ILIAS_ASYNC_EXPORT threadpool_client_intf
+:	public virtual threadpool_intf_detail::threadpool_intf_refcnt
 {
 friend struct threadpool_intf_detail::client_acqrel;
 friend class threadpool_intf_detail::refcount;
@@ -237,7 +244,11 @@ public:
 
 	ILIAS_ASYNC_EXPORT virtual ~threadpool_client_intf() noexcept;
 
-	/* Notify service of N units of work being available. */
+protected:
+	/*
+	 * Service supplied: notify service of N units of work being
+	 * available.
+	 */
 	virtual unsigned int wakeup(unsigned int = 1) noexcept = 0;
 
 private:
@@ -264,29 +275,27 @@ template<typename T> using threadpool_service_ptr =
 namespace threadpool_intf_detail {
 
 
-class refcount
+class ILIAS_ASYNC_EXPORT refcount
 :	public virtual threadpool_client_intf,
 	public virtual threadpool_service_intf
 {
 public:
-	refcount(const refcount&) {}
+	refcount() = default;
+	refcount(const refcount&) : refcount() {}
+	virtual ~refcount();
 
 private:
 	mutable std::atomic<uintptr_t> m_service_refcnt{ 0U };
 	mutable std::atomic<uintptr_t> m_client_refcnt{ 0U };
 
-	ILIAS_ASYNC_EXPORT bool _has_service() const noexcept override final;
-	ILIAS_ASYNC_EXPORT bool _has_client() const noexcept override final;
+	bool _has_service() const noexcept override final;
+	bool _has_client() const noexcept override final;
 
 protected:
-	ILIAS_ASYNC_EXPORT bool service_acquire()
-	    const noexcept override final;
-	ILIAS_ASYNC_EXPORT bool service_release()
-	    const noexcept override final;
-	ILIAS_ASYNC_EXPORT bool client_acquire()
-	    const noexcept override final;
-	ILIAS_ASYNC_EXPORT bool client_release()
-	    const noexcept override final;
+	bool service_acquire() const noexcept override final;
+	bool service_release() const noexcept override final;
+	bool client_acquire() const noexcept override final;
+	bool client_release() const noexcept override final;
 };
 
 
@@ -297,21 +306,38 @@ class threadpool_combiner
 	public Service,
 	private threadpool_intf_detail::refcount
 {
-	static_assert(std::is_base_of<Client, threadpool_client_intf>::value,
+	static_assert(std::is_base_of<threadpool_client_intf, Client>::value,
 	    "Client must inherit from threadpool_client, "
 	    "in order to use its methods.");
-	static_assert(std::is_base_of<Service, threadpool_service_intf>::value,
+	static_assert(std::is_base_of<threadpool_service_intf, Service>::value,
 	    "Service must inherit from threadpool_service, "
 	    "in order to use its methods.");
 
-	using Client::do_work;
-	using Client::has_work;
-	using Service::wakeup;
+private:
+	bool
+	do_work() noexcept override final
+	{
+		return this->Client::do_work();
+	}
+
+	bool
+	has_work() noexcept override final
+	{
+		return this->Client::has_work();
+	}
+
+	unsigned int
+	wakeup(unsigned int n) noexcept override final
+	{
+		return this->Service::wakeup(n);
+	}
+
 	using threadpool_intf_detail::refcount::client_acquire;
 	using threadpool_intf_detail::refcount::client_release;
 	using threadpool_intf_detail::refcount::service_acquire;
 	using threadpool_intf_detail::refcount::service_release;
 
+public:
 	threadpool_combiner() = delete;
 	threadpool_combiner(const threadpool_combiner&) = delete;
 	threadpool_combiner(threadpool_combiner&&) = delete;
