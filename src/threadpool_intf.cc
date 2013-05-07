@@ -248,20 +248,21 @@ tp_service_set::threadpool_service::wakeup(unsigned int n) noexcept
 	if (n == 0)
 		return 0;
 
-	threadpool_service_lock lck(*this);
+	threadpool_service_lock lck{ *this };
 
 	if (!this->has_service())
 		return 0;
 
-	const auto c = this->m_work_avail.exchange(work_avail::YES,
-	    std::memory_order_acq_rel);
-	if (c == work_avail::DETACHED) {
-		this->m_work_avail.store(work_avail::DETACHED,
-		    std::memory_order_release);
-		return 0;
+	auto c = work_avail::MAYBE;
+	while (this->m_work_avail.compare_exchange_weak(c, work_avail::YES,
+	    std::memory_order_acquire, std::memory_order_relaxed) &&
+	    c != work_avail::YES) {
+		if (c == work_avail::DETACHED)
+			return 0;
 	}
 
-	this->m_self.m_active.push_back(*this);
+	if (c == work_avail::NO)
+		this->m_self.m_active.push_back(*this);
 	return this->m_self.wakeup(n);
 }
 
