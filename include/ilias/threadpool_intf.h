@@ -20,6 +20,7 @@
 #include <ilias/refcnt.h>
 #include <ilias/util.h>
 #include <climits>
+#include <functional>
 #include <utility>
 #include <type_traits>
 
@@ -388,12 +389,10 @@ threadpool_attach(Client& client, Service& service)
 
 	/* Implement combined type. */
 	const auto impl = make_refpointer<impl_type>(
-		do_noexcept([&client]() {
-			return client.threadpool_client_arg();
-		}),
-		do_noexcept([&service]() {
-			return service.threadpool_service_arg();
-		})
+	    do_noexcept(std::bind(
+	      &Client::threadpool_client_arg, std::ref(client))),
+	    do_noexcept(std::bind(
+	      &Service::threadpool_service_arg, std::ref(service)))
 	    );
 
 	/*
@@ -422,7 +421,7 @@ public:
 	/*
 	 * Implementation of threadpool service provider.
 	 */
-	class threadpool_service
+	class ILIAS_ASYNC_EXPORT threadpool_service
 	:	public virtual threadpool_service_intf,
 		public ll_base_hook<data_all>,
 		public ll_base_hook<data_active>
@@ -440,8 +439,8 @@ public:
 		tp_service_set& m_self;
 		std::atomic<work_avail> m_work_avail{ work_avail::YES };
 
-		bool post_deactivate() noexcept;
-		void activate() noexcept;
+		ILIAS_ASYNC_LOCAL bool post_deactivate() noexcept;
+		ILIAS_ASYNC_LOCAL void activate() noexcept;
 
 	public:
 		threadpool_service(tp_service_set& self)
@@ -449,6 +448,8 @@ public:
 		{
 			/* Empty body. */
 		}
+
+		ILIAS_ASYNC_EXPORT ~threadpool_service() noexcept;
 
 	private:
 		/* Invoke work on the client. */

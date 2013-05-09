@@ -152,6 +152,11 @@ threadpool_service_intf::~threadpool_service_intf() noexcept
 }
 
 
+tp_service_set::threadpool_service::~threadpool_service() noexcept
+{
+	/* Empty body. */
+}
+
 void
 tp_service_set::threadpool_service::activate() noexcept
 {
