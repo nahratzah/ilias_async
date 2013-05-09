@@ -285,10 +285,7 @@ tp_service_set::threadpool_service::on_client_detach() noexcept
 		return;
 
 	this->m_work_avail.store(work_avail::DETACHED);
-	this->m_self.m_active.unlink_robust(
-	    this->m_self.m_active.iterator_to(*this));
-	this->m_self.m_data.unlink_robust(
-	    this->m_self.m_data.iterator_to(*this));
+	this->m_self.m_active.push_back(*this);
 }
 
 bool
@@ -298,8 +295,12 @@ tp_service_set::do_work() noexcept
 	    [](threadpool_service& s) -> bool {
 		return !s.invoke_work();
 	    },
-	    [](threadpool_service* s) -> void {
+	    [this](threadpool_service* s) -> void {
 		s->post_deactivate();
+
+		if (s->m_work_avail.load(std::memory_order_acquire) ==
+		    threadpool_service::work_avail::DETACHED)
+			this->m_data.erase(this->m_data.iterator_to(*s));
 	    });
 	return !this->m_active.empty();
 }

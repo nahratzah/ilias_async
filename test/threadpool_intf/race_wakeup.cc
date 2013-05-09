@@ -175,7 +175,6 @@ race_test() noexcept
 	while (s.has_work())
 		while (s.do_work());
 
-	assert(s.has_work());
 	return race;
 }
 
@@ -183,16 +182,23 @@ race_test() noexcept
 int
 main()
 {
-	bool race = false;
+	unsigned int race = 0;
+	const unsigned int N = 1000;
 	int i;
-	for (i = 0; !race && i < 1000; ++i)
-		race = race_test();
-
-	if (race) {
-		std::cout << "Race detected after " << i << " attempts."
-		    << std::endl;
-		return 0;
+	for (i = 0; i < N; ++i) {
+		std::cout << "--- race attempt " << i << std::endl;
+		if (race_test()) {
+			std::cout << "Race detected at " << i << std::endl;
+			++race;
+		}
 	}
-	std::cout << "Failed to trigger race." << std::endl;
-	return 1;
+
+	if (race == 0) {
+		std::cout << "Failed to trigger race." << std::endl;
+		return 1;
+	}
+
+	std::cout << "Race triggered in " << race << " of " << N << " cases."
+	    << std::endl;
+	return 0;
 }
