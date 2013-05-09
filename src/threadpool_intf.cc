@@ -240,6 +240,8 @@ tp_service_set::threadpool_service::invoke_test() noexcept
 	case work_avail::MAYBE:
 	case work_avail::YES:
 		return true;
+	case work_avail::DETACHED:
+		return false;
 	default:
 		break;
 	}
