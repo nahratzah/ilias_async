@@ -152,19 +152,19 @@ threadpool_service_intf::~threadpool_service_intf() noexcept
 }
 
 
-tp_service_set::threadpool_service::~threadpool_service() noexcept
+tp_service_multiplexer::threadpool_service::~threadpool_service() noexcept
 {
 	/* Empty body. */
 }
 
 void
-tp_service_set::threadpool_service::activate() noexcept
+tp_service_multiplexer::threadpool_service::activate() noexcept
 {
 	this->m_self.m_active.push_back(*this);
 }
 
 bool
-tp_service_set::threadpool_service::post_deactivate() noexcept
+tp_service_multiplexer::threadpool_service::post_deactivate() noexcept
 {
 	switch (this->m_work_avail.load(std::memory_order_relaxed)) {
 	case work_avail::DETACHED:
@@ -179,7 +179,7 @@ tp_service_set::threadpool_service::post_deactivate() noexcept
 }
 
 bool
-tp_service_set::threadpool_service::invoke_work() noexcept
+tp_service_multiplexer::threadpool_service::invoke_work() noexcept
 {
 	work_avail wa = work_avail::YES;
 	this->m_work_avail.compare_exchange_strong(wa, work_avail::MAYBE,
@@ -232,7 +232,7 @@ tp_service_set::threadpool_service::invoke_work() noexcept
 }
 
 bool
-tp_service_set::threadpool_service::invoke_test() noexcept
+tp_service_multiplexer::threadpool_service::invoke_test() noexcept
 {
 	switch (this->m_work_avail.load(std::memory_order_relaxed)) {
 	case work_avail::MAYBE:
@@ -253,7 +253,7 @@ tp_service_set::threadpool_service::invoke_test() noexcept
 }
 
 unsigned int
-tp_service_set::threadpool_service::wakeup(unsigned int n) noexcept
+tp_service_multiplexer::threadpool_service::wakeup(unsigned int n) noexcept
 {
 	if (n == 0)
 		return 0;
@@ -277,7 +277,7 @@ tp_service_set::threadpool_service::wakeup(unsigned int n) noexcept
 }
 
 void
-tp_service_set::threadpool_service::on_client_detach() noexcept
+tp_service_multiplexer::threadpool_service::on_client_detach() noexcept
 {
 	threadpool_service_lock lck(*this);
 
@@ -289,7 +289,7 @@ tp_service_set::threadpool_service::on_client_detach() noexcept
 }
 
 bool
-tp_service_set::do_work() noexcept
+tp_service_multiplexer::do_work() noexcept
 {
 	this->m_active.remove_and_dispose_if(
 	    [](threadpool_service& s) -> bool {
@@ -306,7 +306,7 @@ tp_service_set::do_work() noexcept
 }
 
 bool
-tp_service_set::has_work() noexcept
+tp_service_multiplexer::has_work() noexcept
 {
 	this->m_active.remove_if([](threadpool_service& s) {
 		return !s.invoke_test();
@@ -315,7 +315,7 @@ tp_service_set::has_work() noexcept
 }
 
 void
-tp_service_set::attach(threadpool_service_ptr<threadpool_service> p)
+tp_service_multiplexer::attach(threadpool_service_ptr<threadpool_service> p)
 {
 	if (!p) {
 		throw std::invalid_argument("cannot attach "
@@ -330,48 +330,48 @@ tp_service_set::attach(threadpool_service_ptr<threadpool_service> p)
 }
 
 void
-tp_service_set::clear() noexcept
+tp_service_multiplexer::clear() noexcept
 {
 	this->m_data.clear();
 }
 
-tp_service_set::~tp_service_set() noexcept
+tp_service_multiplexer::~tp_service_multiplexer() noexcept
 {
 	this->clear();
 }
 
-tp_client_set::threadpool_client::~threadpool_client() noexcept
+tp_client_multiplexer::threadpool_client::~threadpool_client() noexcept
 {
 	/* Empty body. */
 }
 
 bool
-tp_client_set::threadpool_client::do_work() noexcept
+tp_client_multiplexer::threadpool_client::do_work() noexcept
 {
 	threadpool_client_lock lck{ *this };
 	return (this->has_client() && this->m_client.do_work());
 }
 
 bool
-tp_client_set::threadpool_client::has_work() noexcept
+tp_client_multiplexer::threadpool_client::has_work() noexcept
 {
 	threadpool_client_lock lck{ *this };
 	return (this->has_client() && this->m_client.has_work());
 }
 
 void
-tp_client_set::clear() noexcept
+tp_client_multiplexer::clear() noexcept
 {
 	this->m_data.clear();
 }
 
-tp_client_set::~tp_client_set() noexcept
+tp_client_multiplexer::~tp_client_multiplexer() noexcept
 {
 	this->clear();
 }
 
 unsigned int
-tp_client_set::wakeup(unsigned int n) noexcept
+tp_client_multiplexer::wakeup(unsigned int n) noexcept
 {
 	unsigned int rv = 0;
 	this->m_data.remove_if([&rv, n](threadpool_client& c) {

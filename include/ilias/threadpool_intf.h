@@ -414,7 +414,7 @@ threadpool_attach(Client& client, Service& service)
 /*
  * Service implementation, that will allow multiple clients to share a service.
  */
-class tp_service_set
+class tp_service_multiplexer
 {
 private:
 	struct data_all {};
@@ -429,7 +429,7 @@ public:
 		public ll_base_hook<data_all>,
 		public ll_base_hook<data_active>
 	{
-	friend class tp_service_set;
+	friend class tp_service_multiplexer;
 
 	private:
 		enum class work_avail : unsigned char {
@@ -439,14 +439,14 @@ public:
 			DETACHED
 		};
 
-		tp_service_set& m_self;
+		tp_service_multiplexer& m_self;
 		std::atomic<work_avail> m_work_avail{ work_avail::YES };
 
 		ILIAS_ASYNC_LOCAL bool post_deactivate() noexcept;
 		ILIAS_ASYNC_LOCAL void activate() noexcept;
 
 	public:
-		threadpool_service(tp_service_set& self)
+		threadpool_service(tp_service_multiplexer& self)
 		:	m_self(self)
 		{
 			/* Empty body. */
@@ -472,7 +472,7 @@ public:
 	/*
 	 * Threadpool service provider interface.
 	 */
-	tp_service_set&
+	tp_service_multiplexer&
 	threadpool_service_arg() noexcept
 	{
 		return *this;
@@ -526,8 +526,8 @@ public:
 	ILIAS_ASYNC_EXPORT bool has_work() noexcept;
 	ILIAS_ASYNC_EXPORT void clear() noexcept;
 
-	tp_service_set() = default;
-	ILIAS_ASYNC_EXPORT ~tp_service_set() noexcept;
+	tp_service_multiplexer() = default;
+	ILIAS_ASYNC_EXPORT ~tp_service_multiplexer() noexcept;
 
 	unsigned int
 	wakeup(unsigned int)
@@ -540,20 +540,20 @@ public:
  * Client implementation, that will allow multiple services to be used
  * by a client.
  */
-class tp_client_set
+class tp_client_multiplexer
 {
 public:
 	class ILIAS_ASYNC_EXPORT threadpool_client
 	:	public virtual threadpool_client_intf,
 		public ll_base_hook<>
 	{
-	friend class tp_client_set;
+	friend class tp_client_multiplexer;
 
 	private:
-		tp_client_set& m_client;
+		tp_client_multiplexer& m_client;
 
 	public:
-		threadpool_client(tp_client_set& c)
+		threadpool_client(tp_client_multiplexer& c)
 		:	m_client(c)
 		{
 			/* Empty body. */
@@ -566,7 +566,7 @@ public:
 		bool has_work() noexcept;
 	};
 
-	tp_client_set&
+	tp_client_multiplexer&
 	threadpool_client_arg() noexcept
 	{
 		return *this;
@@ -619,8 +619,8 @@ public:
 	ILIAS_ASYNC_EXPORT unsigned int wakeup(unsigned int = 1) noexcept;
 	ILIAS_ASYNC_EXPORT void clear() noexcept;
 
-	tp_client_set() = default;
-	ILIAS_ASYNC_EXPORT ~tp_client_set() noexcept;
+	tp_client_multiplexer() = default;
+	ILIAS_ASYNC_EXPORT ~tp_client_multiplexer() noexcept;
 
 	/* XXX implement */
 	bool has_work() noexcept { return false; }
