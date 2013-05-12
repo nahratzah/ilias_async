@@ -485,29 +485,6 @@ public:
 	    threadpool_service_ptr<threadpool_service>);
 
 
-	class listener
-	:	public ll_base_hook<>
-	{
-	private:
-		tp_service_set& m_self;
-
-	public:
-		listener(tp_service_set& self)
-		:	m_self(self)
-		{
-			/* Empty body. */
-		}
-
-		void
-		run()
-		{
-			this->m_self.do_work();
-		}
-
-		virtual bool wakeup() const noexcept;
-	};
-
-
 private:
 	struct tps_acquire
 	{
