@@ -646,18 +646,9 @@ public:
 	ILIAS_ASYNC_EXPORT ~tp_client_set() noexcept;
 
 	/* XXX implement */
-	bool
-	do_work() noexcept
-	{
-		return false;
-	}
-
+	bool has_work() noexcept { return false; }
 	/* XXX implement */
-	bool
-	has_work() noexcept
-	{
-		return false;
-	}
+	bool do_work() noexcept { return false; }
 };
 
 

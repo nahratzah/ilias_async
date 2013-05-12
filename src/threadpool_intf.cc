@@ -207,24 +207,22 @@ tp_service_set::threadpool_service::invoke_work() noexcept
 		 * was for instance only single threaded and the thread
 		 * could not pick up any work.
 		 */
-		wa = this->m_work_avail.exchange(work_avail::YES,
-		    std::memory_order_relaxed);
-		switch (wa) {
-		case work_avail::YES:
-		case work_avail::MAYBE:
-			break;
-		case work_avail::NO:
-			/*
-			 * Reactivate, this may fail if another thread is still
-			 * deactivating this, but in that case the epilogue of
-			 * the deactivate call will reactivate it again.
-			 */
+		wa = work_avail::MAYBE;
+		while (wa != work_avail::YES && wa != work_avail::DETACHED &&
+		    !this->m_work_avail.compare_exchange_weak(wa,
+		      work_avail::YES,
+		      std::memory_order_relaxed,
+		      std::memory_order_relaxed));
+
+		/*
+		 * Reactivate, this may fail if another thread is still
+		 * deactivating this, but in that case the epilogue of
+		 * the post_deactivate call will reactivate it again.
+		 */
+		if (wa == work_avail::NO)
 			this->activate();
-			break;
-		case work_avail::DETACHED:
-			return false;
-		}
-		return true;
+
+		return (wa != work_avail::DETACHED);
 	}
 
 	wa = work_avail::MAYBE;
@@ -351,20 +349,14 @@ bool
 tp_client_set::threadpool_client::do_work() noexcept
 {
 	threadpool_client_lock lck{ *this };
-
-	if (!this->has_client())
-		return false;
-	return this->m_client.do_work();
+	return (this->has_client() && this->m_client.do_work());
 }
 
 bool
 tp_client_set::threadpool_client::has_work() noexcept
 {
 	threadpool_client_lock lck{ *this };
-
-	if (!this->has_client())
-		return false;
-	return this->m_client.has_work();
+	return (this->has_client() && this->m_client.has_work());
 }
 
 void
@@ -390,4 +382,4 @@ tp_client_set::wakeup(unsigned int n) noexcept
 }
 
 
-}
+} /* namespace ilias */
