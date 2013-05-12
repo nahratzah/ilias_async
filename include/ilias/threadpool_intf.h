@@ -547,6 +547,7 @@ private:
 public:
 	ILIAS_ASYNC_EXPORT bool do_work() noexcept;
 	ILIAS_ASYNC_EXPORT bool has_work() noexcept;
+	ILIAS_ASYNC_EXPORT void clear() noexcept;
 
 	tp_service_set() = default;
 	ILIAS_ASYNC_EXPORT ~tp_service_set() noexcept;
@@ -631,9 +632,6 @@ private:
 	data_t m_data;
 
 public:
-	tp_client_set() = default;
-	ILIAS_ASYNC_EXPORT ~tp_client_set() noexcept;
-
 	/*
 	 * Wakeup threads.
 	 *
@@ -642,6 +640,10 @@ public:
 	 * (with N = argument, S = number of services attached).
 	 */
 	ILIAS_ASYNC_EXPORT unsigned int wakeup(unsigned int = 1) noexcept;
+	ILIAS_ASYNC_EXPORT void clear() noexcept;
+
+	tp_client_set() = default;
+	ILIAS_ASYNC_EXPORT ~tp_client_set() noexcept;
 
 	/* XXX implement */
 	bool

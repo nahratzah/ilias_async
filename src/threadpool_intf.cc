@@ -331,9 +331,15 @@ tp_service_set::attach(threadpool_service_ptr<threadpool_service> p)
 	    });
 }
 
-tp_service_set::~tp_service_set() noexcept
+void
+tp_service_set::clear() noexcept
 {
 	this->m_data.clear();
+}
+
+tp_service_set::~tp_service_set() noexcept
+{
+	this->clear();
 }
 
 tp_client_set::threadpool_client::~threadpool_client() noexcept
@@ -361,9 +367,15 @@ tp_client_set::threadpool_client::has_work() noexcept
 	return this->m_client.has_work();
 }
 
-tp_client_set::~tp_client_set() noexcept
+void
+tp_client_set::clear() noexcept
 {
 	this->m_data.clear();
+}
+
+tp_client_set::~tp_client_set() noexcept
+{
+	this->clear();
 }
 
 unsigned int
