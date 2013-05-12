@@ -411,6 +411,9 @@ threadpool_attach(Client& client, Service& service)
 }
 
 
+/*
+ * Service implementation, that will allow multiple clients to share a service.
+ */
 class tp_service_set
 {
 private:
@@ -545,10 +548,113 @@ public:
 	ILIAS_ASYNC_EXPORT bool do_work() noexcept;
 	ILIAS_ASYNC_EXPORT bool has_work() noexcept;
 
+	tp_service_set() = default;
+	ILIAS_ASYNC_EXPORT ~tp_service_set() noexcept;
+
 	unsigned int
 	wakeup(unsigned int)
 	{
 		return 0; /* XXX implement */
+	}
+};
+
+/*
+ * Client implementation, that will allow multiple services to be used
+ * by a client.
+ */
+class tp_client_set
+{
+public:
+	class ILIAS_ASYNC_EXPORT threadpool_client
+	:	public virtual threadpool_client_intf,
+		public ll_base_hook<>
+	{
+	friend class tp_client_set;
+
+	private:
+		tp_client_set& m_client;
+
+	public:
+		threadpool_client(tp_client_set& c)
+		:	m_client(c)
+		{
+			/* Empty body. */
+		}
+
+		~threadpool_client() noexcept;
+
+	protected:
+		bool do_work() noexcept;
+		bool has_work() noexcept;
+	};
+
+	tp_client_set&
+	threadpool_client_arg() noexcept
+	{
+		return *this;
+	}
+
+	void
+	attach(threadpool_client_ptr<threadpool_client> p)
+	{
+		this->m_data.push_back(std::move(p));
+	}
+
+private:
+	struct tpc_acquire
+	{
+		threadpool_client_ptr<threadpool_client>
+		operator()(threadpool_client* p)
+		    const noexcept
+		{
+			return threadpool_client_ptr<threadpool_client>(p,
+			    false);
+		}
+	};
+
+	struct tpc_release
+	{
+		threadpool_client*
+		operator()(threadpool_client_ptr<threadpool_client> p)
+		{
+			return p.release();
+		}
+	};
+
+	/* All services. */
+	using data_t = ll_smartptr_list<
+	    threadpool_client_ptr<threadpool_client>,
+	    ll_base<threadpool_client>,
+	    tpc_acquire, tpc_release>;
+
+	/* All services. */
+	data_t m_data;
+
+public:
+	tp_client_set() = default;
+	ILIAS_ASYNC_EXPORT ~tp_client_set() noexcept;
+
+	/*
+	 * Wakeup threads.
+	 *
+	 * All services are poked to wakeup N threads, so the actual number of
+	 * threads awoken is N * S
+	 * (with N = argument, S = number of services attached).
+	 */
+	ILIAS_ASYNC_EXPORT unsigned int wakeup(unsigned int = 1) noexcept;
+
+	/* XXX implement */
+	bool
+	do_work() noexcept
+	{
+		return false;
+	}
+
+	/* XXX implement */
+	bool
+	has_work() noexcept
+	{
+		return false;
 	}
 };
 

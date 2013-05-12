@@ -331,5 +331,51 @@ tp_service_set::attach(threadpool_service_ptr<threadpool_service> p)
 	    });
 }
 
+tp_service_set::~tp_service_set() noexcept
+{
+	this->m_data.clear();
+}
+
+tp_client_set::threadpool_client::~threadpool_client() noexcept
+{
+	/* Empty body. */
+}
+
+bool
+tp_client_set::threadpool_client::do_work() noexcept
+{
+	threadpool_client_lock lck{ *this };
+
+	if (!this->has_client())
+		return false;
+	return this->m_client.do_work();
+}
+
+bool
+tp_client_set::threadpool_client::has_work() noexcept
+{
+	threadpool_client_lock lck{ *this };
+
+	if (!this->has_client())
+		return false;
+	return this->m_client.has_work();
+}
+
+tp_client_set::~tp_client_set() noexcept
+{
+	this->m_data.clear();
+}
+
+unsigned int
+tp_client_set::wakeup(unsigned int n) noexcept
+{
+	unsigned int rv = 0;
+	this->m_data.remove_if([&rv, n](threadpool_client& c) {
+		rv += std::min(n - rv, c.wakeup(n));
+		return c.has_service();
+	    });
+	return rv;
+}
+
 
 }
