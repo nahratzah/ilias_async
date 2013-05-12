@@ -349,14 +349,41 @@ bool
 tp_client_multiplexer::threadpool_client::do_work() noexcept
 {
 	threadpool_client_lock lck{ *this };
-	return (this->has_client() && this->m_client.do_work());
+	if (!this->has_client())
+		return false;
+
+	auto impl = atomic_load(&this->m_client.m_impl);
+	return impl && impl->do_work();
 }
 
 bool
 tp_client_multiplexer::threadpool_client::has_work() noexcept
 {
 	threadpool_client_lock lck{ *this };
-	return (this->has_client() && this->m_client.has_work());
+	if (!this->has_client())
+		return false;
+
+	auto impl = atomic_load(&this->m_client.m_impl);
+	return impl && impl->has_work();
+}
+
+tp_client_multiplexer::threadpool_service::~threadpool_service() noexcept
+{
+	/* Empty body. */
+}
+
+unsigned int
+tp_client_multiplexer::threadpool_service::wakeup(unsigned int n) noexcept
+{
+	unsigned int rv = 0;
+	threadpool_service_lock lck{ *this };
+	if (this->has_service()) {
+		this->m_self.m_data.remove_if([&rv, n](threadpool_client& c) {
+			rv += std::min(n - rv, c.wakeup(n));
+			return c.has_service();
+		    });
+	}
+	return rv;
 }
 
 void
@@ -367,18 +394,8 @@ tp_client_multiplexer::clear() noexcept
 
 tp_client_multiplexer::~tp_client_multiplexer() noexcept
 {
+	atomic_exchange(&this->m_impl, nullptr);
 	this->clear();
-}
-
-unsigned int
-tp_client_multiplexer::wakeup(unsigned int n) noexcept
-{
-	unsigned int rv = 0;
-	this->m_data.remove_if([&rv, n](threadpool_client& c) {
-		rv += std::min(n - rv, c.wakeup(n));
-		return c.has_service();
-	    });
-	return rv;
 }
 
 

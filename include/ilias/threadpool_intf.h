@@ -22,6 +22,7 @@
 #include <climits>
 #include <functional>
 #include <utility>
+#include <stdexcept>
 #include <type_traits>
 
 namespace ilias {
@@ -540,9 +541,13 @@ public:
  * Client implementation, that will allow multiple services to be used
  * by a client.
  */
-class tp_client_multiplexer
+class tp_client_multiplexer final
 {
 public:
+	/*
+	 * Multiplexed client implementation.
+	 * Attach to services that will aid in running the attached client.
+	 */
 	class ILIAS_ASYNC_EXPORT threadpool_client
 	:	public virtual threadpool_client_intf,
 		public ll_base_hook<>
@@ -578,6 +583,48 @@ public:
 		this->m_data.push_back(std::move(p));
 	}
 
+
+	/*
+	 * Service provided to (simple) client.
+	 */
+	class ILIAS_ASYNC_EXPORT threadpool_service
+	:	public virtual threadpool_service_intf
+	{
+	friend class tp_client_multiplexer;
+
+	private:
+		tp_client_multiplexer& m_self;
+
+	public:
+		threadpool_service(tp_client_multiplexer& self)
+		:	m_self(self)
+		{
+			/* Empty body. */
+		}
+
+		~threadpool_service() noexcept;
+
+	protected:
+		unsigned int wakeup(unsigned int) noexcept;
+	};
+
+	tp_client_multiplexer&
+	threadpool_service_arg() noexcept
+	{
+		return *this;
+	}
+
+	void
+	attach(threadpool_service_ptr<threadpool_service> p)
+	{
+		threadpool_service_ptr<threadpool_service> expect{ nullptr };
+		if (!atomic_compare_exchange_strong(&this->m_impl,
+		    &expect, std::move(p))) {
+			throw std::runtime_error("tp_client_multiplexer: "
+			    "client already attached.");
+		}
+	}
+
 private:
 	struct tpc_acquire
 	{
@@ -608,24 +655,14 @@ private:
 	/* All services. */
 	data_t m_data;
 
+	/* Client that is being multiplexed. */
+	threadpool_service_ptr<threadpool_service> m_impl;
+
 public:
-	/*
-	 * Wakeup threads.
-	 *
-	 * All services are poked to wakeup N threads, so the actual number of
-	 * threads awoken is N * S
-	 * (with N = argument, S = number of services attached).
-	 */
-	ILIAS_ASYNC_EXPORT unsigned int wakeup(unsigned int = 1) noexcept;
 	ILIAS_ASYNC_EXPORT void clear() noexcept;
 
 	tp_client_multiplexer() = default;
 	ILIAS_ASYNC_EXPORT ~tp_client_multiplexer() noexcept;
-
-	/* XXX implement */
-	bool has_work() noexcept { return false; }
-	/* XXX implement */
-	bool do_work() noexcept { return false; }
 };
 
 
