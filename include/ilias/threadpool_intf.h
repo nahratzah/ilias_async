@@ -453,21 +453,21 @@ public:
 			/* Empty body. */
 		}
 
-		ILIAS_ASYNC_EXPORT ~threadpool_service() noexcept;
+		~threadpool_service() noexcept;
 
 	private:
 		/* Invoke work on the client. */
-		ILIAS_ASYNC_EXPORT bool invoke_work() noexcept;
+		bool invoke_work() noexcept;
 		/* Test for work availability. */
-		ILIAS_ASYNC_EXPORT bool invoke_test() noexcept;
+		bool invoke_test() noexcept;
 
 	public:
 		/* Wakeup N threads. */
-		ILIAS_ASYNC_EXPORT unsigned int wakeup(unsigned int) noexcept;
+		unsigned int wakeup(unsigned int) noexcept;
 
 	private:
 		/* When client detaches, remove this from the set. */
-		ILIAS_ASYNC_EXPORT void on_client_detach() noexcept override;
+		void on_client_detach() noexcept override;
 	};
 
 	/*
@@ -484,6 +484,40 @@ public:
 	 */
 	ILIAS_ASYNC_EXPORT void attach(
 	    threadpool_service_ptr<threadpool_service>);
+
+	/* Client for (simple) threadpool service. */
+	class ILIAS_ASYNC_EXPORT threadpool_client
+	:	public virtual threadpool_client_intf
+	{
+	friend class tp_service_multiplexer;
+
+	private:
+		tp_service_multiplexer& m_self;
+
+	public:
+		threadpool_client(tp_service_multiplexer& self)
+		:	m_self(self)
+		{
+			/* Empty body. */
+		}
+
+		~threadpool_client() noexcept;
+
+	protected:
+		bool do_work() noexcept;
+		bool has_work() noexcept;
+	};
+
+	tp_service_multiplexer&
+	threadpool_client_arg() noexcept
+	{
+		return *this;
+	}
+
+	/*
+	 * Attach multiplexed service. */
+	ILIAS_ASYNC_EXPORT void attach(
+	    threadpool_client_ptr<threadpool_client>);
 
 
 private:
@@ -521,25 +555,23 @@ private:
 	data_t m_data;
 	/* All active clients. */
 	active_t m_active;
+	/* Client to service that is multiplexed. */
+	threadpool_client_ptr<threadpool_client> m_impl;
 
 public:
-	ILIAS_ASYNC_EXPORT bool do_work() noexcept;
-	ILIAS_ASYNC_EXPORT bool has_work() noexcept;
 	ILIAS_ASYNC_EXPORT void clear() noexcept;
 
 	tp_service_multiplexer() = default;
 	ILIAS_ASYNC_EXPORT ~tp_service_multiplexer() noexcept;
-
-	unsigned int
-	wakeup(unsigned int)
-	{
-		return 0; /* XXX implement */
-	}
 };
 
 /*
  * Client implementation, that will allow multiple services to be used
  * by a client.
+ *
+ * Attach to a client C using:
+ *   tp_client_multiplexer tcm;
+ *   threadpool_attach(C, tcm);
  */
 class tp_client_multiplexer final
 {
@@ -577,11 +609,8 @@ public:
 		return *this;
 	}
 
-	void
-	attach(threadpool_client_ptr<threadpool_client> p)
-	{
-		this->m_data.push_back(std::move(p));
-	}
+	ILIAS_ASYNC_EXPORT void attach(
+	    threadpool_client_ptr<threadpool_client>);
 
 
 	/*
@@ -614,16 +643,8 @@ public:
 		return *this;
 	}
 
-	void
-	attach(threadpool_service_ptr<threadpool_service> p)
-	{
-		threadpool_service_ptr<threadpool_service> expect{ nullptr };
-		if (!atomic_compare_exchange_strong(&this->m_impl,
-		    &expect, std::move(p))) {
-			throw std::runtime_error("tp_client_multiplexer: "
-			    "client already attached.");
-		}
-	}
+	ILIAS_ASYNC_EXPORT void attach(
+	    threadpool_service_ptr<threadpool_service> p);
 
 private:
 	struct tpc_acquire

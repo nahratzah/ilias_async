@@ -273,13 +273,15 @@ tp_service_multiplexer::threadpool_service::wakeup(unsigned int n) noexcept
 
 	if (c == work_avail::NO)
 		this->m_self.m_active.push_back(*this);
-	return this->m_self.wakeup(n);
+
+	auto impl = atomic_load(&this->m_self.m_impl);
+	return (impl ? impl->wakeup(n) : 0U);
 }
 
 void
 tp_service_multiplexer::threadpool_service::on_client_detach() noexcept
 {
-	threadpool_service_lock lck(*this);
+	threadpool_service_lock lck{ *this };
 
 	if (!this->has_service())
 		return;
@@ -289,9 +291,10 @@ tp_service_multiplexer::threadpool_service::on_client_detach() noexcept
 }
 
 bool
-tp_service_multiplexer::do_work() noexcept
+tp_service_multiplexer::threadpool_client::do_work() noexcept
 {
-	this->m_active.remove_and_dispose_if(
+	threadpool_client_lock lck{ *this };
+	this->m_self.m_active.remove_and_dispose_if(
 	    [](threadpool_service& s) -> bool {
 		return !s.invoke_work();
 	    },
@@ -299,19 +302,27 @@ tp_service_multiplexer::do_work() noexcept
 		s->post_deactivate();
 
 		if (s->m_work_avail.load(std::memory_order_acquire) ==
-		    threadpool_service::work_avail::DETACHED)
-			this->m_data.erase(this->m_data.iterator_to(*s));
+		    threadpool_service::work_avail::DETACHED) {
+			this->m_self.m_data.erase(
+			    this->m_self.m_data.iterator_to(*s));
+		}
 	    });
-	return !this->m_active.empty();
+	return !this->m_self.m_active.empty();
 }
 
 bool
-tp_service_multiplexer::has_work() noexcept
+tp_service_multiplexer::threadpool_client::has_work() noexcept
 {
-	this->m_active.remove_if([](threadpool_service& s) {
+	threadpool_client_lock lck{ *this };
+	this->m_self.m_active.remove_if([](threadpool_service& s) {
 		return !s.invoke_test();
 	    });
-	return !this->m_active.empty();
+	return !this->m_self.m_active.empty();
+}
+
+tp_service_multiplexer::threadpool_client::~threadpool_client() noexcept
+{
+	/* Empty body. */
 }
 
 void
@@ -327,6 +338,23 @@ tp_service_multiplexer::attach(threadpool_service_ptr<threadpool_service> p)
 		this->m_active.push_back(*p);
 		p->wakeup(threadpool_client_intf::WAKE_ALL);
 	    });
+}
+
+void
+tp_service_multiplexer::attach(threadpool_client_ptr<threadpool_client> p)
+{
+	if (!p) {
+		throw std::invalid_argument("cannot attach "
+		    "null threadpool service");
+	}
+
+	threadpool_client_ptr<threadpool_client> expect{ nullptr };
+	if (!atomic_compare_exchange_strong(&this->m_impl, &expect, p)) {
+		throw std::runtime_error("cannot attach "
+		    "more than one threadpool service to service multiplexer");
+	}
+	if (!this->m_active.empty())
+		p->wakeup(threadpool_client_intf::WAKE_ALL);
 }
 
 void
@@ -384,6 +412,33 @@ tp_client_multiplexer::threadpool_service::wakeup(unsigned int n) noexcept
 		    });
 	}
 	return rv;
+}
+
+void
+tp_client_multiplexer::attach(threadpool_client_ptr<threadpool_client> p)
+{
+	if (!p) {
+		throw std::invalid_argument("cannot attach "
+		    "null threadpool client");
+	}
+
+	this->m_data.push_back(std::move(p));
+}
+
+void
+tp_client_multiplexer::attach(threadpool_service_ptr<threadpool_service> p)
+{
+	if (!p) {
+		throw std::invalid_argument("tp_client_multiplexer: "
+		    "cannot attach null service");
+	}
+
+	threadpool_service_ptr<threadpool_service> expect{ nullptr };
+	if (!atomic_compare_exchange_strong(&this->m_impl,
+	    &expect, std::move(p))) {
+		throw std::runtime_error("tp_client_multiplexer: "
+		    "client already attached");
+	}
 }
 
 void
