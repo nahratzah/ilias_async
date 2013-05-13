@@ -507,12 +507,6 @@ new_workq_service() throw (std::bad_alloc)
 	return workq_service_ptr(new workq_service());
 }
 
-workq_service_ptr
-new_workq_service(unsigned int threads) throw (std::bad_alloc)
-{
-	return workq_service_ptr(new workq_service(threads));
-}
-
 
 workq_job::workq_job(workq_ptr wq, unsigned int type)
     throw (std::invalid_argument) :
@@ -829,22 +823,8 @@ workq::aid(unsigned int count) noexcept
 
 
 workq_service::workq_service()
-:	workq_service(threadpool::default_thread_count())
 {
 	return;
-}
-
-workq_service::workq_service(unsigned int threads)
-:	m_workers(std::bind(&workq_service::empty, this),
-	    [this]() -> bool {
-		publish_wqs pub(*this);
-		return this->aid(32);
-	      },
-	    threads)
-{
-	this->m_wakeup_cb = [this](workq_service_ptr, std::size_t n_threads) {
-		this->m_workers.wakeup(n_threads);
-	    };
 }
 
 workq_service::~workq_service() noexcept
@@ -852,10 +832,7 @@ workq_service::~workq_service() noexcept
 	assert(this->m_wq_runq.empty());
 	assert(this->m_co_runq.empty());
 
-	{
-		std::lock_guard<std::mutex> lck{ this->m_wakeup_lck };
-		this->m_wakeup_cb = nullptr;
-	}
+	atomic_store(&this->m_wakeup_cb, nullptr);
 }
 
 void
@@ -884,9 +861,11 @@ workq_service::wakeup(std::size_t count) noexcept
 	 * one workq_service_ptr, therefore the pointer can be safely
 	 * constructed as argument to the callback.
 	 */
-	std::lock_guard<std::mutex> lck{ this->m_wakeup_lck };
-	if (this->m_wakeup_cb)
-		this->m_wakeup_cb(this, count);
+	auto cb = atomic_load(&this->m_wakeup_cb);
+	if (count > threadpool_client_intf::WAKE_ALL)
+		count = threadpool_client_intf::WAKE_ALL;
+	if (cb)
+		cb->wakeup(count);
 }
 
 workq_ptr
@@ -953,14 +932,6 @@ workq_service::empty() const noexcept
 	return (this->m_wq_runq.empty() && this->m_co_runq.empty());
 }
 
-void
-callback(const workq_service_ptr& wqs,
-    std::function<void(workq_service_ptr, std::size_t)> cb) noexcept
-{
-	std::lock_guard<std::mutex> lck{ wqs->m_wakeup_lck };
-	wqs->m_wakeup_cb = std::move(cb);
-}
-
 
 namespace workq_detail {
 
@@ -1022,6 +993,7 @@ wq_deleter::operator()(const workq_service* wqs) const noexcept
 	 * its own worker thread, then perform special handling. */
 
 	/* Wait for the last internal reference to go away. */
+	atomic_store(&const_cast<workq_service*>(wqs)->m_wakeup_cb, nullptr);
 	wqs->wait_unreferenced();
 
 	delete wqs;
