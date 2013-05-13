@@ -415,7 +415,7 @@ threadpool_attach(Client& client, Service& service)
 /*
  * Service implementation, that will allow multiple clients to share a service.
  */
-class tp_service_multiplexer
+class tp_service_multiplexer final
 {
 private:
 	struct data_all {};
@@ -684,6 +684,157 @@ public:
 
 	tp_client_multiplexer() = default;
 	ILIAS_ASYNC_EXPORT ~tp_client_multiplexer() noexcept;
+};
+
+
+/*
+ * Wrap a service in order to multiplex it.
+ *
+ * The actual service can be reached by operator* and operator->.
+ */
+template<typename Service>
+class tp_service_mp_wrap
+{
+public:
+	/* Behave as a pointer to the wrapped service. */
+	using element_type = Service;
+	using pointer = element_type*;
+	using reference = element_type&;
+	using const_pointer = const element_type*;
+	using const_reference = const element_type&;
+
+	/*
+	 * Expose multiplexer interface
+	 * as threadpool service implementation.
+	 */
+	using threadpool_service = tp_service_multiplexer::threadpool_service;
+
+private:
+	tp_service_multiplexer m_mp;
+	element_type m_wrapped;
+
+public:
+	template<typename... Args>
+	tp_service_mp_wrap(Args&&... args)
+	:	m_wrapped{ std::forward<Args>(args)... }
+	{
+		threadpool_attach(this->m_mp, this->m_wrapped);
+	}
+
+	tp_service_mp_wrap(const tp_service_mp_wrap&) = delete;
+	tp_service_mp_wrap& operator=(const tp_service_mp_wrap&) = delete;
+	tp_service_mp_wrap(tp_service_mp_wrap&&) = delete;
+
+	reference
+	operator*() noexcept
+	{
+		return this->m_wrapped;
+	}
+
+	const_reference
+	operator*() const noexcept
+	{
+		return this->m_wrapped;
+	}
+
+	pointer
+	operator->() noexcept
+	{
+		return &this->m_wrapped;
+	}
+
+	const_pointer
+	operator->() const noexcept
+	{
+		return &this->m_wrapped;
+	}
+
+	tp_service_multiplexer&
+	threadpool_service_arg() noexcept
+	{
+		return this->m_mp.threadpool_service_arg();
+	}
+
+	void
+	attach(threadpool_service_ptr<threadpool_service> p)
+	{
+		this->m_mp.attach(std::move(p));
+	}
+};
+
+/*
+ * Wrap a client in order to multiplex it.
+ *
+ * The actual client can be reached by operator* and operator->.
+ */
+template<typename Client>
+class tp_client_mp_wrap
+{
+public:
+	/* Behave as a pointer to the wrapped service. */
+	using element_type = Client;
+	using pointer = element_type*;
+	using reference = element_type&;
+	using const_pointer = const element_type*;
+	using const_reference = const element_type&;
+
+	/*
+	 * Expose multiplexer interface
+	 * as threadpool service implementation.
+	 */
+	using threadpool_client = tp_client_multiplexer::threadpool_client;
+
+private:
+	tp_client_multiplexer m_mp;
+	element_type m_wrapped;
+
+public:
+	template<typename... Args>
+	tp_client_mp_wrap(Args&&... args)
+	:	m_wrapped{ std::forward<Args>(args)... }
+	{
+		threadpool_attach(this->m_wrapped, this->m_mp);
+	}
+
+	tp_client_mp_wrap(const tp_client_mp_wrap&) = delete;
+	tp_client_mp_wrap& operator=(const tp_client_mp_wrap&) = delete;
+	tp_client_mp_wrap(tp_client_mp_wrap&&) = delete;
+
+	reference
+	operator*() noexcept
+	{
+		return this->m_wrapped;
+	}
+
+	const_reference
+	operator*() const noexcept
+	{
+		return this->m_wrapped;
+	}
+
+	pointer
+	operator->() noexcept
+	{
+		return &this->m_wrapped;
+	}
+
+	const_pointer
+	operator->() const noexcept
+	{
+		return &this->m_wrapped;
+	}
+
+	tp_client_multiplexer&
+	threadpool_client_arg() noexcept
+	{
+		return this->m_mp.threadpool_service_arg();
+	}
+
+	void
+	attach(threadpool_client_ptr<threadpool_client> p)
+	{
+		this->m_mp.attach(std::move(p));
+	}
 };
 
 
