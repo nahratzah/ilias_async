@@ -864,8 +864,12 @@ workq_service::wakeup(std::size_t count) noexcept
 	auto cb = atomic_load(&this->m_wakeup_cb);
 	if (count > threadpool_client_intf::WAKE_ALL)
 		count = threadpool_client_intf::WAKE_ALL;
-	if (cb)
-		cb->wakeup(count);
+	if (cb) {
+		if (cb->has_service())
+			cb->wakeup(count);
+		else
+			atomic_store(&this->m_wakeup_cb, nullptr);
+	}
 }
 
 workq_ptr
