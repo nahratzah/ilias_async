@@ -419,7 +419,7 @@ public:
 		return *p;
 	}
 
-	friend refpointer
+	friend void
 	atomic_store(refpointer* p, refpointer v) noexcept(noexcept_release)
 	{
 		refpointer_detail::atom_lck lck{ p };
@@ -430,7 +430,7 @@ public:
 	atomic_exchange(refpointer* p, refpointer v) noexcept
 	{
 		{
-			refpointer_detail::atom_lck{ p };
+			refpointer_detail::atom_lck lck{ p };
 			p->swap(v);
 		}
 		return v;
@@ -440,7 +440,7 @@ public:
 	atomic_compare_exchange_strong(refpointer* p, refpointer* expect,
 	    refpointer v) noexcept(noexcept_acqrel)
 	{
-		refpointer_detail::atom_lck{ p };
+		refpointer_detail::atom_lck lck{ p };
 		if (*p == *expect) {
 			*p = std::move(v);
 			return true;

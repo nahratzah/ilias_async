@@ -121,7 +121,7 @@ base_prom_data::set_execute_fn(execute_fn fn)
 		throw promise_cb_installed();
 
 	if (this->m_cbstate == cb_state::CB_NEED) {
-		this->m_cbstate == cb_state::CB_DONE;
+		this->m_cbstate = cb_state::CB_DONE;
 		guard.unlock();
 		this->invoke_execute_fn(fn);
 	} else
