@@ -822,6 +822,29 @@ workq::aid(unsigned int count) noexcept
 }
 
 
+workq_service::threadpool_client::~threadpool_client() noexcept
+{
+	/* Empty body. */
+}
+
+bool
+workq_service::threadpool_client::do_work() noexcept
+{
+	threadpool_client_lock lck{ *this };
+	if (!this->has_client())
+		return false;
+
+	publish_wqs pub{ this->m_self };
+	return this->m_self.aid(32);
+}
+
+bool
+workq_service::threadpool_client::has_work() noexcept
+{
+	threadpool_client_lock lck{ *this };
+	return (this->has_client() && !this->m_self.empty());
+}
+
 workq_service::workq_service()
 {
 	return;

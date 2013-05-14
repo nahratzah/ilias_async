@@ -693,19 +693,8 @@ public:
 		~threadpool_client() noexcept;
 
 	protected:
-		bool
-		do_work() noexcept
-		{
-			threadpool_client_lock lck{ *this };
-			return (this->has_client() && this->m_self.aid());
-		}
-
-		bool
-		has_work() noexcept
-		{
-			threadpool_client_lock lck{ *this };
-			return (this->has_client() && !this->m_self.empty());
-		}
+		bool do_work() noexcept;
+		bool has_work() noexcept;
 	};
 
 	workq_service&
