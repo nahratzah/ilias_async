@@ -128,16 +128,9 @@ struct wq_stack
 	}
 
 
-#if HAS_DELETED_FN
 	wq_stack() = delete;
 	wq_stack(const wq_stack&) = delete;
 	wq_stack& operator=(const wq_stack&) = delete;
-#else
-private:
-	wq_stack();
-	wq_stack(const wq_stack&);
-	wq_stack& operator=(const wq_stack&);
-#endif
 };
 
 struct wq_tls
@@ -247,16 +240,9 @@ public:
 	}
 
 
-#if HAS_DELETED_FN
 	publish_wqs() = delete;
 	publish_wqs(const publish_wqs&) = delete;
 	publish_wqs& operator=(const publish_wqs&) = delete;
-#else
-private:
-	publish_wqs();
-	publish_wqs(const publish_wqs&);
-	publish_wqs& operator=(const publish_wqs&);
-#endif
 };
 
 
