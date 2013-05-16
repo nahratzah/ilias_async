@@ -184,7 +184,7 @@ main()
 {
 	unsigned int race = 0;
 	const unsigned int N = 1000;
-	int i;
+	unsigned int i;
 	for (i = 0; i < N; ++i) {
 		std::cout << "--- race attempt " << i << std::endl;
 		if (race_test()) {
