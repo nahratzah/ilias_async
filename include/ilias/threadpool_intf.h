@@ -21,9 +21,10 @@
 #include <ilias/util.h>
 #include <climits>
 #include <functional>
-#include <utility>
+#include <mutex>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
 
 namespace ilias {
 
@@ -835,6 +836,64 @@ public:
 	{
 		this->m_mp.attach(std::move(p));
 	}
+};
+
+
+/*
+ * A simple service that will allow aid invocations.
+ */
+class tp_aid_service
+{
+public:
+	using callback_fn = unsigned int(unsigned int);
+
+	class ILIAS_ASYNC_EXPORT threadpool_service
+	:	public virtual threadpool_service_intf
+	{
+	friend class tp_aid_service;
+
+	private:
+		tp_aid_service& m_self;
+
+	protected:
+		unsigned int wakeup(unsigned int) noexcept;
+
+	public:
+		threadpool_service(tp_aid_service& self)
+		:	m_self(self)
+		{
+			/* Empty body. */
+		}
+
+		~threadpool_service() noexcept;
+	};
+
+	tp_aid_service&
+	threadpool_service_arg() noexcept
+	{
+		return *this;
+	}
+
+	ILIAS_ASYNC_EXPORT void attach(
+	    threadpool_service_ptr<threadpool_service>);
+
+private:
+	threadpool_service_ptr<threadpool_service> m_p;
+	std::mutex m_wakeup_mtx;
+	std::function<callback_fn> m_wakeup_cb;
+
+public:
+	ILIAS_ASYNC_EXPORT bool has_work() noexcept;
+	ILIAS_ASYNC_EXPORT bool do_work() noexcept;
+
+	ILIAS_ASYNC_EXPORT friend void callback(tp_aid_service,
+	    std::function<callback_fn>) noexcept;
+
+	tp_aid_service() = default;
+	tp_aid_service(const tp_aid_service&) = delete;
+	tp_aid_service& operator=(const tp_aid_service&) = delete;
+	tp_aid_service(tp_aid_service&&) = delete;
+	~tp_aid_service() = default;
 };
 
 

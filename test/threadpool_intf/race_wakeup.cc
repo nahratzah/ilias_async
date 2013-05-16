@@ -153,7 +153,7 @@ bool
 race_test() noexcept
 {
 	client c;
-	ilias::tp_service_multiplexer s;
+	ilias::tp_aid_service s;
 	bool race;
 
 	threadpool_attach(c, s);

@@ -454,4 +454,66 @@ tp_client_multiplexer::~tp_client_multiplexer() noexcept
 }
 
 
+tp_aid_service::threadpool_service::~threadpool_service() noexcept
+{
+	/* Empty body. */
+}
+
+unsigned int
+tp_aid_service::threadpool_service::wakeup(unsigned int n) noexcept
+{
+	threadpool_service_lock lck{ *this };
+	if (n == 0 || !this->has_service())
+		return 0;
+
+	std::lock_guard<std::mutex> guard{ this->m_self.m_wakeup_mtx };
+	return (this->m_self.m_wakeup_cb ?
+	    this->m_self.m_wakeup_cb(n) :
+	    0U);
+}
+
+void
+tp_aid_service::attach(threadpool_service_ptr<threadpool_service> p)
+{
+	if (!p) {
+		throw std::invalid_argument("tp_aid_service: "
+		    "cannot attach null service");
+	}
+
+	threadpool_service_ptr<threadpool_service> expect{ nullptr };
+	if (!atomic_compare_exchange_strong(&this->m_p,
+	    &expect, std::move(p))) {
+		throw std::runtime_error("tp_aid_service: "
+		    "cannot attach second client");
+	}
+
+	if (this->has_work() && this->m_wakeup_cb)
+		this->m_wakeup_cb(threadpool_client_intf::WAKE_ALL);
+}
+
+void
+callback(tp_aid_service s, std::function<tp_aid_service::callback_fn> fn)
+    noexcept
+{
+	using std::swap;
+
+	std::lock_guard<std::mutex> guard{ s.m_wakeup_mtx };
+	swap(s.m_wakeup_cb, fn);
+	if (s.has_work() && s.m_wakeup_cb)
+		s.m_wakeup_cb(threadpool_client_intf::WAKE_ALL);
+}
+
+bool
+tp_aid_service::has_work() noexcept
+{
+	return this->m_p && this->m_p->has_work();
+}
+
+bool
+tp_aid_service::do_work() noexcept
+{
+	return this->m_p && this->m_p->do_work();
+}
+
+
 } /* namespace ilias */
