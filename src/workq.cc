@@ -816,12 +816,16 @@ workq_service::threadpool_client::~threadpool_client() noexcept
 bool
 workq_service::threadpool_client::do_work() noexcept
 {
-	threadpool_client_lock lck{ *this };
-	if (!this->has_client())
-		return false;
+	workq_detail::workq_intref<workq_service> wqs;
+	{
+		threadpool_client_lock lck{ *this };
+		if (!this->has_client())
+			return false;
+		wqs = &this->m_self;
+	}
 
-	publish_wqs pub{ this->m_self };
-	return this->m_self.aid(32);
+	publish_wqs pub{ *wqs };
+	return wqs->aid(32);
 }
 
 bool
@@ -1002,12 +1006,20 @@ wq_deleter::operator()(const workq* wq) const noexcept
 void
 wq_deleter::operator()(const workq_service* wqs) const noexcept
 {
-	/* XXX check if this wqs is being destroyed from within
-	 * its own worker thread, then perform special handling. */
-
-	/* Wait for the last internal reference to go away. */
+	/* Kill link to threadpool service provider. */
 	atomic_store(&const_cast<workq_service*>(wqs)->m_wakeup_cb, nullptr);
-	wqs->wait_unreferenced();
+
+	/*
+	 * Check if this wqs is being destroyed from within
+	 * its own worker thread, then perform special handling.
+	 *
+	 * Uses publish_wqs provided tls data.
+	 */
+	auto& tls = get_wq_tls();
+	if (tls.wqs == wqs) {
+		wqs->int_suicide.store(true, std::memory_order_release);
+		return;
+	}
 
 	delete wqs;
 }

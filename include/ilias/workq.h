@@ -672,6 +672,7 @@ friend void workq_detail::wq_deleter::operator()(const workq_service*) const noe
 friend void workq_detail::co_runnable::co_publish(std::size_t) noexcept;
 friend bool workq_detail::co_runnable::release(std::size_t n) noexcept;
 friend void workq::job_to_runq(workq_detail::workq_intref<workq_job>) noexcept;
+friend struct workq_detail::workq_intref_mgr<workq_service>;
 
 
 public:
