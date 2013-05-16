@@ -218,6 +218,28 @@ get_wq_tls()
 #endif
 };
 
+class publish_wqs_busy
+:	public virtual std::exception
+{
+public:
+	publish_wqs_busy() = default;
+
+	~publish_wqs_busy() noexcept;
+	const char* what() const noexcept override;
+};
+
+publish_wqs_busy::~publish_wqs_busy() noexcept
+{
+	/* Empty body. */
+}
+
+const char*
+publish_wqs_busy::what() const noexcept
+{
+	return "workq_service: "
+	    "current thread already has published workq_service";
+}
+
 class publish_wqs
 {
 private:
@@ -225,11 +247,12 @@ private:
 	workq_service*const m_wqs;
 
 public:
-	publish_wqs(workq_service& wqs) noexcept :
+	publish_wqs(workq_service& wqs) :
 		m_tls(get_wq_tls()),
 		m_wqs(&wqs)
 	{
-		assert(!this->m_tls.wqs);
+		if (this->m_tls.wqs)
+			throw publish_wqs_busy();
 		this->m_tls.wqs = this->m_wqs;
 	}
 
@@ -824,8 +847,13 @@ workq_service::threadpool_client::do_work() noexcept
 		wqs = &this->m_self;
 	}
 
-	publish_wqs pub{ *wqs };
-	return wqs->aid(32);
+	try {
+		publish_wqs pub{ *wqs };
+		return wqs->aid(32);
+	} catch (const publish_wqs_busy&) {
+		/* Disallow recursion. */
+		return false;
+	}
 }
 
 bool
