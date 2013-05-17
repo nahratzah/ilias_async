@@ -896,6 +896,16 @@ public:
 	~tp_aid_service() = default;
 };
 
+extern template ILIAS_ASYNC_EXPORT
+	void threadpool_attach<tp_client_multiplexer, tp_service_multiplexer>(
+	    tp_client_multiplexer&, tp_service_multiplexer&);
+extern template ILIAS_ASYNC_EXPORT
+	void threadpool_attach<tp_client_multiplexer, tp_aid_service>(
+	    tp_client_multiplexer&, tp_aid_service&);
+extern template ILIAS_ASYNC_EXPORT
+	void threadpool_attach<tp_service_multiplexer, tp_aid_service>(
+	    tp_service_multiplexer&, tp_aid_service&);
+
 
 } /* namespace ilias */
 
