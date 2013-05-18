@@ -1178,15 +1178,13 @@ class ILIAS_ASYNC_LOCAL job_once final :
 	public JobType,
 	public std::enable_shared_from_this<job_once<JobType> >
 {
-private:
+public:
 	std::shared_ptr<job_once> m_self;
 
-public:
 	template<typename FN>
 	job_once(workq_ptr ptr, FN&& fn) :
 		JobType(std::move(ptr), std::forward<FN>(fn),
-		    workq_job::TYPE_ONCE),
-		m_self(this)
+		    workq_job::TYPE_ONCE)
 	{
 		assert(this->m_type & workq_job::TYPE_ONCE);
 	}
@@ -1206,14 +1204,16 @@ workq::once(std::function<void()> fn)
     throw (std::bad_alloc, std::invalid_argument)
 {
 	/* Create a job that will run once and then kill itself. */
-	workq_job_ptr j =
+	auto j =
 	    new_workq_job<job_once<job_single> >(this, std::move(fn));
+	j->m_self = j;	/* Self reference, will be broken by run(). */
 
 	/* May not throw past this point. */
-	static_assert(noexcept(j->activate()), "Job activation may not throw, "
-	    "since we are unable to undo part of the operation.");
+
 	/* Activate this job, so it will run. */
-	j->activate();
+	do_noexcept([&]() {
+		j->activate();
+	    });
 }
 
 void
@@ -1221,14 +1221,16 @@ workq::once(std::vector<std::function<void()> > fns)
     throw (std::bad_alloc, std::invalid_argument)
 {
 	/* Create a job that will run once and then kill itself. */
-	workq_job_ptr j = new_workq_job<job_once<coroutine_job> >(this,
+	auto j = new_workq_job<job_once<coroutine_job> >(this,
 	    std::move(fns));
+	j->m_self = j;	/* Self reference, will be broken by run(). */
 
 	/* May not throw past this point. */
-	static_assert(noexcept(j->activate()), "Job activation may not throw, "
-	    "since we are unable to undo part of the operation.");
+
 	/* Activate this job, so it will run. */
-	j->activate();	/* Never throws */
+	do_noexcept([&]() {
+		j->activate();	/* Never throws */
+	    });
 }
 
 
