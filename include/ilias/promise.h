@@ -426,8 +426,8 @@ public:
 		switch (this->current_state()) {
 		case state::S_NIL:
 		case state::S_BUSY:
-			assert(false);
-			while (true);	/* Undefined behaviour: spin. */
+			/* This state shouldn't happen after wait(). */
+			break;
 		case state::S_SET:
 			std::atomic_thread_fence(std::memory_order_acquire);
 			return this->m_data.val;
@@ -437,6 +437,9 @@ public:
 			std::atomic_thread_fence(std::memory_order_acquire);
 			std::rethrow_exception(this->m_data.exc);
 		}
+
+		assert(false);
+		while (true);	/* Undefined behaviour: spin. */
 	}
 };
 
