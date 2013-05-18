@@ -614,13 +614,13 @@ threadpool::impl::worker::do_sleep() noexcept
 	/* Transition to SLEEP. */
 	if (!this->transition(thread_state::SLEEP_TEST,
 	    thread_state::SLEEP,
-	    std::memory_order_acq_rel, std::memory_order_release))
+	    std::memory_order_acq_rel, std::memory_order_relaxed))
 		return;
 	/* Wait until state changes to non-sleep. */
 	do {
 		if (!this->must_die())
 			this->m_sleep_cnd.wait(guard);
-	} while (this->m_state.load(std::memory_order_acq_rel) ==
+	} while (this->m_state.load(std::memory_order_relaxed) ==
 	    thread_state::SLEEP);
 }
 
