@@ -36,6 +36,10 @@ public:
 		bool
 		has_work() noexcept
 		{
+			ilias::threadpool_client_lock c_lck{ *this };
+			if (!this->has_client())
+				return false;
+
 			std::lock_guard<std::mutex> guard{ lck };
 			return tp;
 		}
@@ -47,6 +51,10 @@ public:
 
 			ilias::threadpool* p = nullptr;
 			{
+				ilias::threadpool_client_lock c_lck{ *this };
+				if (!this->has_client())
+					return false;
+
 				std::lock_guard<std::mutex> guard{ lck };
 				swap(p, tp);
 			}
