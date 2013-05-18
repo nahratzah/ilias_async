@@ -824,6 +824,17 @@ public:
 };
 
 
+extern template ILIAS_ASYNC_EXPORT
+	void threadpool_attach<workq_service, tp_aid_service>(
+	    workq_service&, tp_aid_service&);
+extern template ILIAS_ASYNC_EXPORT
+	void threadpool_attach<workq_service, tp_service_multiplexer>(
+	    workq_service&, tp_service_multiplexer&);
+extern template ILIAS_ASYNC_EXPORT
+	void threadpool_attach<workq_service, tp_client_multiplexer>(
+	    workq_service&, tp_client_multiplexer&);
+
+
 } /* namespace ilias */
 
 

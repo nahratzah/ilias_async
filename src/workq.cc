@@ -1355,4 +1355,12 @@ atom_lck::atomic_unlock_jobptr(unsigned int idx) noexcept
 #endif /* !ILIAS_ASYNC_ATOMIC_SHARED_PTR */
 
 
+template void threadpool_attach<workq_service, tp_aid_service>(
+    workq_service&, tp_aid_service&);
+template void threadpool_attach<workq_service, tp_service_multiplexer>(
+    workq_service&, tp_service_multiplexer&);
+template void threadpool_attach<workq_service, tp_client_multiplexer>(
+    workq_service&, tp_client_multiplexer&);
+
+
 } /* namespace ilias */
