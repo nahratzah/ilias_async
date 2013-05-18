@@ -128,16 +128,9 @@ struct wq_stack
 	}
 
 
-#if HAS_DELETED_FN
 	wq_stack() = delete;
 	wq_stack(const wq_stack&) = delete;
 	wq_stack& operator=(const wq_stack&) = delete;
-#else
-private:
-	wq_stack();
-	wq_stack(const wq_stack&);
-	wq_stack& operator=(const wq_stack&);
-#endif
 };
 
 struct wq_tls
@@ -225,6 +218,28 @@ get_wq_tls()
 #endif
 };
 
+class publish_wqs_busy
+:	public virtual std::exception
+{
+public:
+	publish_wqs_busy() = default;
+
+	~publish_wqs_busy() noexcept;
+	const char* what() const noexcept override;
+};
+
+publish_wqs_busy::~publish_wqs_busy() noexcept
+{
+	/* Empty body. */
+}
+
+const char*
+publish_wqs_busy::what() const noexcept
+{
+	return "workq_service: "
+	    "current thread already has published workq_service";
+}
+
 class publish_wqs
 {
 private:
@@ -232,11 +247,12 @@ private:
 	workq_service*const m_wqs;
 
 public:
-	publish_wqs(workq_service& wqs) noexcept :
+	publish_wqs(workq_service& wqs) :
 		m_tls(get_wq_tls()),
 		m_wqs(&wqs)
 	{
-		assert(!this->m_tls.wqs);
+		if (this->m_tls.wqs)
+			throw publish_wqs_busy();
 		this->m_tls.wqs = this->m_wqs;
 	}
 
@@ -247,16 +263,9 @@ public:
 	}
 
 
-#if HAS_DELETED_FN
 	publish_wqs() = delete;
 	publish_wqs(const publish_wqs&) = delete;
 	publish_wqs& operator=(const publish_wqs&) = delete;
-#else
-private:
-	publish_wqs();
-	publish_wqs(const publish_wqs&);
-	publish_wqs& operator=(const publish_wqs&);
-#endif
 };
 
 
@@ -505,12 +514,6 @@ workq_service_ptr
 new_workq_service() throw (std::bad_alloc)
 {
 	return workq_service_ptr(new workq_service());
-}
-
-workq_service_ptr
-new_workq_service(unsigned int threads) throw (std::bad_alloc)
-{
-	return workq_service_ptr(new workq_service(threads));
 }
 
 
@@ -828,23 +831,41 @@ workq::aid(unsigned int count) noexcept
 }
 
 
-workq_service::workq_service()
-:	workq_service(threadpool::default_thread_count())
+workq_service::threadpool_client::~threadpool_client() noexcept
 {
-	return;
+	/* Empty body. */
 }
 
-workq_service::workq_service(unsigned int threads)
-:	m_workers(std::bind(&workq_service::empty, this),
-	    [this]() -> bool {
-		publish_wqs pub(*this);
-		return this->aid(32);
-	      },
-	    threads)
+bool
+workq_service::threadpool_client::do_work() noexcept
 {
-	this->m_wakeup_cb = [this](workq_service_ptr, std::size_t n_threads) {
-		this->m_workers.wakeup(n_threads);
-	    };
+	workq_detail::workq_intref<workq_service> wqs;
+	{
+		threadpool_client_lock lck{ *this };
+		if (!this->has_client())
+			return false;
+		wqs = &this->m_self;
+	}
+
+	try {
+		publish_wqs pub{ *wqs };
+		return wqs->aid(32);
+	} catch (const publish_wqs_busy&) {
+		/* Disallow recursion. */
+		return false;
+	}
+}
+
+bool
+workq_service::threadpool_client::has_work() noexcept
+{
+	threadpool_client_lock lck{ *this };
+	return (this->has_client() && !this->m_self.empty());
+}
+
+workq_service::workq_service()
+{
+	return;
 }
 
 workq_service::~workq_service() noexcept
@@ -852,10 +873,7 @@ workq_service::~workq_service() noexcept
 	assert(this->m_wq_runq.empty());
 	assert(this->m_co_runq.empty());
 
-	{
-		std::lock_guard<std::mutex> lck{ this->m_wakeup_lck };
-		this->m_wakeup_cb = nullptr;
-	}
+	atomic_store(&this->m_wakeup_cb, nullptr);
 }
 
 void
@@ -884,9 +902,15 @@ workq_service::wakeup(std::size_t count) noexcept
 	 * one workq_service_ptr, therefore the pointer can be safely
 	 * constructed as argument to the callback.
 	 */
-	std::lock_guard<std::mutex> lck{ this->m_wakeup_lck };
-	if (this->m_wakeup_cb)
-		this->m_wakeup_cb(this, count);
+	auto cb = atomic_load(&this->m_wakeup_cb);
+	if (count > threadpool_client_intf::WAKE_ALL)
+		count = threadpool_client_intf::WAKE_ALL;
+	if (cb) {
+		if (cb->has_service())
+			cb->wakeup(count);
+		else
+			atomic_store(&this->m_wakeup_cb, nullptr);
+	}
 }
 
 workq_ptr
@@ -953,14 +977,6 @@ workq_service::empty() const noexcept
 	return (this->m_wq_runq.empty() && this->m_co_runq.empty());
 }
 
-void
-callback(const workq_service_ptr& wqs,
-    std::function<void(workq_service_ptr, std::size_t)> cb) noexcept
-{
-	std::lock_guard<std::mutex> lck{ wqs->m_wakeup_lck };
-	wqs->m_wakeup_cb = std::move(cb);
-}
-
 
 namespace workq_detail {
 
@@ -1018,11 +1034,20 @@ wq_deleter::operator()(const workq* wq) const noexcept
 void
 wq_deleter::operator()(const workq_service* wqs) const noexcept
 {
-	/* XXX check if this wqs is being destroyed from within
-	 * its own worker thread, then perform special handling. */
+	/* Kill link to threadpool service provider. */
+	atomic_store(&const_cast<workq_service*>(wqs)->m_wakeup_cb, nullptr);
 
-	/* Wait for the last internal reference to go away. */
-	wqs->wait_unreferenced();
+	/*
+	 * Check if this wqs is being destroyed from within
+	 * its own worker thread, then perform special handling.
+	 *
+	 * Uses publish_wqs provided tls data.
+	 */
+	auto& tls = get_wq_tls();
+	if (tls.wqs == wqs) {
+		wqs->int_suicide.store(true, std::memory_order_release);
+		return;
+	}
 
 	delete wqs;
 }
@@ -1153,15 +1178,13 @@ class ILIAS_ASYNC_LOCAL job_once final :
 	public JobType,
 	public std::enable_shared_from_this<job_once<JobType> >
 {
-private:
+public:
 	std::shared_ptr<job_once> m_self;
 
-public:
 	template<typename FN>
 	job_once(workq_ptr ptr, FN&& fn) :
 		JobType(std::move(ptr), std::forward<FN>(fn),
-		    workq_job::TYPE_ONCE),
-		m_self(this)
+		    workq_job::TYPE_ONCE)
 	{
 		assert(this->m_type & workq_job::TYPE_ONCE);
 	}
@@ -1181,14 +1204,16 @@ workq::once(std::function<void()> fn)
     throw (std::bad_alloc, std::invalid_argument)
 {
 	/* Create a job that will run once and then kill itself. */
-	workq_job_ptr j =
+	auto j =
 	    new_workq_job<job_once<job_single> >(this, std::move(fn));
+	j->m_self = j;	/* Self reference, will be broken by run(). */
 
 	/* May not throw past this point. */
-	static_assert(noexcept(j->activate()), "Job activation may not throw, "
-	    "since we are unable to undo part of the operation.");
+
 	/* Activate this job, so it will run. */
-	j->activate();
+	do_noexcept([&]() {
+		j->activate();
+	    });
 }
 
 void
@@ -1196,14 +1221,16 @@ workq::once(std::vector<std::function<void()> > fns)
     throw (std::bad_alloc, std::invalid_argument)
 {
 	/* Create a job that will run once and then kill itself. */
-	workq_job_ptr j = new_workq_job<job_once<coroutine_job> >(this,
+	auto j = new_workq_job<job_once<coroutine_job> >(this,
 	    std::move(fns));
+	j->m_self = j;	/* Self reference, will be broken by run(). */
 
 	/* May not throw past this point. */
-	static_assert(noexcept(j->activate()), "Job activation may not throw, "
-	    "since we are unable to undo part of the operation.");
+
 	/* Activate this job, so it will run. */
-	j->activate();	/* Never throws */
+	do_noexcept([&]() {
+		j->activate();	/* Never throws */
+	    });
 }
 
 
@@ -1328,6 +1355,14 @@ atom_lck::atomic_unlock_jobptr(unsigned int idx) noexcept
 
 } /* namespace ilias::workq_detail */
 #endif /* !ILIAS_ASYNC_ATOMIC_SHARED_PTR */
+
+
+template void threadpool_attach<workq_service, tp_aid_service>(
+    workq_service&, tp_aid_service&);
+template void threadpool_attach<workq_service, tp_service_multiplexer>(
+    workq_service&, tp_service_multiplexer&);
+template void threadpool_attach<workq_service, tp_client_multiplexer>(
+    workq_service&, tp_client_multiplexer&);
 
 
 } /* namespace ilias */

@@ -1,0 +1,8 @@
+add_executable (test_threadpool_create_destroy create_destroy.cc)
+add_executable (test_threadpool_suicide suicide.cc)
+
+target_link_libraries (test_threadpool_create_destroy ilias_async)
+target_link_libraries (test_threadpool_suicide ilias_async)
+
+add_test (test_threadpool_create_destroy test_threadpool_create_destroy)
+add_test (test_threadpool_suicide test_threadpool_suicide)

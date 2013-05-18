@@ -42,15 +42,9 @@ private:
 		}
 
 
-#if HAS_DELETED_FN
 		elem() = delete;
 		elem(const elem&) = delete;
 		elem& operator=(const elem&) = delete;
-#else
-		elem();
-		elem(const elem&);
-		elem& operator=(const elem&);
-#endif
 	};
 
 	struct ip_delete
@@ -161,14 +155,8 @@ public:
 	}
 
 
-#if HAS_DELETED_FN
 	tls(const tls&) = delete;
 	tls& operator=(const tls&) = delete;
-#else
-private:
-	tls(const tls&);
-	tls& operator=(const tls&);
-#endif
 };
 
 

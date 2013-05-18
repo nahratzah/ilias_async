@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012 Ariane van der Steldt <ariane@stack.nl>
+ * Copyright (c) 2012 - 2013 Ariane van der Steldt <ariane@stack.nl>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -17,167 +17,85 @@
 #define ILIAS_THREADPOOL_H
 
 #include <ilias/ilias_async_export.h>
-#include <ilias/ll.h>
-#include <atomic>
-#include <condition_variable>
-#include <functional>
+#include <ilias/threadpool_intf.h>
 #include <memory>
-#include <mutex>
-#include <thread>
-#include <type_traits>
-#include <utility>
-#include <vector>
 
 namespace ilias {
 
 
-class ILIAS_ASYNC_LOCAL threadpool
+class ILIAS_ASYNC_EXPORT threadpool
 {
 private:
-	struct idle_tag {};
-	class thread;
-	typedef std::unique_ptr<thread> thread_ptr;
-	typedef std::vector<thread_ptr> all_threads;
-	typedef ll_list<ll_base<thread, idle_tag> > idle_threads;
+	class ILIAS_ASYNC_LOCAL impl;
 
-	std::function<thread_ptr(threadpool&, unsigned int)> m_factory;
-	std::unique_ptr<idle_threads> m_idle;
-	all_threads m_all;
-
-	ILIAS_ASYNC_LOCAL static thread_ptr
-	factory_impl(threadpool& self, unsigned int idx,
-	    const std::function<bool()>& pred, const std::function<bool()>& work);
-
-public:
-	static unsigned int
-	default_thread_count() noexcept
+	struct impl_deleter
 	{
-		return std::max(1U, std::thread::hardware_concurrency());
-	}
-
-	ILIAS_ASYNC_EXPORT threadpool(std::function<bool()> pred, std::function<bool()> work,
-	    unsigned int threads = default_thread_count());
-	ILIAS_ASYNC_EXPORT threadpool(threadpool&& o) noexcept;
-	ILIAS_ASYNC_EXPORT ~threadpool() noexcept;
-
-	ILIAS_ASYNC_EXPORT bool curthread_is_threadpool() noexcept;
-	ILIAS_ASYNC_EXPORT void wakeup(unsigned int = 1U) noexcept;
-
-
-	threadpool() = delete;
-	threadpool(const threadpool&) = delete;
-	threadpool& operator=(const threadpool&) = delete;
-};
-
-
-class ILIAS_ASYNC_LOCAL threadpool::thread final :
-	public ll_base_hook<threadpool::idle_tag>
-{
-public:
-	/*
-	 * DFA.  Allowed transisitions:
-	 *             -> { ACTIVE }
-	 * ACTIVE      -> { SLEEP_TEST, DYING, SUICIDE }
-	 * SLEEP_TEST  -> { ACTIVE, SLEEP, DYING, SUICIDE }
-	 * SLEEP       -> { ACTIVE, DYING, SUICIDE }
-	 * DYING       -> {  }
-	 * SUICIDE     -> {  }
-	 *
-	 * Const outside class, since gcc 4.6.2 blows up during link stage.
-	 */
-	static const int STATE_ACTIVE;
-	static const int STATE_SLEEP_TEST;
-	static const int STATE_SLEEP;
-	static const int STATE_DYING;	/* Worker died and needs to be joined. */
-	static const int STATE_SUICIDE;	/* Worker killed itself and detached. */
-
-	enum kill_result {
-		KILL_TWICE,	/* Was already dying. */
-		KILL_OK,	/* Was killed by current invocation. */
-		KILL_SUICIDE	/* Call to kill was suicide. */
+		void operator()(impl*) const noexcept;
 	};
 
-private:
-	class publish_idle
-	{
-	private:
-		thread& m_self;
-
-	public:
-		publish_idle(thread& s) noexcept;
-		~publish_idle() noexcept;
-
-
-		publish_idle() = delete;
-		publish_idle(const publish_idle&) = delete;
-		publish_idle& operator=(const publish_idle&) = delete;
-	};
-
-	std::atomic<int> m_state;
-	std::mutex m_sleep_mtx;
-	std::condition_variable m_wakeup;
+	std::unique_ptr<impl, impl_deleter> m_impl;
 
 public:
-	idle_threads& m_idle;
-	const unsigned int m_idx;
-	std::thread m_self;	/* Must be the last variable in this class. */
+	threadpool();
+	threadpool(unsigned int);
 
-	int
-	get_state() const noexcept
-	{
-		return this->m_state.load(std::memory_order_relaxed);
-	}
-
-private:
-	ILIAS_ASYNC_LOCAL void do_sleep(const std::function<bool()>& pred) noexcept;
-	ILIAS_ASYNC_LOCAL std::unique_ptr<threadpool::thread> run(const std::function<bool()>& pred,
-	    const std::function<bool()>& functor) noexcept;
-
-public:
-	thread(threadpool& tp, unsigned int idx,
-	    const std::function<bool()>& pred, const std::function<bool()>& worker) :
-		m_state(STATE_ACTIVE),
-		m_sleep_mtx(),
-		m_wakeup(),
-		m_idle(*tp.m_idle),
-		m_idx(idx),
-		m_self(&thread::run, this, pred, worker)
+	threadpool(threadpool&& o) noexcept
+	:	m_impl(std::move(o.m_impl))
 	{
 		/* Empty body. */
 	}
 
-	bool wakeup() noexcept;
-	kill_result kill() noexcept;
-	void join() noexcept;
-	~thread() noexcept;
+	~threadpool() noexcept;
 
-	static thread*& tls_self() noexcept;
+	bool curthread_is_threadpool() const noexcept;
 
-	std::thread::id
-	get_id() const noexcept
+	threadpool(const threadpool&) = delete;
+	threadpool& operator=(const threadpool&) = delete;
+
+	void set_nthreads(unsigned int);
+	unsigned int get_nthreads() const noexcept;
+
+
+	class ILIAS_ASYNC_EXPORT threadpool_service
+	:	public virtual threadpool_service_intf
 	{
-		return this->m_self.get_id();
+	friend class threadpool::impl;
+
+	private:
+		impl& m_self;
+
+	protected:
+		unsigned int wakeup(unsigned int) noexcept;
+
+	public:
+		threadpool_service(threadpool& tp) noexcept
+		:	m_self(*tp.m_impl)
+		{
+			/* Empty body. */
+		}
+
+		~threadpool_service() noexcept;
+	};
+
+	threadpool&
+	threadpool_service_arg() noexcept
+	{
+		return *this;
 	}
 
-
-	thread() = delete;
-	thread(const thread&) = delete;
-	thread& operator=(const thread&) = delete;
+	ILIAS_ASYNC_EXPORT void attach(
+	    threadpool_service_ptr<threadpool_service>);
 };
 
 
-inline
-threadpool::thread::publish_idle::publish_idle(thread& s) noexcept :
-	m_self(s)
-{
-	this->m_self.m_idle.push_back(this->m_self);
-}
+extern template ILIAS_ASYNC_EXPORT
+	void threadpool_attach<tp_service_multiplexer, threadpool>(
+	    tp_service_multiplexer&, threadpool&);
 
-inline
-threadpool::thread::publish_idle::~publish_idle() noexcept
-{
-	this->m_self.m_idle.erase_element(this->m_self.m_idle.iterator_to(this->m_self));
-}
+class workq_service;
+extern template ILIAS_ASYNC_EXPORT
+	void threadpool_attach<workq_service, threadpool>(
+	    workq_service&, threadpool&);
 
 
 } /* namespace ilias */

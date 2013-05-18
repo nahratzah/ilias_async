@@ -1,0 +1,11 @@
+add_executable (test_threadpool_intf_instantiate instantiate.cc)
+add_executable (test_threadpool_intf_run run.cc)
+add_executable (test_threadpool_intf_race_wakeup race_wakeup.cc)
+
+target_link_libraries (test_threadpool_intf_instantiate ilias_async)
+target_link_libraries (test_threadpool_intf_run ilias_async)
+target_link_libraries (test_threadpool_intf_race_wakeup ilias_async)
+
+add_test (test_threadpool_intf_instantiate test_threadpool_intf_instantiate)
+add_test (test_threadpool_intf_run test_threadpool_intf_run)
+add_test (test_threadpool_intf_race_wakeup test_threadpool_intf_race_wakeup)

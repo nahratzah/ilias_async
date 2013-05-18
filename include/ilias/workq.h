@@ -19,7 +19,7 @@
 #include <ilias/ilias_async_export.h>
 #include <ilias/ll.h>
 #include <ilias/refcnt.h>
-#include <ilias/threadpool.h>
+#include <ilias/threadpool_intf.h>
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -105,7 +105,6 @@ public:
 
 
 ILIAS_ASYNC_EXPORT workq_service_ptr new_workq_service() throw (std::bad_alloc);
-ILIAS_ASYNC_EXPORT workq_service_ptr new_workq_service(unsigned int threads) throw (std::bad_alloc);
 ILIAS_ASYNC_EXPORT workq_pop_state workq_switch(const workq_pop_state&) throw (workq_deadlock, workq_stack_error);
 
 
@@ -673,6 +672,54 @@ friend void workq_detail::wq_deleter::operator()(const workq_service*) const noe
 friend void workq_detail::co_runnable::co_publish(std::size_t) noexcept;
 friend bool workq_detail::co_runnable::release(std::size_t n) noexcept;
 friend void workq::job_to_runq(workq_detail::workq_intref<workq_job>) noexcept;
+friend struct workq_detail::workq_intref_mgr<workq_service>;
+
+
+public:
+	class threadpool_client
+	:	public virtual threadpool_client_intf
+	{
+	friend class workq_service;
+
+	private:
+		workq_service& m_self;
+
+	public:
+		threadpool_client(workq_service& s)
+		:	m_self(s)
+		{
+			/* Empty body. */
+		}
+
+		~threadpool_client() noexcept;
+
+	protected:
+		bool do_work() noexcept;
+		bool has_work() noexcept;
+	};
+
+	workq_service&
+	threadpool_client_arg() noexcept
+	{
+		return *this;
+	}
+
+	void
+	attach(threadpool_client_ptr<threadpool_client> p)
+	{
+		if (!p) {
+			throw std::invalid_argument("workq_service: "
+			    "cannot assign null client implementation");
+		}
+
+		threadpool_client_ptr<threadpool_client> expect{ nullptr };
+		if (!atomic_compare_exchange_strong(&this->m_wakeup_cb,
+		    &expect, p)) {
+			throw std::runtime_error("workq_service: "
+			    "client already present");
+		}
+	}
+
 
 private:
 	typedef ll_smartptr_list<workq_detail::workq_intref<workq>,
@@ -687,12 +734,9 @@ private:
 
 	wq_runq m_wq_runq;
 	co_runq m_co_runq;
-	threadpool m_workers;	/* Must be the last member variable in this class. */
-	std::mutex m_wakeup_lck;	/* XXX change to read-write-lock. */
-	std::function<void(workq_service_ptr, std::size_t)> m_wakeup_cb;
+	threadpool_client_ptr<threadpool_client> m_wakeup_cb;
 
 	ILIAS_ASYNC_LOCAL workq_service();
-	ILIAS_ASYNC_LOCAL explicit workq_service(unsigned int threads);
 	ILIAS_ASYNC_LOCAL ~workq_service() noexcept;
 
 	ILIAS_ASYNC_LOCAL void wq_to_runq(workq_detail::workq_intref<workq>) noexcept;
@@ -703,9 +747,6 @@ public:
 	ILIAS_ASYNC_EXPORT workq_ptr new_workq() throw (std::bad_alloc);
 	ILIAS_ASYNC_EXPORT bool aid(unsigned int = 1) noexcept;
 	ILIAS_ASYNC_EXPORT bool empty() const noexcept;
-
-	friend ILIAS_ASYNC_EXPORT void callback(const workq_service_ptr&,
-	    std::function<void(workq_service_ptr, std::size_t)>) noexcept;
 
 
 	workq_service(const workq_service&) = delete;
@@ -781,6 +822,17 @@ public:
 		return (this->m_wq && this->m_lck == workq::RUN_SINGLE);
 	}
 };
+
+
+extern template ILIAS_ASYNC_EXPORT
+	void threadpool_attach<workq_service, tp_aid_service>(
+	    workq_service&, tp_aid_service&);
+extern template ILIAS_ASYNC_EXPORT
+	void threadpool_attach<workq_service, tp_service_multiplexer>(
+	    workq_service&, tp_service_multiplexer&);
+extern template ILIAS_ASYNC_EXPORT
+	void threadpool_attach<workq_service, tp_client_multiplexer>(
+	    workq_service&, tp_client_multiplexer&);
 
 
 } /* namespace ilias */

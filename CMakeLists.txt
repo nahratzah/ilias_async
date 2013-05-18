@@ -1,5 +1,6 @@
 cmake_minimum_required (VERSION 2.8)
 project (IliasAsync)
+include (CTest)
 
 # Declare list variables.
 list (APPEND extra_libs)	# Libs against which to link this library
@@ -109,6 +110,7 @@ list (APPEND hdrs
 	include/ilias/promise.h
 	include/ilias/wq_promise.h
 	include/ilias/combi_promise.h
+	include/ilias/threadpool_intf.h
 	include/ilias/threadpool.h
 	include/ilias/workq.h
 	)
@@ -120,6 +122,7 @@ list (APPEND srcs
 	src/promise.cc
 	src/wq_promise.cc
 	src/combi_promise.cc
+	src/threadpool_intf.cc
 	src/threadpool.cc
 	src/workq.cc
 	)
@@ -140,6 +143,13 @@ add_library (ilias_async SHARED
 target_link_libraries (ilias_async ${extra_libs})
 set_property (TARGET ilias_async PROPERTY VERSION "0.0")
 set_property (TARGET ilias_async PROPERTY SOVERSION "0.0")
+
+
+#
+# Build and run test cases
+#
+enable_testing()
+add_subdirectory (test)
 
 
 #
