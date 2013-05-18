@@ -304,7 +304,7 @@ protected:
 
 /* Glue a client and service implementation together. */
 template<typename Client, typename Service>
-class threadpool_combiner
+class threadpool_combiner final
 :	public Client,
 	public Service,
 	private threadpool_intf_detail::refcount
