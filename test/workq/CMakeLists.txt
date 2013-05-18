@@ -1,5 +1,5 @@
-add_executable (test_threadpool_workq_tp workq_tp.cc)
+add_executable (test_workq_workq_tp workq_tp.cc)
 
-target_link_libraries (test_threadpool_workq_tp ilias_async)
+target_link_libraries (test_workq_workq_tp ilias_async)
 
-add_test (test_threadpool_workq_tp test_threadpool_workq_tp)
+add_test (test_workq_workq_tp test_workq_workq_tp)
