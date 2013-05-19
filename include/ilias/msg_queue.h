@@ -203,18 +203,12 @@ protected:
 	 * once it completes (to prevent missed wakeups).
 	 */
 	void
-	_fire() noexcept
+	_fire(MqType& ev_arg) noexcept
 	{
-		static_assert(std::is_base_of<msg_queue_events, MqType>::value,
-		    "msg_queue_events<MQ> must be a base of MQ");
-
 		/* Lacking using statement to import class members... */
 		constexpr state IDLE = state::IDLE;
 		constexpr state BUSY =  state::BUSY;
 		constexpr state AGAIN = state::AGAIN;
-
-		/* Argument on event: derived type of event. */
-		MqType& ev_arg = static_cast<MqType&>(*this);
 
 		/*
 		 * We always transition to AGAIN.
@@ -257,10 +251,7 @@ public:
 	callback(msg_queue_events& mqev, std::function<void (MqType&)> fn)
 	    noexcept
 	{
-		static_assert(std::is_base_of<msg_queue_events, MqType>::value,
-		    "msg_queue_events<MQ> must be a base of MQ");
-
-		std::unique_lock<std::mutex> guard{ mqev.m_evmtx };
+		std::lock_guard<std::mutex> guard{ mqev.m_evmtx };
 		swap(mqev.m_ev, fn);
 
 		if (mqev.m_ev_restore) {
@@ -268,11 +259,6 @@ public:
 			mqev.m_ev_restore = false;
 			mqev.m_state.store(state::AGAIN,
 			    std::memory_order_release);
-		} else {
-			/* This message queue is not empty, fire event. */
-			guard.unlock();
-			if (!static_cast<MqType&>(mqev).empty())
-				mqev._fire();
 		}
 	}
 
@@ -381,18 +367,12 @@ public:
 };
 
 
-} /* namespace ilias::mq_detail */
-
-
-template<typename MQ> class prepare_enqueue;
-
-
-template<typename Type, typename Allocator = std::allocator<Type>>
-class msg_queue
-:	public mq_detail::msg_queue_events<msg_queue<Type, Allocator>>
+/*
+ * Basic message queue for typed data.
+ */
+template<typename Type, typename Allocator>
+class data_msg_queue
 {
-friend class prepare_enqueue<msg_queue<Type, Allocator>>;
-
 private:
 	typedef ll_list<ll_base<mq_detail::mq_elem<Type>>> list_type;
 
@@ -503,20 +483,13 @@ private:
 	{
 		assert(ptr && ptr.get_deleter().m_call_destructor);
 		this->m_list.push_back(*ptr.release());
-		this->_fire(*this);
 	}
 
 public:
-	msg_queue()
-	    noexcept(
-		std::is_nothrow_constructible<list_type>::value &&
-		std::is_nothrow_constructible<allocator_type>::value)
-	{
-		/* Empty body. */
-	}
+	data_msg_queue() = default;
 
 	template<typename... Args>
-	msg_queue(Args&&... args)
+	data_msg_queue(Args&&... args)
 	    noexcept(
 		std::is_nothrow_constructible<list_type>::value &&
 		std::is_nothrow_constructible<allocator_type, Args...>::value)
@@ -525,28 +498,23 @@ public:
 		/* Empty body. */
 	}
 
-	msg_queue(const msg_queue&) = delete;
-	msg_queue& operator=(const msg_queue&) = delete;
+	data_msg_queue(const data_msg_queue&) = delete;
+	data_msg_queue& operator=(const data_msg_queue&) = delete;
 
 	/* Move constructor. */
-	msg_queue(msg_queue&& mq)
+	data_msg_queue(data_msg_queue&& mq)
 	    noexcept(
 		std::is_nothrow_constructible<list_type>::value &&
-		std::is_nothrow_constructible<allocator_type>::value)
-	:	mq_detail::msg_queue_events<msg_queue>(std::move(mq)),
-		m_alloc(mq.m_alloc)
+		std::is_nothrow_copy_constructible<allocator_type>::value)
+	:	data_msg_queue(mq.m_alloc) /* Copy: mq still depends on it. */
 	{
 		/* Move elements between queues. */
-		bool was_empty = true;
-		while (auto elem = this->m_list.pop_front()) {
+		while (auto elem = this->m_list.pop_front())
 			this->m_list.push_back(*elem);
-			was_empty = false;
-		}
-		if (!was_empty)
-			this->_fire();
 	}
 
-	~msg_queue() noexcept
+	/* Destructor. */
+	~data_msg_queue() noexcept
 	{
 		this->_clear();
 	}
@@ -563,7 +531,7 @@ public:
 	void
 	enqueue(Args&&... args)
 	{
-		this->_enqueue(_create(_allocate(),
+		this->_enqueue(this->_create(this->_allocate(),
 		    std::forward<Args>(args)...));
 	}
 
@@ -576,7 +544,7 @@ public:
 	Functor
 	dequeue(Functor f, size_t n = 1)
 	    noexcept(
-		noexcept(f(*(element_type)nullptr)) &&
+		noexcept(f(std::declval<element_type>())) &&
 		noexcept_destructible)
 	{
 		for (size_t i = n; i != 0; --i) {
@@ -586,6 +554,95 @@ public:
 			f(elem->move());
 		}
 		return f;
+	}
+};
+
+
+} /* namespace ilias::mq_detail */
+
+
+template<typename MQ> class prepare_enqueue;
+
+
+template<typename Type, typename Allocator = std::allocator<Type>>
+class msg_queue
+:	protected mq_detail::msg_queue_events<msg_queue<Type, Allocator>>,
+	protected mq_detail::data_msg_queue<Type, Allocator>
+{
+friend class prepare_enqueue<msg_queue<Type, Allocator>>;
+
+private:
+	/* Simple names improve readability. */
+	using events = mq_detail::msg_queue_events<msg_queue<Type, Allocator>>;
+	using data = mq_detail::data_msg_queue<Type, Allocator>;
+
+	static events&&
+	events_move(msg_queue& mq) noexcept
+	{
+		return std::move(mq);
+	}
+
+	static data&&
+	data_move(msg_queue& mq) noexcept
+	{
+		return std::move(mq);
+	}
+
+public:
+	msg_queue() = default;
+
+	template<typename... Args>
+	msg_queue(Args&&... args)
+	    noexcept(
+		std::is_nothrow_constructible<data, Args...>::value)
+	:	data(std::forward<Args>(args)...)
+	{
+		/* Empty body. */
+	}
+
+	msg_queue(const msg_queue&) = delete;
+	msg_queue& operator=(const msg_queue&) = delete;
+
+	/* Move constructor. */
+	msg_queue(msg_queue&& mq)
+	    noexcept(
+		std::is_nothrow_move_constructible<data>::value)
+	:	events(events_move(mq)),
+		data(data_move(mq))
+	{
+		if (!this->empty())
+			this->_fire(*this);
+	}
+
+	using data::empty;
+	using data::dequeue;
+
+	/*
+	 * Enqueue message.
+	 *
+	 * (Overlaps data_msg_queue::enqueue, to perform event firing.)
+	 */
+	template<typename... Args>
+	void
+	enqueue(Args&&... args)
+	{
+		this->data::enqueue(std::forward<Args>(args)...);
+		this->_fire(*this);
+	}
+
+	/*
+	 * Callback handler.
+	 *
+	 * Defers to msg_queue_events.
+	 */
+	template<typename... Args>
+	friend void
+	callback(msg_queue& mq, Args&&... args)
+	    noexcept(
+		noexcept(callback(std::declval<events>(), std::forward<Args>(args)...)))
+	{
+		events& self = mq;
+		callback(self, std::forward<Args>(args)...);
 	}
 };
 
@@ -775,9 +832,12 @@ public:
 			    "unintialized prepared enqueue");
 		}
 
-		assert(this->m_mq);
-		this->m_mq->_enqueue(std::move(this->m_ptr));
-		this->reset();
+		do_noexcept([&]() {
+			assert(this->m_mq);
+			this->m_mq->_enqueue(std::move(this->m_ptr));
+			this->m_mq->_fire(*this->m_mq);
+			this->reset();
+		    });
 	}
 };
 
@@ -859,8 +919,10 @@ public:
 			    "uninitialized prepared enqueue");
 		}
 
-		this->m_mq->enqueue();
-		this->reset();
+		do_noexcept([&]() {
+			this->m_mq->enqueue();
+			this->reset();
+		    });
 	}
 };
 
