@@ -534,7 +534,7 @@ public:
 		std::is_nothrow_constructible<list_type>::value &&
 		std::is_nothrow_constructible<allocator_type>::value)
 	:	mq_detail::msg_queue_events<msg_queue>(std::move(mq)),
-		m_alloc(std::move(mq.m_alloc))
+		m_alloc(mq.m_alloc)
 	{
 		/* Move elements between queues. */
 		bool was_empty = true;
