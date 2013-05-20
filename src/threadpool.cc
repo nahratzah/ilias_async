@@ -20,6 +20,7 @@
 #include <ilias/ll.h>
 #include <ilias/refcnt.h>
 #include <ilias/workq.h>
+#include <ilias/util.h>
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
@@ -175,9 +176,9 @@ private:
 			 * while we wait.
 			 */
 			do_noexcept([&]() {
-				guard.unlock();
-				this->collect();
-				guard.lock();
+				do_unlocked(guard, [&]() {
+					this->collect();
+				    });
 			    });
 		}
 		guard.unlock();
@@ -254,11 +255,10 @@ public:
 		      std::memory_order_acquire, std::memory_order_relaxed) ||
 		    transition(thread_state::SLEEP, thread_state::BUSY,
 		      std::memory_order_acquire, std::memory_order_relaxed)) {
-			std::lock_guard<std::mutex> guard{
-				this->m_sleep_mtx
-			};
-			this->m_sleep_cnd.notify_one();
-			return true;
+			return do_locked(this->m_sleep_mtx, [&]() -> bool {
+				this->m_sleep_cnd.notify_one();
+				return true;
+			    });
 		}
 		return false;
 	}
@@ -271,12 +271,9 @@ public:
 		    std::memory_order_acquire)) {
 		case thread_state::SLEEP:
 		case thread_state::SLEEP_TEST:
-			{
-				std::lock_guard<std::mutex> guard{
-					this->m_sleep_mtx
-				};
+			do_locked(this->m_sleep_mtx, [&]() {
 				this->m_sleep_cnd.notify_one();
-			}
+			    });
 			/* FALLTHROUGH */
 		default:
 			return true;
@@ -418,13 +415,10 @@ threadpool::impl::create_worker()
 	 * finished with the worker structure and enables the worker to verify
 	 * initialization happened correctly.
 	 */
-	{
-		std::lock_guard<std::mutex> init_guard{ w->m_init_mtx };
-		do_noexcept([&]() {
-			w->assign_thread(std::thread{ &worker::run, w.get() });
-			w.release();
-		    });
-	}
+	do_locked(w->m_init_mtx, [&]() {
+		w->assign_thread(std::thread{ &worker::run, w.get() });
+	    });
+	w.release();
 }
 
 void
@@ -725,32 +719,31 @@ threadpool::impl::worker::_run() noexcept
 	 * Inform blocking threads that
 	 * this thread is collectible.
 	 */
-	std::lock_guard<std::mutex> lck{
-		this->tp.m_active_mtx
-	};
-	assert(this->tp.n_active > 0U);
-	--this->tp.n_active;
+	do_locked(this->tp.m_active_mtx, [&]() {
+		assert(this->tp.n_active > 0U);
+		--this->tp.n_active;
 
-	if (!tls.collect) {
-		/*
-		 * This worker thread is not responsible
-		 * for destroying the threadpool,
-		 * thus the threadpool is responsible
-		 * for destroying this worker.
-		 *
-		 * Push on collector queue.
-		 */
-		this->tp.m_dead.push_back(*this);
-	} else {
-		/*
-		 * This thread will survive the destruction of threadpool,
-		 * ensure it will clean itself up.
-		 */
-		this->m_thread.detach();
-	}
+		if (!tls.collect) {
+			/*
+			 * This worker thread is not responsible
+			 * for destroying the threadpool,
+			 * thus the threadpool is responsible
+			 * for destroying this worker.
+			 *
+			 * Push on collector queue.
+			 */
+			this->tp.m_dead.push_back(*this);
+		} else {
+			/*
+			 * This thread will survive the destruction of threadpool,
+			 * ensure it will clean itself up.
+			 */
+			this->m_thread.detach();
+		}
 
-	/* Notify dead thread collector. */
-	this->tp.m_active_cnd.notify_all();
+		/* Notify dead thread collector. */
+		this->tp.m_active_cnd.notify_all();
+	    });
 
 	return tls.collect;
 }

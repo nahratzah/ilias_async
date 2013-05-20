@@ -18,6 +18,7 @@
 
 #include <ilias/ilias_async_export.h>
 #include <ilias/ll.h>
+#include <ilias/util.h>
 #include <cassert>
 #include <algorithm>
 #include <atomic>
@@ -251,15 +252,19 @@ public:
 	callback(msg_queue_events& mqev, std::function<void (MqType&)> fn)
 	    noexcept
 	{
-		std::lock_guard<std::mutex> guard{ mqev.m_evmtx };
-		swap(mqev.m_ev, fn);
+		do_locked(mqev.m_evmtx, [&]() {
+			swap(mqev.m_ev, fn);
 
-		if (mqev.m_ev_restore) {
-			/* Make new event fire after old event completes. */
-			mqev.m_ev_restore = false;
-			mqev.m_state.store(state::AGAIN,
-			    std::memory_order_release);
-		}
+			if (mqev.m_ev_restore) {
+				/*
+				 * Make new event fire
+				 * after old event completes.
+				 */
+				mqev.m_ev_restore = false;
+				mqev.m_state.store(state::AGAIN,
+				    std::memory_order_release);
+			}
+		    });
 	}
 
 	/* Clear output event callback. */
@@ -267,9 +272,10 @@ public:
 	callback(msg_queue_events& mqev, std::nullptr_t) noexcept
 	{
 		std::function<void (MqType&)> tmp;
-		std::lock_guard<std::mutex> guard{ mqev.m_evmtx };
-		swap(mqev.m_ev, tmp);
-		mqev.m_ev_restore = false;
+		do_locked(mqev.m_evmtx, [&]() {
+			swap(mqev.m_ev, tmp);
+			mqev.m_ev_restore = false;
+		    });
 	}
 };
 
