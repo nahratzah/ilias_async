@@ -118,7 +118,7 @@ main()
 		    std::bind([](ilias::mq_in_ptr<unsigned int>& drain) {
 			for (auto i = min_prime; i != max_prime; ++i)
 				drain.enqueue(i);
-		    }, drain));
+		    }, std::move(drain)));
 	}
 
 	completed.get();
