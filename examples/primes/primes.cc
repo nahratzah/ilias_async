@@ -5,6 +5,7 @@
 #include <ilias/threadpool.h>
 #include <iostream>
 #include <memory>
+#include <utility>
 
 using namespace ilias;
 using namespace std;
@@ -113,8 +114,11 @@ main()
 
 		ilias::mq_in_ptr<unsigned int> drain;
 		std::tie(drain, completed) = prime_reader::create_sieve(wqs);
-		for (auto i = min_prime; i != max_prime; ++i)
-			drain.enqueue(i);
+		wqs->new_workq()->once(
+		    std::bind([](ilias::mq_in_ptr<unsigned int>& drain) {
+			for (auto i = min_prime; i != max_prime; ++i)
+				drain.enqueue(i);
+		    }, drain));
 	}
 
 	completed.get();
