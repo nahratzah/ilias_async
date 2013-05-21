@@ -1,7 +1,7 @@
 #include <ilias/mq_ptr.h>
 #include <ilias/promise.h>
 #include <ilias/workq.h>
-#include <ilias/wq_msg_queue.h>
+#include <ilias/wq_callback.h>
 #include <ilias/threadpool.h>
 #include <iostream>
 #include <memory>
@@ -28,17 +28,17 @@ private:
 		source.dequeue([&test, &drain](unsigned int v) {
 			if (v % test != 0U)
 				drain.enqueue(v);
-		    });
+		    }, UINT_MAX);
 	}
 
 	void
-	install_filter(ilias::mq_out_ptr<unsigned int> source,
+	install_filter(unsigned int v, ilias::mq_out_ptr<unsigned int> source,
 	    ilias::mq_in_ptr<unsigned int> drain)
 	{
 		using namespace std::placeholders;
 
 		callback(source, this->wq->get_workq_service()->new_workq(),
-		    std::bind(&prime_reader::filter, _1, drain));
+		    std::bind(&prime_reader::filter, v, _1, std::move(drain)));
 	}
 
 	void
@@ -60,7 +60,7 @@ private:
 			 * Install filtering callback between current tail
 			 * and new tail.
 			 */
-			install_filter(tail, new_tail);
+			install_filter(v, tail, new_tail);
 
 			this->install_callback(std::move(new_tail),
 			    self);

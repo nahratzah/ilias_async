@@ -291,7 +291,7 @@ workq_deactivate(const std::shared_ptr<JobType>& j) noexcept
 }
 
 
-class workq_job :
+class ILIAS_ASYNC_EXPORT workq_job :
 	public workq_detail::workq_int,
 	public ll_base_hook<workq_detail::runq_tag>,
 	public ll_base_hook<workq_detail::parallel_tag>
@@ -328,18 +328,18 @@ private:
 	const workq_ptr m_wq;
 
 protected:
-	ILIAS_ASYNC_EXPORT virtual run_lck lock_run() noexcept;
-	ILIAS_ASYNC_EXPORT virtual void unlock_run(run_lck rl) noexcept;
+	virtual run_lck lock_run() noexcept;
+	virtual void unlock_run(run_lck rl) noexcept;
 
-	ILIAS_ASYNC_EXPORT workq_job(workq_ptr, unsigned int = 0) throw (std::invalid_argument);
-	ILIAS_ASYNC_EXPORT virtual ~workq_job() noexcept;
-	ILIAS_ASYNC_EXPORT virtual void run() noexcept = 0;
+	workq_job(workq_ptr, unsigned int = 0) throw (std::invalid_argument);
+	virtual ~workq_job() noexcept;
+	virtual void run() noexcept = 0;
 
 public:
-	ILIAS_ASYNC_EXPORT void activate(unsigned int flags = 0) noexcept;
-	ILIAS_ASYNC_EXPORT void deactivate() noexcept;
-	ILIAS_ASYNC_EXPORT const workq_ptr& get_workq() const noexcept;
-	ILIAS_ASYNC_EXPORT const workq_service_ptr& get_workq_service() const noexcept;
+	void activate(unsigned int flags = 0) noexcept;
+	void deactivate() noexcept;
+	const workq_ptr& get_workq() const noexcept;
+	const workq_service_ptr& get_workq_service() const noexcept;
 
 	/* Test if the running bit is set. */
 	bool
@@ -631,7 +631,7 @@ public:
 };
 
 
-class co_runnable :
+class ILIAS_ASYNC_EXPORT co_runnable :
 	public ll_base_hook<coroutine_tag>,
 	public workq_job
 {
@@ -643,17 +643,17 @@ private:
 	std::atomic<std::size_t> m_runcount;
 
 public:
-	ILIAS_ASYNC_EXPORT virtual ~co_runnable() noexcept;
+	virtual ~co_runnable() noexcept;
 
 protected:
-	ILIAS_ASYNC_EXPORT co_runnable(workq_ptr, unsigned int = 0) throw (std::invalid_argument);
+	co_runnable(workq_ptr, unsigned int = 0) throw (std::invalid_argument);
 
-	ILIAS_ASYNC_EXPORT virtual void unlock_run(run_lck rl) noexcept override;
+	virtual void unlock_run(run_lck rl) noexcept override;
 
-	ILIAS_ASYNC_EXPORT void co_publish(std::size_t) noexcept;
-	ILIAS_ASYNC_EXPORT bool release(std::size_t) noexcept;
+	void co_publish(std::size_t) noexcept;
+	bool release(std::size_t) noexcept;
 
-	ILIAS_ASYNC_EXPORT virtual bool co_run() noexcept = 0;
+	virtual bool co_run() noexcept = 0;
 };
 
 

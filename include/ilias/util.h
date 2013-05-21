@@ -23,6 +23,396 @@
 
 namespace ilias {
 namespace util_detail {
+namespace swap_helper{
+
+
+using std::swap;
+
+
+namespace {
+
+
+template<typename Type>
+void
+do_(Type& a, Type& b)
+noexcept(noexcept(swap(a, b)))
+{
+	swap(a, b);
+}
+
+
+}} /* namespace ilias::util_detail::::swap_helper::<unnamed> */
+
+
+/*
+ * Optional_data may hold data, or it may not.
+ */
+template<typename Type,
+    bool NeedsDestructor = std::is_trivially_destructible<Type>::value>
+class optional_data
+{
+private:
+	union data_type {
+		Type val;
+
+		~data_type() noexcept {};
+	};
+
+	bool m_has_data{ false };
+	data_type m_data{};
+
+public:
+	optional_data() = default;
+
+	optional_data(const optional_data& o)
+	noexcept(std::is_nothrow_copy_constructible<Type>::value)
+	:	optional_data()
+	{
+		if (o.m_has_data) {
+			new (&this->m_data.val) Type{
+				o.m_data.val
+			};
+			this->m_has_data = true;
+		}
+	}
+
+	optional_data(optional_data&& o)
+	noexcept(std::is_nothrow_move_constructible<Type>::value)
+	:	optional_data()
+	{
+		if (o.m_has_data) {
+			new (&this->m_data.val) Type{
+				std::move(o.m_data.val)
+			};
+			this->m_has_data = true;
+			o.reset();
+		}
+	}
+
+	optional_data(const Type& v)
+	noexcept(std::is_nothrow_copy_constructible<Type>::value)
+	:	optional_data()
+	{
+		new (&this->m_data.val) Type{ v };
+		this->m_has_data = true;
+	}
+
+	optional_data(Type&& v)
+	noexcept(std::is_nothrow_move_constructible<Type>::value)
+	:	optional_data()
+	{
+		new (&this->m_data.val) Type{ std::move(v) };
+		this->m_has_data = true;
+	}
+
+	~optional_data()
+	noexcept(std::is_nothrow_destructible<Type>::value)
+	{
+		this->reset();
+	}
+
+	void
+	reset()
+	noexcept(std::is_nothrow_destructible<Type>::value)
+	{
+		if (this->m_has_data) {
+			this->m_data.val.~Type();
+			this->m_has_data = false;
+		}
+	}
+
+	void
+	reset(const Type& v)
+	noexcept(
+		std::is_nothrow_copy_constructible<Type>::value &&
+		std::is_nothrow_assignable<Type, const Type&>::value)
+	{
+		if (this->m_has_data)
+			this->m_data.val = v;
+		else {
+			new (&this->m_data.val) Type{ v };
+			this->m_has_data = true;
+		}
+	}
+
+	void
+	reset(Type&& v)
+	noexcept(
+		std::is_nothrow_move_constructible<Type>::value &&
+		std::is_nothrow_assignable<Type, Type&&>::value)
+	{
+		if (this->m_has_data)
+			this->m_data.val = std::move(v);
+		else {
+			new (&this->m_data.val) Type{ v };
+			this->m_has_data = true;
+		}
+	}
+
+	optional_data&
+	operator=(const optional_data& o)
+	noexcept(
+		noexcept(std::declval<optional_data>().reset()) &&
+		noexcept(std::declval<optional_data>().reset(
+		    std::declval<const Type&>())))
+	{
+		if (!o.m_has_data)
+			this->reset();
+		else
+			this->reset(o.m_data.val);
+		return *this;
+	}
+
+	optional_data&
+	operator=(optional_data&& o)
+	noexcept(
+		noexcept(std::declval<optional_data>().reset()) &&
+		noexcept(std::declval<optional_data>().reset(
+		    std::declval<Type&&>())))
+	{
+		if (!o.m_has_data)
+			this->reset();
+		else {
+			this->reset(std::move(o.m_data.val));
+			o.reset();
+		}
+		return *this;
+	}
+
+	bool
+	operator==(const optional_data& o) const
+	noexcept(
+		noexcept(std::declval<const Type&>() ==
+		    std::declval<const Type&>()))
+	{
+		if (this->m_has_data && o.m_has_data)
+			return this->m_data.val == o.m_data.val;
+		return this->m_has_data == o.m_has_data;
+	}
+
+	explicit operator bool() const noexcept
+	{
+		return this->m_has_data;
+	}
+
+	friend void
+	swap(optional_data& a, optional_data& b)
+	noexcept(
+		std::is_nothrow_assignable<optional_data,
+		    optional_data&&>::value &&
+		noexcept(swap_helper::do_(std::declval<Type&>(),
+		    std::declval<Type&>())))
+	{
+		if (a.m_has_data && b.m_has_data)
+			swap_helper::do_(a.m_data.val, b.m_data.val);
+		else if (a.m_has_data)
+			b = std::move(a);
+		else if (b.m_has_data)
+			a = std::move(b);
+	}
+
+	Type*
+	get() const noexcept
+	{
+		return (this->m_has_data ?
+		    &const_cast<Type&>(this->m_data.val) :
+		    nullptr);
+	}
+
+	Type*
+	operator->() const noexcept
+	{
+		return this->get();
+	}
+
+	Type&
+	operator*() const noexcept
+	{
+		return *this->get();
+	}
+};
+
+/*
+ * Specialization for trivially destructible Type:
+ * ensures optional_data is trivially destructible as well.
+ */
+template<typename Type>
+class optional_data<Type, true>
+{
+private:
+	union data_type {
+		Type val;
+	};
+
+	bool m_has_data{ false };
+	data_type m_data{};
+
+public:
+	optional_data() = default;
+
+	optional_data(const optional_data& o)
+	noexcept(std::is_nothrow_copy_constructible<Type>::value)
+	:	optional_data()
+	{
+		if (o.m_has_data) {
+			new (&this->m_data.val) Type{
+				o.m_data.val
+			};
+			this->m_has_data = true;
+		}
+	}
+
+	optional_data(optional_data&& o)
+	noexcept(std::is_nothrow_move_constructible<Type>::value)
+	:	optional_data()
+	{
+		if (o.m_has_data) {
+			new (&this->m_data.val) Type{
+				std::move(o.m_data.val)
+			};
+			this->m_has_data = true;
+			o.reset();
+		}
+	}
+
+	optional_data(const Type& v)
+	noexcept(std::is_nothrow_copy_constructible<Type>::value)
+	:	optional_data()
+	{
+		new (&this->m_data.val) Type{ v };
+		this->m_has_data = true;
+	}
+
+	optional_data(Type&& v)
+	noexcept(std::is_nothrow_move_constructible<Type>::value)
+	:	optional_data()
+	{
+		new (&this->m_data.val) Type{ std::move(v) };
+		this->m_has_data = true;
+	}
+
+	void
+	reset()
+	noexcept(std::is_nothrow_destructible<Type>::value)
+	{
+		if (this->m_has_data) {
+			this->m_data.val.~Type();
+			this->m_has_data = false;
+		}
+	}
+
+	void
+	reset(const Type& v)
+	noexcept(
+		std::is_nothrow_copy_constructible<Type>::value &&
+		std::is_nothrow_assignable<Type, const Type&>::value)
+	{
+		if (this->m_has_data)
+			this->m_data.val = v;
+		else {
+			new (&this->m_data.val) Type{ v };
+			this->m_has_data = true;
+		}
+	}
+
+	void
+	reset(Type&& v)
+	noexcept(
+		std::is_nothrow_move_constructible<Type>::value &&
+		std::is_nothrow_assignable<Type, Type&&>::value)
+	{
+		if (this->m_has_data)
+			this->m_data.val = std::move(v);
+		else {
+			new (&this->m_data.val) Type{ v };
+			this->m_has_data = true;
+		}
+	}
+
+	optional_data&
+	operator=(const optional_data& o)
+	noexcept(
+		noexcept(std::declval<optional_data>().reset()) &&
+		noexcept(std::declval<optional_data>().reset(
+		    std::declval<const Type&>())))
+	{
+		if (!o.m_has_data)
+			this->reset();
+		else
+			this->reset(o.m_data.val);
+		return *this;
+	}
+
+	optional_data&
+	operator=(optional_data&& o)
+	noexcept(
+		noexcept(std::declval<optional_data>().reset()) &&
+		noexcept(std::declval<optional_data>().reset(
+		    std::declval<Type&&>())))
+	{
+		if (!o.m_has_data)
+			this->reset();
+		else {
+			this->reset(std::move(o.m_data.val));
+			o.reset();
+		}
+		return *this;
+	}
+
+	bool
+	operator==(const optional_data& o) const
+	noexcept(
+		noexcept(std::declval<const Type&>() ==
+		    std::declval<const Type&>()))
+	{
+		if (this->m_has_data && o.m_has_data)
+			return this->m_data.val == o.m_data.val;
+		return this->m_has_data == o.m_has_data;
+	}
+
+	explicit operator bool() const noexcept
+	{
+		return this->m_has_data;
+	}
+
+	friend void
+	swap(optional_data& a, optional_data& b)
+	noexcept(
+		std::is_nothrow_assignable<optional_data,
+		    optional_data&&>::value &&
+		noexcept(swap_helper::do_(std::declval<Type&>(),
+		    std::declval<Type&>())))
+	{
+		if (a.m_has_data && b.m_has_data)
+			swap_helper::do_(a.m_data.val, b.m_data.val);
+		else if (a.m_has_data)
+			b = std::move(a);
+		else if (b.m_has_data)
+			a = std::move(b);
+	}
+
+	Type*
+	get() const noexcept
+	{
+		return (this->m_has_data ?
+		    &const_cast<Type&>(this->m_data.val) :
+		    nullptr);
+	}
+
+	Type*
+	operator->() const noexcept
+	{
+		return this->get();
+	}
+
+	Type&
+	operator*() const noexcept
+	{
+		return *this->get();
+	}
+};
+
+
 namespace {
 
 
@@ -163,6 +553,10 @@ do_noexcept(Fn&& fn, Args&&... args) noexcept
 {
 	return fn(std::forward<Args>(args)...);
 }
+
+
+/* Object holding optional data. */
+template<typename Type> using opt_data = util_detail::optional_data<Type>;
 
 
 } /* namespace ilias */

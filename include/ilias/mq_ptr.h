@@ -89,10 +89,8 @@ public:
 			assert(old > 0U);
 
 			if (old == 1U) {
-				typename Type::out_pointer arg{
-					&const_cast<Type&>(v)
-				};
-				const_cast<Type&>(v)._fire(arg);
+				const_cast<Type&>(v)._fire(
+				    &const_cast<Type&>(v));
 
 				this->base.release(v);
 			}
@@ -147,8 +145,7 @@ public:
 		    std::forward<Args>(args)...)))
 	{
 		this->data::enqueue(std::forward<Args>(args)...);
-		out_pointer arg{ this };
-		this->_fire(arg);
+		this->_fire(this);
 	}
 };
 
@@ -341,6 +338,10 @@ class mq_out_ptr
 friend class mq_ptr_detail::refcounted_mq<Type, Allocator>;
 friend class mq_ptr_detail::refcount::in_refcount_mgr;
 
+public:
+	using callback_arg_type =
+	    typename mq_ptr_detail::refcounted_mq<Type, Allocator>::callback_arg_type;
+
 private:
 	using pointer = refpointer<
 	    mq_ptr_detail::refcounted_mq<Type, Allocator>,
@@ -377,7 +378,7 @@ private:
 		}
 	};
 
-	explicit mq_out_ptr(typename pointer::pointer p) noexcept
+	mq_out_ptr(typename pointer::pointer p) noexcept
 	:	m_ptr(p)
 	{
 		/* Empty body. */
@@ -444,19 +445,22 @@ public:
 		return bool(this->m_ptr);
 	}
 
-	template<typename... Args>
 	friend void
-	callback(mq_out_ptr& self, Args&&... args)
-	noexcept(
-		noexcept(callback(
-		    std::declval<typename pointer::reference>(),
-		    std::forward<Args>(args)...)))
+	callback(mq_out_ptr& self, std::function<void (callback_arg_type)> fn)
 	{
 		if (!self.m_ptr)
 			throw std::runtime_error("mq_out_ptr: uninitialized");
 
 		post_check pc{ self };
-		callback(*self.m_ptr, std::forward<Args>(args)...);
+		callback(*self.m_ptr, std::move(fn));
+	}
+
+	friend void
+	callback(mq_out_ptr& self, std::nullptr_t)
+	{
+		if (!self.m_ptr)
+			throw std::runtime_error("mq_out_ptr: uninitialized");
+		callback(*self.m_ptr, nullptr);
 	}
 };
 

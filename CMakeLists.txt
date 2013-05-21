@@ -107,7 +107,7 @@ list (APPEND hdrs
 	include/ilias/refcnt.h
 	include/ilias/msg_queue.h
 	include/ilias/mq_ptr.h
-	include/ilias/wq_msg_queue.h
+	include/ilias/wq_callback.h
 	include/ilias/promise.h
 	include/ilias/wq_promise.h
 	include/ilias/combi_promise.h
@@ -120,7 +120,6 @@ list (APPEND srcs
 	src/refcnt.cc
 	src/msg_queue.cc
 	src/mq_ptr.cc
-	src/wq_msg_queue.cc
 	src/promise.cc
 	src/wq_promise.cc
 	src/combi_promise.cc

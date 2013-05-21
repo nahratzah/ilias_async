@@ -128,9 +128,16 @@ public:
 /*
  * Message queue events.
  */
-template<typename MqType>
+template<typename EvArg>
 class msg_queue_events
 {
+public:
+	using callback_arg_type = EvArg;
+
+	static_assert(!std::is_rvalue_reference<callback_arg_type>::value,
+	    "Message queue events callback may not be rvalue-ref: "
+	    "event may need to be invoked multiple times in a tight loop");
+
 private:
 	enum class state : int {
 		IDLE,
@@ -141,40 +148,35 @@ private:
 	std::atomic<state> m_state{ state::IDLE };
 
 	std::mutex m_evmtx;
-	bool m_ev_restore{ false };		/* Protected by m_evmtx. */
-	std::function<void (MqType&)> m_ev;	/* Protected by m_evmtx. */
+	bool m_ev_restore{ false };	/* Protected by m_evmtx. */
+	std::function<void (callback_arg_type)> m_ev;	/* Protected by m_evmtx. */
 
 	/*
 	 * Inner function: fires m_ev.
 	 * Not safe against concurrent invocations.
+	 * Safe against recursive invocations.
 	 */
 	void
-	_fire_event(MqType& ev_arg) noexcept
+	_fire_event(callback_arg_type ev_arg) noexcept
 	{
-		std::function<void (MqType&)> tmp;
+		std::function<void (callback_arg_type)> tmp;
 		std::unique_lock<std::mutex> guard{ this->m_evmtx };
 
 		swap(tmp, this->m_ev);
 		if (tmp) {
 			this->m_ev_restore = true;
-			guard.unlock();
 
 			/*
 			 * Invoke function (which is temporarily copied to tmp,
 			 * to prevent it from being deleted from within its
 			 * invocation.
 			 */
-			tmp(ev_arg);
+			do_unlocked(guard, tmp,
+			    std::forward<callback_arg_type>(ev_arg));
 
-			guard.lock();
 			if (this->m_ev_restore) {
 				swap(this->m_ev, tmp);
 				this->m_ev_restore = false;
-			} else {
-				/* Destroy event outside of event lock. */
-				guard.unlock();
-				tmp = nullptr;
-				guard.lock();
 			}
 		}
 	}
@@ -204,7 +206,7 @@ protected:
 	 * once it completes (to prevent missed wakeups).
 	 */
 	void
-	_fire(MqType& ev_arg) noexcept
+	_fire(callback_arg_type ev_arg) noexcept
 	{
 		/* Lacking using statement to import class members... */
 		constexpr state IDLE = state::IDLE;
@@ -249,7 +251,8 @@ protected:
 public:
 	/* Set output event callback. */
 	friend void
-	callback(msg_queue_events& mqev, std::function<void (MqType&)> fn)
+	callback(msg_queue_events& mqev,
+	    std::function<void (callback_arg_type)> fn)
 	    noexcept
 	{
 		do_locked(mqev.m_evmtx, [&]() {
@@ -271,7 +274,7 @@ public:
 	friend void
 	callback(msg_queue_events& mqev, std::nullptr_t) noexcept
 	{
-		std::function<void (MqType&)> tmp;
+		std::function<void (callback_arg_type)> tmp;
 		do_locked(mqev.m_evmtx, [&]() {
 			swap(mqev.m_ev, tmp);
 			mqev.m_ev_restore = false;
@@ -572,14 +575,15 @@ template<typename MQ> class prepare_enqueue;
 
 template<typename Type, typename Allocator = std::allocator<Type>>
 class msg_queue
-:	protected mq_detail::msg_queue_events<msg_queue<Type, Allocator>>,
+:	protected mq_detail::msg_queue_events<msg_queue<Type, Allocator>&>,
 	protected mq_detail::data_msg_queue<Type, Allocator>
 {
 friend class prepare_enqueue<msg_queue<Type, Allocator>>;
 
 private:
 	/* Simple names improve readability. */
-	using events = mq_detail::msg_queue_events<msg_queue<Type, Allocator>>;
+	using events =
+	    mq_detail::msg_queue_events<msg_queue<Type, Allocator>&>;
 	using data = mq_detail::data_msg_queue<Type, Allocator>;
 
 	static events&&
@@ -622,6 +626,7 @@ public:
 
 	using data::empty;
 	using data::dequeue;
+	using callback_arg_type = typename events::callback_arg_type;
 
 	/*
 	 * Enqueue message.
@@ -641,14 +646,22 @@ public:
 	 *
 	 * Defers to msg_queue_events.
 	 */
-	template<typename... Args>
 	friend void
-	callback(msg_queue& mq, Args&&... args)
-	    noexcept(
-		noexcept(callback(std::declval<events>(), std::forward<Args>(args)...)))
+	callback(msg_queue& mq, std::function<void (callback_arg_type)> fn)
+	noexcept(noexcept(callback(std::declval<events&>(), std::move(fn))))
 	{
-		events& self = mq;
-		callback(self, std::forward<Args>(args)...);
+		events& ev = mq;
+		callback(ev, std::move(fn));
+		if (!mq.empty())
+			mq._fire(mq);
+	}
+
+	friend void
+	callback(msg_queue& mq, std::nullptr_t)
+	noexcept(noexcept(callback(std::declval<events&>(), nullptr)))
+	{
+		events& ev = mq;
+		callback(ev, nullptr);
 	}
 };
 
@@ -660,9 +673,14 @@ public:
  */
 template<typename Allocator>
 class msg_queue<void, Allocator>
-:	public mq_detail::msg_queue_events<msg_queue<void, Allocator>>,
+:	protected mq_detail::msg_queue_events<msg_queue<void, Allocator>&>,
 	public mq_detail::void_msg_queue
 {
+private:
+	using events =
+	    mq_detail::msg_queue_events<msg_queue<void, Allocator>&>;
+
+public:
 	msg_queue() = default;
 
 	msg_queue(msg_queue&& mq) noexcept
@@ -696,6 +714,31 @@ class msg_queue<void, Allocator>
 	enqueue() noexcept
 	{
 		this->enqueue_n(1);
+	}
+
+	using callback_arg_type = typename events::callback_arg_type;
+
+	/*
+	 * Callback handler.
+	 *
+	 * Defers to msg_queue_events.
+	 */
+	friend void
+	callback(msg_queue& mq, std::function<void (callback_arg_type)> fn)
+	noexcept(noexcept(callback(std::declval<events&>(), std::move(fn))))
+	{
+		events& ev = mq;
+		callback(ev, std::move(fn));
+		if (!mq.empty())
+			mq._fire(mq);
+	}
+
+	friend void
+	callback(msg_queue& mq, std::nullptr_t)
+	noexcept(noexcept(callback(std::declval<events&>(), nullptr)))
+	{
+		events& ev = mq;
+		callback(ev, nullptr);
 	}
 };
 
