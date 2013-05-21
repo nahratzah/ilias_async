@@ -14,8 +14,51 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 #include <ilias/promise.h>
+#include <ilias/util.h>
 
 namespace ilias {
+namespace prom_detail {
+
+
+/*
+ * Helper for base_prom_data::wait().
+ *
+ * Publishes a condition variable to sleep on,
+ * which takes less CPU resources than a busy-wait loop for wakeups.
+ */
+class base_prom_data::promwait
+{
+private:
+	std::mutex m_lck;
+	std::condition_variable m_cnd;
+	const base_prom_data& m_bpd;
+
+public:
+	promwait(const base_prom_data& bpd)
+	:	m_bpd(bpd)
+	{
+		/* Empty body. */
+	}
+
+	void
+	wait() noexcept
+	{
+		std::unique_lock<std::mutex> guard{ this->m_lck };
+		while (!this->m_bpd.ready())
+			m_cnd.wait(guard);
+	}
+
+	void
+	signal(base_prom_data&) noexcept
+	{
+		do_locked(this->m_lck, [&]() {
+			this->m_cnd.notify_all();
+		    });
+	}
+};
+
+
+} /* namespace ilias::prom_detail */
 
 
 broken_promise::broken_promise()
@@ -164,6 +207,27 @@ base_prom_data::add_callback(execute_fn fn, promise_start ps)
 		if (ps == PROM_START)
 			this->_start(std::move(guard));
 	}
+}
+
+void
+base_prom_data::wait() const noexcept
+{
+	using namespace std::placeholders;
+
+	if (!this->ready()) {
+		try {
+			auto pw = std::make_shared<promwait>(*this);
+			const_cast<base_prom_data*>(this)->add_callback(
+			    std::bind(&promwait::signal, pw, _1));
+			pw->wait();
+		} catch (...) {
+			/* Fallback: use busy waiting. */
+			while (!this->ready())
+				std::this_thread::yield();
+		}
+	}
+
+	assert(this->ready());
 }
 
 bool

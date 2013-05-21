@@ -99,6 +99,8 @@ private:
 		CB_DONE
 	};
 
+	class promwait;
+
 	std::atomic<state> m_state{ state::S_NIL };
 	cb_state m_cbstate{ cb_state::CB_NONE };
 	std::atomic<uintptr_t> m_promrefs{ 0 };
@@ -241,12 +243,8 @@ public:
 		return s != state::S_NIL && s != state::S_BUSY;
 	}
 
-	void
-	wait() const noexcept
-	{
-		while (!this->ready())
-			std::this_thread::yield();
-	}
+	/* Wait for promise to become ready. */
+	ILIAS_ASYNC_EXPORT void wait() const noexcept;
 
 	/* Inform promdata that there is one more promise referencing this. */
 	void
