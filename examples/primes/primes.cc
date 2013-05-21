@@ -29,7 +29,7 @@ private:
 		source.dequeue([&test, &drain](unsigned int v) {
 			if (v % test != 0U)
 				drain.enqueue(v);
-		    }, UINT_MAX);
+		    });
 	}
 
 	void
@@ -38,8 +38,9 @@ private:
 	{
 		using namespace std::placeholders;
 
-		callback(source, this->wq->get_workq_service()->new_workq(),
-		    std::bind(&prime_reader::filter, v, _1, std::move(drain)));
+		callback(source, this->wq,
+		    std::bind(&prime_reader::filter, v, _1, std::move(drain)),
+		    workq_job::TYPE_PARALLEL | workq_job::TYPE_PERSIST);
 	}
 
 	void
