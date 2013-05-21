@@ -436,7 +436,7 @@ public:
 	bool
 	empty() const noexcept
 	{
-		post_check pc{ *this };
+		post_check pc{ const_cast<mq_out_ptr&>(*this) };
 		return (!this->m_ptr || this->m_ptr->empty());
 	}
 
