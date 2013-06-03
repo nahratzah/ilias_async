@@ -45,7 +45,7 @@ public:
 	{
 		std::unique_lock<std::mutex> guard{ this->m_lck };
 		while (!this->m_bpd.ready())
-			m_cnd.wait(guard);
+			this->m_cnd.wait(guard);
 	}
 
 	void
@@ -215,6 +215,8 @@ base_prom_data::wait() const noexcept
 	using namespace std::placeholders;
 
 	if (!this->ready()) {
+		const_cast<base_prom_data*>(this)->start();
+
 		try {
 			auto pw = std::make_shared<promwait>(*this);
 			const_cast<base_prom_data*>(this)->add_callback(
