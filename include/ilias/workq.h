@@ -498,19 +498,10 @@ private:
 	workq_intref<workq_detail::co_runnable> m_co;
 	workq::run_lck m_wq_lck;
 	workq_job::run_lck m_wq_job_lck;
-	bool m_commited;
+	bool m_commited{ false };
 
 public:
-	wq_run_lock() noexcept :
-		m_wq(),
-		m_wq_job(),
-		m_co(),
-		m_wq_lck(),
-		m_wq_job_lck(),
-		m_commited(false)
-	{
-		/* Empty body. */
-	}
+	wq_run_lock() = default;
 
 	~wq_run_lock() noexcept
 	{
@@ -518,12 +509,12 @@ public:
 	}
 
 	wq_run_lock(wq_run_lock&& o) noexcept :
-		m_wq(std::move(o.m_wq)),
-		m_wq_job(std::move(o.m_wq_job)),
-		m_co(std::move(o.m_co)),
-		m_wq_lck(o.m_wq_lck),
-		m_wq_job_lck(o.m_wq_job_lck),
-		m_commited(o.m_commited)
+		m_wq{ std::move(o.m_wq) },
+		m_wq_job{ std::move(o.m_wq_job) },
+		m_co{ std::move(o.m_co) },
+		m_wq_lck{ o.m_wq_lck },
+		m_wq_job_lck{ o.m_wq_job_lck },
+		m_commited{ o.m_commited }
 	{
 		/* Empty body. */
 	}
