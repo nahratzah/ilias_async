@@ -89,7 +89,9 @@ check_initialized(const Futures& f) noexcept
 }
 
 /* Functor, starts the argument promise/future. */
-struct lambda_start {
+class lambda_start
+{
+public:
 	lambda_start() = default;
 	lambda_start(const lambda_start&) = default;
 
@@ -231,7 +233,7 @@ public:
 	void
 	operator()(promise<Type> p) noexcept
 	{
-		visit(this->m_futures, lambda_start());
+		visit(this->m_futures, lambda_start{});
 		this->m_prom = std::move(p);
 		this->enable();
 	}
@@ -283,6 +285,7 @@ private:
 		static_cast<wq_combiner&>(bc).activate();
 	}
 
+public:
 	template<typename Init>
 	wq_combiner(workq_ptr wq, fn_type fn, Init&& futures, unsigned int fl)
 	:	base_combiner(sizeof...(Futures), &wq_combiner::run),
@@ -300,15 +303,14 @@ private:
 		}
 	}
 
-public:
 	template<typename Init>
 	static std::shared_ptr<wq_combiner>
 	new_combiner(workq_ptr wq, fn_type fn, Init&& futures,
 	    unsigned int fl = 0)
 	{
-		std::shared_ptr<wq_combiner> c{ new wq_combiner(
+		std::shared_ptr<wq_combiner> c = new_workq_job<wq_combiner>(
 		    std::move(wq), std::move(fn),
-		    std::forward<Init>(futures), fl) };
+		    std::forward<Init>(futures), fl);
 		visit(c->m_futures, callback_impl(c));
 		return c;
 	}
@@ -316,7 +318,7 @@ public:
 	void
 	operator()(promise<Type> p) noexcept
 	{
-		visit(this->m_futures, lambda_start());
+		visit(this->m_futures, lambda_start{});
 		this->m_prom = std::move(p);
 		this->enable();
 	}
@@ -406,7 +408,8 @@ combine(FN&& fn, future<Futures>... f)
  */
 template<typename Type, typename FN, typename... Futures>
 future<Type>
-combine(workq_ptr wq, FN&& fn, std::tuple<future<Futures>...> f)
+combine(workq_ptr wq, unsigned int fl,
+    FN&& fn, std::tuple<future<Futures>...> f)
 {
 	using namespace std::placeholders;
 	typedef cprom_detail::wq_combiner<Type, typename std::decay<FN>::type,
@@ -415,8 +418,14 @@ combine(workq_ptr wq, FN&& fn, std::tuple<future<Futures>...> f)
 
 	return new_promise<Type>(std::bind(&combi::operator(),
 	    combi::new_combiner(std::move(wq), std::forward<FN>(fn),
-	      std::move(f)),
+	      std::move(f), fl),
 	    _1));
+}
+template<typename Type, typename FN, typename... Futures>
+future<Type>
+combine(workq_ptr wq, FN&& fn, std::tuple<future<Futures>...> f)
+{
+	return combine<Type>(wq, 0U, fn, std::move(f));
 }
 
 /*
@@ -433,10 +442,17 @@ combine(workq_ptr wq, FN&& fn, std::tuple<future<Futures>...> f)
  */
 template<typename Type, typename FN, typename... Futures>
 future<Type>
+combine(workq_ptr wq, unsigned int fl,
+    FN&& fn, future<Futures>... f)
+{
+	return combine<Type>(wq, fl, std::forward<FN>(fn),
+	    std::make_tuple(std::forward<future<Futures>>(f)...));
+}
+template<typename Type, typename FN, typename... Futures>
+future<Type>
 combine(workq_ptr wq, FN&& fn, future<Futures>... f)
 {
-	return combine<Type>(wq, std::forward<FN>(fn),
-	    std::make_tuple(std::forward<future<Futures>>(f)...));
+	return combine<Type>(wq, 0U, fn, std::move(f)...);
 }
 
 
