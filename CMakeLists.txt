@@ -103,6 +103,7 @@ check_cxx_source_compiles ("${ATOMIC_SARED_PTR_CC}" ILIAS_ASYNC_HAS_ATOMIC_SHARE
 
 
 list (APPEND hdrs
+	include/ilias/hazard.h
 	include/ilias/ll.h
 	include/ilias/refcnt.h
 	include/ilias/msg_queue.h
@@ -116,6 +117,7 @@ list (APPEND hdrs
 	include/ilias/workq.h
 	)
 list (APPEND srcs
+	src/hazard.cc
 	src/ll.cc
 	src/refcnt.cc
 	src/msg_queue.cc
