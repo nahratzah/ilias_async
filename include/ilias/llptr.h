@@ -429,6 +429,35 @@ public:
 	{
 		return p && p->is_lock_free();
 	}
+
+	flags_type
+	fetch_or(flags_type fl,
+	    std::memory_order mo = std::memory_order_seq_cst) noexcept
+	{
+		return _bitmask(this->m_ptr.fetch_or(fl.to_ulong(), mo));
+	}
+
+	flags_type
+	fetch_xor(flags_type fl,
+	    std::memory_order mo = std::memory_order_seq_cst) noexcept
+	{
+		return _bitmask(this->m_ptr.fetch_xor(fl.to_ulong(), mo));
+	}
+
+	flags_type
+	fetch_and(flags_type fl,
+	    std::memory_order mo = std::memory_order_seq_cst) noexcept
+	{
+		return _bitmask(
+		    this->m_ptr.fetch_and(_mask() | fl.to_ulong(), mo));
+	}
+
+	flags_type
+	load_flags(std::memory_order mo = std::memory_order_seq_cst)
+	const noexcept
+	{
+		return _bitmask(this->m_ptr.load(mo));
+	}
 };
 
 
