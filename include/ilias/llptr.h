@@ -53,9 +53,6 @@ template<typename Type, typename AcqRel = default_refcount_mgr<Type>,
 class llptr
 :	public llptr_detail::pointer_helper<Type, AcqRel, Flags>
 {
-	static_assert(std::alignment_of<Type>::value % (1U << Flags) == 0U,
-	    "llptr: type alignment must be greater than 1<<Flags.");
-
 public:
 	using typename
 	    llptr_detail::pointer_helper<Type, AcqRel, Flags>::flags_type;
@@ -101,6 +98,10 @@ private:
 	static std::uintptr_t
 	_encode(ptr_t p, const flags_type& fl) noexcept
 	{
+		static_assert(std::alignment_of<Type>::value % (1U << Flags) ==
+		    0U,
+		    "llptr: type alignment must be greater than 1<<Flags.");
+
 		return (reinterpret_cast<std::uintptr_t>(p) |
 		    fl.to_ulong());
 	}
