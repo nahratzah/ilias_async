@@ -64,6 +64,7 @@ public:
 	    llptr_detail::pointer_helper<Type, AcqRel, Flags>::ptr_t;
 	using typename
 	    llptr_detail::pointer_helper<Type, AcqRel, Flags>::ref_t;
+	using no_acquire_t = std::tuple<ptr_t, flags_type>;
 
 private:
 	using hazard_t = hazard<llptr, Type>;
@@ -292,6 +293,28 @@ public:
 		return false;
 	}
 
+	bool
+	compare_exchange_weak(no_acquire_t& expect, element_type set,
+	    std::memory_order mo_success = std::memory_order_seq_cst,
+	    std::memory_order mo_fail = std::memory_order_seq_cst)
+	noexcept
+	{
+		auto expect_ = _encode(std::get<0>(expect),
+		    std::get<1>(expect));
+		const auto set_ = _encode(std::get<0>(set).get(),
+		    std::get<1>(set));
+
+		if (this->m_ptr.compare_exchange_weak(expect_, set_,
+		    mo_success, mo_fail)) {
+			std::get<0>(set).release();
+			this->grant(_ptr(expect_), 1);
+			return true;
+		}
+
+		expect = std::make_tuple(_ptr(expect_), _bitmask(expect_));
+		return false;
+	}
+
 	/*
 	 * Compare_exchange_weak implementation for rvalue-ref expect.
 	 *
@@ -313,6 +336,26 @@ public:
 		    mo_success, mo_fail)) {
 			std::get<0>(set).release();
 			this->grant(std::get<0>(expect).release(), 2);
+			return true;
+		}
+		return false;
+	}
+
+	bool
+	compare_exchange_weak(no_acquire_t&& expect, element_type set,
+	    std::memory_order mo_success = std::memory_order_seq_cst,
+	    std::memory_order mo_fail = std::memory_order_seq_cst)
+	noexcept
+	{
+		auto expect_ = _encode(std::get<0>(expect),
+		    std::get<1>(expect));
+		const auto set_ = _encode(std::get<0>(set).get(),
+		    std::get<1>(set));
+
+		if (this->m_ptr.compare_exchange_weak(expect_, set_,
+		    mo_success, mo_fail)) {
+			std::get<0>(set).release();
+			this->grant(_ptr(expect_), 1);
 			return true;
 		}
 		return false;
@@ -367,6 +410,28 @@ public:
 		}
 	}
 
+	bool
+	compare_exchange_strong(no_acquire_t& expect, element_type set,
+	    std::memory_order mo_success = std::memory_order_seq_cst,
+	    std::memory_order mo_fail = std::memory_order_seq_cst)
+	noexcept
+	{
+		auto expect_ = _encode(std::get<0>(expect),
+		    std::get<1>(expect));
+		const auto set_ = _encode(std::get<0>(set).get(),
+		    std::get<1>(set));
+
+		if (this->m_ptr.compare_exchange_strong(expect_, set_,
+		    mo_success, mo_fail)) {
+			std::get<0>(set).release();
+			this->grant(_ptr(expect_), 1);
+			return true;
+		}
+
+		expect = std::make_tuple(_ptr(expect_), _bitmask(expect_));
+		return false;
+	}
+
 	/*
 	 * Compare_exchange_strong implementation for rvalue-ref expect.
 	 *
@@ -388,6 +453,26 @@ public:
 		    mo_success, mo_fail)) {
 			std::get<0>(set).release();
 			this->grant(std::get<0>(expect).release(), 2);
+			return true;
+		}
+		return false;
+	}
+
+	bool
+	compare_exchange_strong(no_acquire_t&& expect, element_type set,
+	    std::memory_order mo_success = std::memory_order_seq_cst,
+	    std::memory_order mo_fail = std::memory_order_seq_cst)
+	noexcept
+	{
+		auto expect_ = _encode(std::get<0>(expect),
+		    std::get<1>(expect));
+		const auto set_ = _encode(std::get<0>(set).get(),
+		    std::get<1>(set));
+
+		if (this->m_ptr.compare_exchange_strong(expect_, set_,
+		    mo_success, mo_fail)) {
+			std::get<0>(set).release();
+			this->grant(_ptr(expect_), 1);
 			return true;
 		}
 		return false;
@@ -458,6 +543,14 @@ public:
 	const noexcept
 	{
 		return _bitmask(this->m_ptr.load(mo));
+	}
+
+	no_acquire_t
+	load_no_acquire(std::memory_order mo = std::memory_order_seq_cst)
+	noexcept
+	{
+		const auto v = this->m_ptr.load(mo);
+		return std::make_tuple(_ptr(v), _bitmask(v));
 	}
 };
 
