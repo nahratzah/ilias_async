@@ -15,6 +15,7 @@
  */
 #include <ilias/hazard.h>
 #include <array>
+#include <thread>
 
 
 namespace ilias {
@@ -98,6 +99,18 @@ basic_hazard::hazard_grant(std::uintptr_t owner, std::uintptr_t value) noexcept
 			++count;
 	}
 	return count;
+}
+
+void
+basic_hazard::hazard_wait(std::uintptr_t owner, std::uintptr_t value) noexcept
+{
+	using namespace hazard_detail;
+
+	for (auto& h : hazards) {
+		while (h.value.load(std::memory_order_consume) == value &&
+		    h.owner.load(std::memory_order_consume) == owner)
+			std::this_thread::yield();
+	}
 }
 
 

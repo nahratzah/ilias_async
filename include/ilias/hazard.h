@@ -74,6 +74,8 @@ private:
 	ILIAS_ASYNC_EXPORT static std::size_t hazard_count() noexcept;
 	ILIAS_ASYNC_EXPORT static std::size_t hazard_grant(std::uintptr_t,
 	    std::uintptr_t) noexcept;
+	ILIAS_ASYNC_EXPORT static void hazard_wait(std::uintptr_t,
+	    std::uintptr_t) noexcept;
 
 public:
 	basic_hazard(std::uintptr_t owner)
@@ -144,6 +146,13 @@ public:
 				release(nrefs);
 		    });
 	}
+
+	static void
+	wait_unused(std::uintptr_t owner, std::uintptr_t value)
+	{
+		validate_owner(owner);
+		hazard_wait(owner, value);
+	}
 };
 
 /*
@@ -206,6 +215,12 @@ public:
 		basic_hazard::grant(std::forward<AcquireFn>(acquire),
 		    std::forward<ReleaseFn>(release),
 		    owner_key(owner), value_key(value), nrefs);
+	}
+
+	static void
+	wait_unused(owner_reference owner, value_reference value)
+	{
+		basic_hazard::wait_unused(owner_key(owner), value_key(value));
 	}
 };
 
