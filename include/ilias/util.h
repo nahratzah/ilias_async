@@ -559,6 +559,19 @@ do_noexcept(Fn&& fn, Args&&... args) noexcept
 template<typename Type> using opt_data = util_detail::optional_data<Type>;
 
 
+namespace {
+
+
+/*
+ * Tag, indicating to intrusive based lists that an element is used
+ * without intrusive linking.
+ */
+struct no_intrusive_tag {};
+
+
+} /* namespace ilias::<unnamed> */
+
+
 } /* namespace ilias */
 
 
