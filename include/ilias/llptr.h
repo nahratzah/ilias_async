@@ -177,7 +177,7 @@ private:
 		hz.do_hazard(*v_ptr,
 		    [&rv, this, v_ptr]() {
 			if (_ptr(this->m_ptr.load(
-			    std::memory_order_consume)) == v_ptr) {
+			    std::memory_order_relaxed)) == v_ptr) {
 				this->acquire(*v_ptr, 1U);
 				++rv;
 			}

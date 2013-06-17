@@ -80,13 +80,7 @@ basic_hazard::allocate_hazard(std::uintptr_t owner) noexcept
 	/* UNREACHABLE */
 }
 
-std::size_t
-basic_hazard::hazard_count() noexcept
-{
-	using namespace hazard_detail;
-
-	return hazards.size();
-}
+const std::size_t basic_hazard::hazard_count = hazard_detail::hazards.size();
 
 std::size_t
 basic_hazard::hazard_grant(std::uintptr_t owner, std::uintptr_t value) noexcept
@@ -101,14 +95,31 @@ basic_hazard::hazard_grant(std::uintptr_t owner, std::uintptr_t value) noexcept
 	return count;
 }
 
+std::size_t
+basic_hazard::hazard_grant_n(std::uintptr_t owner, std::uintptr_t value,
+    std::size_t nrefs) noexcept
+{
+	using namespace hazard_detail;
+
+	std::size_t count = 0;
+	for (auto& h : hazards) {
+		if (count == nrefs)
+			break;
+		if (mark(h, owner, value))
+			++count;
+	}
+	return count;
+}
+
 void
 basic_hazard::hazard_wait(std::uintptr_t owner, std::uintptr_t value) noexcept
 {
 	using namespace hazard_detail;
 
 	for (auto& h : hazards) {
-		while (h.value.load(std::memory_order_consume) == value &&
-		    h.owner.load(std::memory_order_consume) == owner)
+		while ((h.owner.load(std::memory_order_consume) &
+		    hazard_t::MASK) == owner &&
+		    h.value.load(std::memory_order_consume) == value)
 			std::this_thread::yield();
 	}
 }

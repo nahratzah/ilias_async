@@ -71,11 +71,13 @@ private:
 
 	ILIAS_ASYNC_EXPORT static hazard_t& allocate_hazard(std::uintptr_t)
 	    noexcept;
-	ILIAS_ASYNC_EXPORT static std::size_t hazard_count() noexcept;
+	ILIAS_ASYNC_EXPORT static const std::size_t hazard_count;
 	ILIAS_ASYNC_EXPORT static std::size_t hazard_grant(std::uintptr_t,
 	    std::uintptr_t) noexcept;
 	ILIAS_ASYNC_EXPORT static void hazard_wait(std::uintptr_t,
 	    std::uintptr_t) noexcept;
+	ILIAS_ASYNC_EXPORT static std::size_t hazard_grant_n(std::uintptr_t,
+	    std::uintptr_t, std::size_t) noexcept;
 
 public:
 	basic_hazard(std::uintptr_t owner)
@@ -117,7 +119,7 @@ public:
 	noexcept
 	{
 		auto ov = this->m_hazard.value.exchange(value,
-		    std::memory_order_acquire);
+		    std::memory_order_acq_rel);
 		assert(ov == 0U);
 		do_noexcept(operation);
 		if (this->m_hazard.value.exchange(0U,
@@ -129,12 +131,12 @@ public:
 	static void
 	grant(AcquireFn&& acquire, ReleaseFn&& release,
 	    std::uintptr_t owner, std::uintptr_t value,
-	    unsigned int nrefs = 0U)
+	    std::size_t nrefs = 0U)
 	{
 		validate_owner(owner);
 
 		do_noexcept([&]() {
-			const auto hzc = hazard_count();
+			const auto hzc = hazard_count;
 
 			if (nrefs < hzc) {
 				acquire(hzc - nrefs);
@@ -145,6 +147,14 @@ public:
 			if (nrefs > 0U)
 				release(nrefs);
 		    });
+	}
+
+	static std::size_t
+	grant_n(std::uintptr_t owner, std::uintptr_t value,
+	    std::size_t nrefs)
+	{
+		validate_owner(owner);
+		return hazard_grant_n(owner, value);
 	}
 
 	static void
@@ -210,11 +220,19 @@ public:
 	static void
 	grant(AcquireFn&& acquire, ReleaseFn&& release,
 	    owner_reference owner, value_reference value,
-	    unsigned int nrefs = 0U)
+	    std::size_t nrefs = 0U)
 	{
 		basic_hazard::grant(std::forward<AcquireFn>(acquire),
 		    std::forward<ReleaseFn>(release),
 		    owner_key(owner), value_key(value), nrefs);
+	}
+
+	static std::size_t
+	grant_n(owner_reference owner, value_reference value,
+	    std::size_t nrefs)
+	{
+		return basic_hazard::grant_n(owner_key(owner),
+		    value_key(value), nrefs);
 	}
 
 	static void
