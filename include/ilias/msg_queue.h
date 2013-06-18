@@ -17,7 +17,7 @@
 #define ILIAS_MSG_QUEUE_H
 
 #include <ilias/ilias_async_export.h>
-#include <ilias/ll.h>
+#include <ilias/ll_queue.h>
 #include <ilias/util.h>
 #include <cassert>
 #include <algorithm>
@@ -35,7 +35,7 @@ namespace mq_detail {
 
 template<typename Type>
 class mq_elem
-:	public ll_base_hook<>
+:	public ll_qelem<>
 {
 public:
 	typedef Type element_type;
@@ -383,7 +383,7 @@ template<typename Type, typename Allocator>
 class data_msg_queue
 {
 private:
-	typedef ll_list<ll_base<mq_detail::mq_elem<Type>>> list_type;
+	typedef ll_queue<mq_detail::mq_elem<Type>> list_type;
 
 public:
 	typedef typename std::allocator_traits<Allocator>::
@@ -484,14 +484,14 @@ private:
 		std::is_nothrow_destructible<
 		  typename list_type::value_type>::value)
 	{
-		this->m_list.clear_and_dispose(_destroy(this->m_alloc, true));
+		while (make_pointer(this->m_list.pop_front()));
 	}
 
 	void
 	_enqueue(managed_pointer&& ptr) noexcept
 	{
 		assert(ptr && ptr.get_deleter().m_call_destructor);
-		this->m_list.push_back(*ptr.release());
+		this->m_list.push_back(ptr.release());
 	}
 
 public:
@@ -515,11 +515,11 @@ public:
 	    noexcept(
 		std::is_nothrow_constructible<list_type>::value &&
 		std::is_nothrow_copy_constructible<allocator_type>::value)
-	:	data_msg_queue(mq.m_alloc) /* Copy: mq still depends on it. */
+	:	data_msg_queue{ mq.m_alloc } /* Copy: mq still depends on it. */
 	{
 		/* Move elements between queues. */
 		while (auto elem = this->m_list.pop_front())
-			this->m_list.push_back(*elem);
+			this->m_list.push_back(elem);
 	}
 
 	/* Destructor. */

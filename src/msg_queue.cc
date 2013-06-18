@@ -37,7 +37,4 @@ void_msg_queue::_dequeue(uintptr_t max) noexcept
 }
 
 
-} /* namespace ilias::mq_detail */
-
-
-} /* namespace ilias */
+}} /* namespace ilias::mq_detail */
