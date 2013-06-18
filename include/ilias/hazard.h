@@ -154,7 +154,7 @@ public:
 	    std::size_t nrefs)
 	{
 		validate_owner(owner);
-		return hazard_grant_n(owner, value);
+		return hazard_grant_n(owner, value, nrefs);
 	}
 
 	static void
