@@ -25,6 +25,7 @@ const ll_qhead::token_ ll_qhead::token = {};
 void
 ll_qhead::push_back_(elem* e) noexcept
 {
+	assert(e);
 	e->ensure_unused();
 	e->m_succ.store(&this->m_head, std::memory_order_relaxed);
 
@@ -105,6 +106,22 @@ ll_qhead::pop_front_() noexcept
 		this->m_size.fetch_sub(1U, std::memory_order_release);
 
 	return e;
+}
+
+void
+ll_qhead::push_front_(elem* e) noexcept
+{
+	assert(e);
+	e->ensure_unused();
+
+	elem* s = this->m_head.m_succ.load(std::memory_order_relaxed);
+	do {
+		e->m_succ.store(s, std::memory_order_relaxed);
+	} while (!this->m_head.m_succ.compare_exchange_weak(s, e,
+	    std::memory_order_release,
+	    std::memory_order_relaxed));
+
+	this->m_size.fetch_add(1U, std::memory_order_release);
 }
 
 

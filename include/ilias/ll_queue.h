@@ -127,6 +127,7 @@ public:
 private:
 	ILIAS_ASYNC_EXPORT void push_back_(elem* e) noexcept;
 	ILIAS_ASYNC_EXPORT elem* pop_front_() noexcept;
+	ILIAS_ASYNC_EXPORT void push_front_(elem* e) noexcept;
 
 public:
 	void
@@ -144,6 +145,17 @@ public:
 	pop_front() noexcept
 	{
 		return this->pop_front_();
+	}
+
+	void
+	push_front(elem* e)
+	{
+		if (!e) {
+			throw std::invalid_argument("ll_queue: "
+			    "cannot push back nil");
+		}
+
+		this->push_front_(e);
 	}
 
 	size_type
@@ -262,6 +274,12 @@ public:
 		return unlink_convert(this->m_impl.pop_front());
 	}
 
+	void
+	push_front(pointer p)
+	{
+		this->m_impl.push_front(link_convert(p));
+	}
+
 	bool
 	is_lock_free() const noexcept
 	{
@@ -346,6 +364,18 @@ public:
 	push_back(rvalue_reference e)
 	{
 		this->m_impl.push_back(new elem{ std::move(e) });
+	}
+
+	void
+	push_front(const_reference e)
+	{
+		this->m_impl.push_front(new elem{ e });
+	}
+
+	void
+	push_front(rvalue_reference e)
+	{
+		this->m_impl.push_front(new elem{ std::move(e) });
 	}
 
 	size_type
