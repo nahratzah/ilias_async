@@ -71,7 +71,7 @@ ll_qhead::pop_front_() noexcept
 	elem* e = this->m_head.m_succ.load(std::memory_order_consume);
 	bool done = false;
 
-	while (!done && e) {
+	while (!done && e != &this->m_head) {
 		hz.do_hazard(*e,
 		    [&]() {
 			elem* e_ = this->m_head.m_succ.load(
@@ -97,6 +97,9 @@ ll_qhead::pop_front_() noexcept
 			assert(false);
 		    });
 	}
+
+	if (e == &this->m_head)
+		e = nullptr;
 
 	if (e)
 		this->m_size.fetch_sub(1U, std::memory_order_release);
