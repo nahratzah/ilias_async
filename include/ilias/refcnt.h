@@ -112,23 +112,30 @@ protected:
 	}
 
 	friend void
-	refcnt_acquire(const Derived& o) noexcept
+	refcnt_acquire(const Derived& o, unsigned int nrefs = 1U) noexcept
 	{
+		if (nrefs == 0)
+			return;
+
 		const refcount_base& self = o;
-		self.m_refcount.fetch_add(1, std::memory_order_acquire);
+		self.m_refcount.fetch_add(nrefs, std::memory_order_acquire);
 	}
 
 	friend void
-	refcnt_release(const Derived& o)
+	refcnt_release(const Derived& o, unsigned int nrefs = 1U)
 		noexcept(
 		    noexcept((*(Deleter*)nullptr)(&o)) &&
 		    (std::is_nothrow_move_constructible<Deleter>::value ||
 		     std::is_nothrow_copy_constructible<Deleter>::value) &&
 		    std::is_nothrow_destructible<Deleter>::value)
 	{
+		if (nrefs == 0)
+			return;
+
 		const refcount_base& self = o;
-		if (self.m_refcount.fetch_sub(1,
-		    std::memory_order_release) == 1) {
+		if (self.m_refcount.fetch_sub(nrefs,
+		    std::memory_order_release) == nrefs) {
+			std::atomic_thread_fence(std::memory_order_acq_rel);
 			Deleter deleter =
 			    std::move_if_noexcept(self.m_deleter);
 			deleter(&o);
@@ -154,6 +161,26 @@ protected:
 template<typename Type>
 struct default_refcount_mgr
 {
+	template<
+		typename RV = decltype(refcnt_release(
+		    std::declval<const Type&>(),
+		    std::declval<unsigned int>()))>
+	RV
+	acquire(const Type& v, unsigned int nrefs) noexcept
+	{
+		return refcnt_acquire(v, nrefs);
+	}
+
+	template<
+		typename RV = decltype(refcnt_release(
+		    std::declval<const Type&>(),
+		    std::declval<unsigned int>()))>
+	RV
+	release(const Type& v, unsigned int nrefs) noexcept
+	{
+		return refcnt_release(v, nrefs);
+	}
+
 	void
 	acquire(const Type& v) noexcept
 	{
