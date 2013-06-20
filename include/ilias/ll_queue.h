@@ -19,6 +19,7 @@
 #include <ilias/ilias_async_export.h>
 #include <ilias/hazard.h>
 #include <ilias/util.h>
+#include <ilias/refcnt.h>
 #include <atomic>
 
 namespace ilias {
@@ -199,6 +200,8 @@ ll_qhead::elem::ensure_unused() const noexcept
 
 
 template<typename Type, typename Tag = void> class ll_queue;
+template<typename Type, typename AcqRel = default_refcount_mgr<Type>,
+    typename Tag = void> class ll_smartptr_queue;
 
 
 namespace {
@@ -207,6 +210,13 @@ namespace {
 template<typename Type, typename Tag>
 bool
 atomic_is_lock_free(const ll_queue<Type, Tag>* q) noexcept
+{
+	return q && q->is_lock_free();
+}
+
+template<typename Type, typename AcqRel, typename Tag>
+bool
+atomic_is_lock_free(const ll_smartptr_queue<Type, AcqRel, Tag>* q) noexcept
 {
 	return q && q->is_lock_free();
 }
@@ -388,6 +398,123 @@ public:
 	empty() const noexcept
 	{
 		return this->m_impl.empty();
+	}
+
+	bool
+	is_lock_free() const noexcept
+	{
+		return this->m_impl.is_lock_free();
+	}
+};
+
+template<typename Type, typename AcqRel, typename Tag>
+class ll_smartptr_queue
+{
+private:
+	using impl_type = ll_queue<Type, Tag>;
+
+public:
+	using value_type = typename impl_type::value_type;
+	using reference = typename impl_type::reference;
+	using const_reference = typename impl_type::const_reference;
+	using rvalue_reference = typename impl_type::rvalue_reference;
+	using pointer = refpointer<Type, AcqRel>;
+	using size_type = typename impl_type::size_type;
+
+private:
+	impl_type m_impl;
+
+public:
+	~ll_smartptr_queue()
+	noexcept(std::is_nothrow_destructible<pointer>::value)
+	{
+		while (this->pop_front());
+	}
+
+	bool
+	empty() const noexcept
+	{
+		return this->m_impl.empty();
+	}
+
+	size_type
+	size() const noexcept
+	{
+		return this->m_impl.size();
+	}
+
+	void
+	push_back(pointer p)
+	{
+		this->m_impl.push_back(p.release());
+	}
+
+	pointer
+	pop_front() noexcept
+	{
+		return this->m_impl.pop_front();
+	}
+
+	void
+	push_front(pointer p)
+	{
+		this->m_impl.push_front(p.release());
+	}
+
+	bool
+	is_lock_free() const noexcept
+	{
+		return this->m_impl.is_lock_free();
+	}
+};
+
+template<typename Type, typename AcqRel>
+class ll_smartptr_queue<Type, AcqRel, no_intrusive_tag>
+{
+private:
+	using impl_type = ll_queue<refpointer<Type, AcqRel>, no_intrusive_tag>;
+
+public:
+	using value_type = Type;
+	using reference = value_type&;
+	using const_reference = const value_type&;
+	using rvalue_reference = value_type&&;
+	using pointer = refpointer<Type, AcqRel>;
+	using size_type = typename impl_type::size_type;
+
+private:
+	impl_type m_impl;
+
+public:
+	bool
+	empty() const noexcept
+	{
+		return this->m_impl.empty();
+	}
+
+	size_type
+	size() const noexcept
+	{
+		return this->m_impl.size();
+	}
+
+	void
+	push_back(pointer p)
+	{
+		this->m_impl.push_back(std::move(p));
+	}
+
+	pointer
+	pop_front() noexcept
+	{
+		auto pp = this->m_impl.pop_front();
+		return (pp ? *pp : nullptr);
+	}
+
+	void
+	push_front(pointer p)
+	{
+		this->m_impl.push_front(std::move(p));
 	}
 
 	bool
