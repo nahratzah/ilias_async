@@ -226,7 +226,7 @@ atomic_is_lock_free(const ll_smartptr_queue<Type, AcqRel, Tag>* q) noexcept
 
 
 template<typename Tag = void>
-class ll_qelem
+class ll_queue_hook
 :	protected ll_queue_detail::ll_qhead::elem
 {
 template<typename FriendType, typename FriendTag> friend class ll_queue;
@@ -247,16 +247,25 @@ public:
 	using size_type = ll_queue_detail::ll_qhead::size_type;
 
 private:
-	static ll_qelem<Tag>*
+	static ll_queue_hook<Tag>*
 	link_convert(pointer p) noexcept
 	{
-		return (p == nullptr ? nullptr : p);
+		using rv_type = ll_queue_hook<Tag>*;
+		return (p ? rv_type{ p } : nullptr);
+	}
+
+	static pointer
+	unlink_convert(ll_queue_hook<Tag>* p) noexcept
+	{
+		return (p ? &static_cast<reference>(*p) : nullptr);
 	}
 
 	static pointer
 	unlink_convert(ll_queue_detail::ll_qhead::elem* e) noexcept
 	{
-		return (e == nullptr ? nullptr : &static_cast<reference>(*e));
+		return (e ?
+		    unlink_convert(&static_cast<ll_queue_hook<Tag>&>(*e)) :
+		    nullptr);
 	}
 
 public:
@@ -309,7 +318,7 @@ public:
 
 private:
 	struct elem
-	:	public ll_qelem<>
+	:	public ll_queue_hook<>
 	{
 	public:
 		using value_t = typename std::remove_const<Type>::type;

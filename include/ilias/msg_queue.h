@@ -35,7 +35,7 @@ namespace mq_detail {
 
 template<typename Type>
 class mq_elem
-:	public ll_qelem<>
+:	public ll_queue_hook<>
 {
 public:
 	typedef Type element_type;
