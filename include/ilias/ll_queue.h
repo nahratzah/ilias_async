@@ -461,7 +461,7 @@ public:
 	pointer
 	pop_front() noexcept
 	{
-		return this->m_impl.pop_front();
+		return pointer{ this->m_impl.pop_front(), false };
 	}
 
 	void
@@ -517,7 +517,7 @@ public:
 	pop_front() noexcept
 	{
 		auto pp = this->m_impl.pop_front();
-		return (pp ? *pp : nullptr);
+		return (pp ? std::move(*pp) : nullptr);
 	}
 
 	void
