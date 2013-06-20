@@ -88,7 +88,8 @@ ll_qhead::pop_front_() noexcept
 			    succ,
 			    std::memory_order_relaxed,
 			    std::memory_order_consume)) {
-				this->m_tail.compare_exchange_strong(e_, succ,
+				this->m_tail.compare_exchange_strong(e_,
+				    &this->m_head,
 				    std::memory_order_relaxed,
 				    std::memory_order_relaxed);
 				done = true;
