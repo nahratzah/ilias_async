@@ -408,7 +408,7 @@ private:
 		unsigned int rv = 0U;
 		hz.do_hazard(*v_ptr,
 		    [&rv, this, v_ptr]() {
-			if (_ptr(this->m_ptr.load(
+			if (std::get<0>(this->m_impl.load(
 			    std::memory_order_relaxed)) == v_ptr) {
 				this->acquire(*v_ptr, 1U);
 				++rv;
@@ -439,7 +439,7 @@ public:
 
 	~llptr() noexcept
 	{
-		this->exchange(0U, std::memory_order_acquire);
+		this->reset(std::memory_order_relaxed);
 	}
 
 	element_type
@@ -458,7 +458,7 @@ public:
 		}
 
 		if (acq > 1U)
-			this->release(*_ptr(v), acq - 1U);
+			this->release(*std::get<0>(v), acq - 1U);
 
 		return convert_acquire(v, false);
 	}
