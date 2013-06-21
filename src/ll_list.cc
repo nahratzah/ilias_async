@@ -194,5 +194,43 @@ noexcept
 	return true;
 }
 
+bool
+simple_elem::unlink() noexcept
+{
+	/* Mark successor link as to-be-deleted. */
+	auto succ = this->m_succ.load(std::memory_order_relaxed);
+	while (std::get<1>(succ) != DELETED &&
+	    !this->m_succ.compare_exchange_weak(succ,
+	      add_delete(std::get<0>(succ)),
+	      std::memory_order_relaxed, std::memory_order_relaxed));
+	std::atomic_thread_fence(std::memory_order_acq_rel);
+	const bool rv = (std::get<1>(succ) == DELETED);
+
+	/* Mark predecessor link as to-be-deleted. */
+	auto pred = this->pred();
+	while (!std::get<1>(pred) != DELETED &&
+	    !this->m_pred.compare_echange_weak(pred,
+	      add_delete(std::get<0>(pred)),
+	      std::memory_order_rel_acq, std::memory_order_relaxed));
+
+	/* Make pred skip this. */
+	pred->m_succ.compare_exchange_strong(add_present(this),
+	    add_present(std::get<0>(succ)),
+	    std::memory_order_release, std::memory_order_relaxed);
+	pred->m_succ.compare_exchange_strong(add_delete(this),
+	    add_delete(std::get<0>(succ)),
+	    std::memory_order_release, std::memory_order_relaxed);
+
+	/* Make succ skip this. */
+	succ->m_pred.compare_exchange_strong(add_present(this),
+	    add_present(std::get<0>(pred)),
+	    std::memory_order_release, std::memory_order_relaxed);
+	succ->m_pred.compare_exchange_strong(add_delete(this),
+	    add_delete(std::get<0>(pred)),
+	    std::memory_order_release, std::memory_order_relaxed);
+
+	return rv;
+}
+
 
 }} /* namespace ilias::ll_list_detail */

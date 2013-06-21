@@ -99,6 +99,7 @@ public:
 	    simple_ptr pred) noexcept;
 	ILIAS_ASYNC_EXPORT static bool link_before(simple_elem_range ins,
 	    simple_ptr succ) noexcept;
+	ILIAS_ASYNC_EXPORT bool unlink() noexcept;
 
 	static bool
 	link_after(simple_ptr ins, simple_ptr pred) noexcept
@@ -134,8 +135,12 @@ simple_elem_acqrel::release(const simple_elem& e, elem_refcnt nrefs) const
 noexcept
 {
 	if (nrefs > 0) {
-		e.m_refcnt.fetch_sub(nrefs,
-		    std::memory_order_release);
+		if (e.m_refcnt.fetch_sub(nrefs,
+		    std::memory_order_release) < 2U) {
+			/* XXX check logic for delayed clearing. */
+			this->m_pred.store(this, std::memory_order_release);
+			this->m_succ.store(this, std::memory_order_release);
+		}
 	}
 }
 
