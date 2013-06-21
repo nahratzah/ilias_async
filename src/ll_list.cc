@@ -56,6 +56,34 @@ public:
 	}
 };
 
+simple_elem_ptr::element_type
+simple_elem::succ() const noexcept
+{
+	auto s = this->m_succ.load(std::memory_order_consume);
+	for (;;) {
+		simple_ptr ss;
+		flags_type fl;
+		std::tie(ss, fl) =
+		    std::get<0>(s)->m_succ.load(std::memory_order_consume);
+
+		/* GUARD */
+		if (fl == PRESENT || ss == std::get<0>(s))
+			return s;	/* s is not deleted or is this. */
+
+		/* Aid in deletion of ss. */
+		ss->m_pred.compare_exchange_weak(
+		    add_present(std::get<0>(s).get()),
+		    add_delete(std::get<0>(s)),
+		    std::memory_order_relaxed, std::memory_order_relaxed);
+
+		/* Update our succession pointer. */
+		if (this->m_succ.compare_exchange_weak(s, std::tie(ss, fl), std::memory_order_consume, std::memory_order_relaxed))
+			std::get<0>(s) = std::move(ss);
+	}
+
+	/* UNREACHABLE */
+}
+
 bool
 simple_elem::link(simple_elem_range ins, simple_elem_range between)
 noexcept
