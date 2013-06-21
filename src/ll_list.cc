@@ -78,11 +78,62 @@ simple_elem::succ() const noexcept
 
 		/* Update our succession pointer. */
 		if (this->m_succ.compare_exchange_weak(s, std::tie(ss, fl),
-		    std::memory_order_consume, std::memory_order_relaxed))
+		    std::memory_order_consume, std::memory_order_consume))
 			std::get<0>(s) = std::move(ss);
 	}
 
 	/* UNREACHABLE */
+}
+
+simple_elem_ptr::element_type
+simple_elem::pred() const noexcept
+{
+	auto p = this->m_pred.load(std::memory_order_consume);
+	while (std::get<1>(p) != DELETED) {
+		simple_ptr ps;
+		flags_type fl;
+		std::tie(ps, fl) = std::get<0>(p)->succ();
+
+		/* GUARD: p->succ() == this. */
+		if (std::tie(ps, fl) == add_present(this))
+			return ps;
+
+		/* Update predecessor. */
+		if (this->m_pred.compare_exchange_weak(p, add_present(ps),
+		    std::memory_order_consume, std::memory_order_consume))
+			std::get<0>(p) = std::move(ps);
+	}
+
+	/*
+	 * Handle case where this is a deleted element.
+	 */
+	simple_ptr pp;
+	flags_type fl;
+	std::tie(pp, fl) = std::get<0>(p)->m_pred.load(
+	    std::memory_order_consume);
+
+	while (fl == DELETED) {
+		/*
+		 * pp is also deleted, so it points to its correct
+		 * predecessor.
+		 *
+		 * Note that this predecessor may also be deleted,
+		 * so restarting the call is required.
+		 */
+		if (this->m_pred.compare_exchange_weak(p,
+		    add_delete(pp),
+		    std::memory_order_consume,
+		    std::memory_order_consume))
+			std::get<0>(p) = std::move(pp);
+		std::tie(pp, fl) = std::get<0>(p)->m_pred.load(
+		    std::memory_order_consume);
+	}
+
+	/*
+	 * p is now the first non-deleted element of a chain of deleted
+	 * elements.
+	 */
+	return p;
 }
 
 bool
