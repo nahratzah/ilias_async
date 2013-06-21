@@ -738,6 +738,40 @@ public:
 	{
 		return this->m_impl.load(mo);
 	}
+
+private:
+	static constexpr std::memory_order
+	mo_fail(std::memory_order mo)
+	{
+		return (mo == std::memory_order_acq_rel ?
+		      std::memory_order_release :
+		    (mo == std::memory_order_release ?
+		      std::memory_order_relaxed :
+		      mo));
+	}
+
+public:
+	template<typename Expect, typename Set>
+	bool
+	compare_exchange_weak(Expect&& expect, Set&& set, std::memory_order mo = std::memory_order_seq_cst)
+	noexcept
+	{
+		return this->compare_exchange_weak(
+		    std::forward<Expect>(expect),
+		    std::forward<Set>(set),
+		    mo, mo_fail(mo));
+	}
+
+	template<typename Expect, typename Set>
+	bool
+	compare_exchange_strong(Expect&& expect, Set&& set, std::memory_order mo = std::memory_order_seq_cst)
+	noexcept
+	{
+		return this->compare_exchange_strong(
+		    std::forward<Expect>(expect),
+		    std::forward<Set>(set),
+		    mo, mo_fail(mo));
+	}
 };
 
 
