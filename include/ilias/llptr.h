@@ -544,7 +544,7 @@ public:
 		    nullptr);
 
 		if (acq > 1)
-			this->release(std::get<0>(expect_), acq - 1U);
+			this->release(*std::get<0>(expect_), acq - 1U);
 		expect = convert_acquire(expect_, false);
 		return false;
 	}
@@ -634,7 +634,7 @@ public:
 				    std::get<0>(expect_) == nullptr) {
 					if (acq > 1U) {
 						this->release(
-						    std::get<0>(expect_),
+						    *std::get<0>(expect_),
 						    acq - 1U);
 					}
 					expect = convert_acquire(expect_,
