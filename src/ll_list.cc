@@ -77,7 +77,8 @@ simple_elem::succ() const noexcept
 		    std::memory_order_relaxed, std::memory_order_relaxed);
 
 		/* Update our succession pointer. */
-		if (this->m_succ.compare_exchange_weak(s, std::tie(ss, fl), std::memory_order_consume, std::memory_order_relaxed))
+		if (this->m_succ.compare_exchange_weak(s, std::tie(ss, fl),
+		    std::memory_order_consume, std::memory_order_relaxed))
 			std::get<0>(s) = std::move(ss);
 	}
 
