@@ -24,8 +24,8 @@ struct simple_elem_acqrel
 {
 	inline void acquire(const simple_elem&, elem_refcnt = 1U) const
 	    noexcept;
-	inline void release(const simple_elem&, elem_refcnt = 1U) const
-	    noexcept;
+	ILIAS_ASYNC_EXPORT void release(const simple_elem&, elem_refcnt = 1U)
+	    const noexcept;
 };
 
 using simple_elem_ptr = llptr<simple_elem, simple_elem_acqrel, 1U>;
@@ -128,60 +128,6 @@ noexcept
 		e.m_refcnt.fetch_add(nrefs,
 		    std::memory_order_acquire);
 	}
-}
-
-inline void
-simple_elem_acqrel::release(const simple_elem& e, elem_refcnt nrefs) const
-noexcept
-{
-	if (nrefs == 0)
-		return;
-
-	/*
-	 * XXX This is potentially hard on the stack, since each element
-	 * may require release on another element.
-	 * Stack depth could quickly grow because of the recursion.
-	 *
-	 * Tail recursion will not work, since an unlinked element
-	 * results in 2 new elements potentially requiring unlinking.
-	 */
-	auto r = e.m_refcnt.load(std::memory_order_relaxed);
-	do {
-		assert(r >= nrefs);
-		if (r == nrefs) {
-			if (nrefs < 2U) {
-				e.m_refcnt.fetch_add(2U - nrefs,
-				    std::memory_order_acquire);
-				nrefs = 2U;
-			}
-
-			auto pred_store = add_present(simple_ptr{
-				const_cast<simple_elem*>(&e),
-				false
-			    });
-			auto succ_store = add_present(simple_ptr{
-				const_cast<simple_elem*>(&e),
-				false
-			    });
-			nrefs -= 2U;
-
-			e.m_pred.store(std::move(pred_store),
-			    std::memory_order_release);
-			e.m_succ.store(std::move(succ_store),
-			    std::memory_order_release);
-
-			if (nrefs > 0U) {
-				e.m_refcnt.fetch_sub(nrefs,
-				    std::memory_order_release);
-			} else {
-				std::atomic_thread_fence(
-				    std::memory_order_release);
-			}
-			return;
-		}
-	} while (!e.m_refcnt.compare_exchange_weak(r, r - nrefs,
-	    std::memory_order_release,
-	    std::memory_order_relaxed));
 }
 
 
