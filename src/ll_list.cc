@@ -362,5 +362,61 @@ head::pop_back() noexcept
 	return nullptr;
 }
 
+bool
+head::push_back_(elem* e) noexcept
+{
+	assert(e && e->is_elem());
+
+	/*
+	 * XXX This will block forever if the element is linked.
+	 */
+	e->wait_unused();
+
+	link_result rv;
+	do {
+		elem_ptr pos{ this };
+		for (;;) {
+			elem_ptr pos_pred = pos->pred();
+			if (pos_pred->is_back_iter())
+				pos = std::move(pos_pred);
+			else
+				break;
+		}
+
+		rv = link_before(simple_ptr{ e }, pos);
+	} while (rv != link_result::SUCCESS &&
+	    rv != link_result::ALREADY_LINKED);
+
+	return (rv == link_result::SUCCESS);
+}
+
+bool
+head::push_front_(elem* e) noexcept
+{
+	assert(e && e->is_elem());
+
+	/*
+	 * XXX This will block forever if the element is linked.
+	 */
+	e->wait_unused();
+
+	link_result rv;
+	do {
+		elem_ptr pos{ this };
+		for (;;) {
+			elem_ptr pos_succ = pos->succ();
+			if (pos_succ->is_forw_iter())
+				pos = std::move(pos_succ);
+			else
+				break;
+		}
+
+		rv = link_before(simple_ptr{ e }, pos);
+	} while (rv != link_result::SUCCESS &&
+	    rv != link_result::ALREADY_LINKED);
+
+	return (rv == link_result::SUCCESS);
+}
+
 
 }} /* namespace ilias::ll_list_detail */

@@ -4,6 +4,10 @@
 #include <ilias/ilias_async_export.h>
 #include <ilias/llptr.h>
 #include <ilias/refcnt.h>
+#include <atomic>
+#include <cassert>
+#include <memory>
+#include <stdexcept>
 
 
 namespace ilias {
@@ -272,6 +276,18 @@ public:
 	}
 
 	bool
+	is_back_iter() const noexcept
+	{
+		return (this->m_type == elem_type::ITER_BACK);
+	}
+
+	bool
+	is_forw_iter() const noexcept
+	{
+		return (this->m_type == elem_type::ITER_FWD);
+	}
+
+	bool
 	is_head() const noexcept
 	{
 		return (this->m_type == elem_type::HEAD);
@@ -317,6 +333,41 @@ public:
 
 	ILIAS_ASYNC_EXPORT elem_ptr pop_front() noexcept;
 	ILIAS_ASYNC_EXPORT elem_ptr pop_back() noexcept;
+
+private:
+	ILIAS_ASYNC_EXPORT bool push_back_(elem*) noexcept;
+	ILIAS_ASYNC_EXPORT bool push_front_(elem*) noexcept;
+
+public:
+	bool
+	push_back(elem* e)
+	{
+		if (!e) {
+			throw std::invalid_argument("ll_list: "
+			    "cannot insert nil");
+		}
+		if (!e->is_elem()) {
+			throw std::invalid_argument("ll_list: "
+			    "push_back requires an element");
+		}
+
+		return this->push_back_(e);
+	}
+
+	bool
+	push_front(elem* e)
+	{
+		if (!e) {
+			throw std::invalid_argument("ll_list: "
+			    "cannot insert nil");
+		}
+		if (!e->is_elem()) {
+			throw std::invalid_argument("ll_list: "
+			    "push_back requires an element");
+		}
+
+		return this->push_front_(e);
+	}
 };
 
 
