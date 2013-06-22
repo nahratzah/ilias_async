@@ -17,54 +17,13 @@ enum class elem_type : unsigned char {
 	ITER_BACK
 };
 
-enum link_result {
-	LR_SUCCESS = 0x1,
-	LR_PRED_DELETED = 0x2,
-	LR_SUCC_DELETED = 0x4,
-	LR_ALREADY_LINKED = 0x8
+enum class link_result : int {
+	SUCCESS = 0x01,
+	PRED_DELETED = 0x02,
+	SUCC_DELETED = 0x04,
+	ALREADY_LINKED = 0x08,
+	RETRY = 0x10
 };
-
-inline constexpr link_result
-operator&(const link_result& a, const link_result& b) noexcept
-{
-	return link_result(int(a) & int(b));
-}
-
-inline constexpr link_result
-operator^(const link_result& a, const link_result& b) noexcept
-{
-	return link_result(int(a) ^ int(b));
-}
-
-inline constexpr link_result
-operator|(const link_result& a, const link_result& b) noexcept
-{
-	return link_result(int(a) | int(b));
-}
-
-inline link_result&
-operator&=(link_result& a, const link_result& b) noexcept
-{
-	return a = (a & b);
-}
-
-inline link_result&
-operator^=(link_result& a, const link_result& b) noexcept
-{
-	return a = (a ^ b);
-}
-
-inline link_result&
-operator|=(link_result& a, const link_result& b) noexcept
-{
-	return a = (a | b);
-}
-
-inline constexpr bool
-ins_test(link_result v, link_result mask) noexcept
-{
-	return int(v & mask);
-}
 
 
 class simple_elem;
@@ -183,16 +142,15 @@ private:
 public:
 	ILIAS_ASYNC_EXPORT simple_elem_ptr::element_type succ() const noexcept;
 	ILIAS_ASYNC_EXPORT simple_elem_ptr::element_type pred() const noexcept;
-	ILIAS_ASYNC_EXPORT static bool link(simple_elem_range ins,
-	    simple_elem_range between)
-	    noexcept;
-	ILIAS_ASYNC_EXPORT static bool link_after(simple_elem_range ins,
-	    simple_ptr pred) noexcept;
-	ILIAS_ASYNC_EXPORT static bool link_before(simple_elem_range ins,
-	    simple_ptr succ) noexcept;
+	ILIAS_ASYNC_EXPORT static link_result link(
+	    simple_elem_range ins, simple_elem_range between) noexcept;
+	ILIAS_ASYNC_EXPORT static link_result link_after(
+	    simple_elem_range ins, simple_ptr pred) noexcept;
+	ILIAS_ASYNC_EXPORT static link_result link_before(
+	    simple_elem_range ins, simple_ptr succ) noexcept;
 	ILIAS_ASYNC_EXPORT bool unlink() noexcept;
 
-	static bool
+	static link_result
 	link_after(simple_ptr ins, simple_ptr pred) noexcept
 	{
 		simple_elem_range r;
@@ -201,7 +159,7 @@ public:
 		return link_after(std::move(r), std::move(pred));
 	}
 
-	static bool
+	static link_result
 	link_before(simple_ptr ins, simple_ptr succ) noexcept
 	{
 		simple_elem_range r;
@@ -279,9 +237,10 @@ public:
 	head(head&& o) noexcept
 	:	head{}
 	{
-		bool success = simple_elem::link_after(
-		    simple_ptr{ this }, simple_ptr{ &o }) && o.unlink();
-		assert(success);
+		auto lnk = simple_elem::link_after(simple_ptr{ this }, simple_ptr{ &o });
+		assert(lnk == link_result::SUCCESS);
+		auto ulnk = o.unlink();
+		assert(ulnk);
 	}
 };
 

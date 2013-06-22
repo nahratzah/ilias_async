@@ -136,7 +136,7 @@ simple_elem::pred() const noexcept
 	return p;
 }
 
-bool
+link_result
 simple_elem::link(simple_elem_range ins, simple_elem_range between)
 noexcept
 {
@@ -150,48 +150,75 @@ noexcept
 
 	prepare_store b_store{ b->m_pred, pred },
 	    e_store{ e->m_succ, succ };
-	assert(b_store && e_store);	/* XXX change to return value? */
+	if (!b_store || !e_store)
+		return link_result::ALREADY_LINKED;
 
-	if (!pred->m_succ.compare_exchange_strong(add_present(succ.get()),
+	auto pred_expect = add_present(succ.get());
+	if (!pred->m_succ.compare_exchange_strong(pred_expect,
 	    add_present(std::move(b)),
-	    std::memory_order_release, std::memory_order_relaxed))
-		return false;
-	succ->m_pred.compare_exchange_strong(add_present(pred.get()),
+	    std::memory_order_release, std::memory_order_relaxed)) {
+		if (std::get<1>(pred_expect) == DELETED)
+			return link_result::PRED_DELETED;
+		return link_result::RETRY;
+	}
+	if (!succ->m_pred.compare_exchange_strong(add_present(pred.get()),
 	    add_present(std::move(e)),
-	    std::memory_order_relaxed, std::memory_order_relaxed);
-	return true;
+	    std::memory_order_relaxed, std::memory_order_relaxed))
+		succ->pred();	/* Fix predecessor. */
+
+	/* Ensure modification on b and e will not be undone. */
+	b_store.commit();
+	e_store.commit();
+
+	return link_result::SUCCESS;
 }
 
-bool
+link_result
 simple_elem::link_after(simple_elem_range ins, simple_ptr pred)
 noexcept
 {
 	assert(pred);
 	simple_ptr succ;
-	flags_type fl;
 
-	do {
-		std::tie(succ, fl) = pred->succ();
-		if (fl == DELETED)
-			return false;
-	} while (!link(ins, std::make_tuple(pred, std::move(succ))));
-	return true;
+	std::tie(succ, std::ignore) = pred->succ();
+	for (;;) {
+		link_result lr = link(ins,
+		    std::make_tuple(pred, std::move(succ)));
+		switch (lr) {
+		default:
+			return lr;
+		case link_result::SUCC_DELETED:
+		case link_result::RETRY:
+			std::tie(succ, std::ignore) = pred->succ();
+			break;
+		}
+	}
+
+	/* UNREACHABLE */
 }
 
-bool
+link_result
 simple_elem::link_before(simple_elem_range ins, simple_ptr succ)
 noexcept
 {
 	assert(succ);
 	simple_ptr pred;
-	flags_type fl;
 
-	do {
-		std::tie(pred, fl) = succ->pred();
-		if (fl == DELETED)
-			return false;
-	} while (!link(ins, std::make_tuple(std::move(pred), succ)));
-	return true;
+	std::tie(pred, std::ignore) = succ->pred();
+	for (;;) {
+		link_result lr = link(ins,
+		    std::make_tuple(std::move(pred), succ));
+		switch (lr) {
+		default:
+			return lr;
+		case link_result::PRED_DELETED:
+		case link_result::RETRY:
+			std::tie(pred, std::ignore) = succ->pred();
+			break;
+		}
+	}
+
+	/* UNREACHABLE */
 }
 
 bool
