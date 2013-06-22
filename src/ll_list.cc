@@ -442,7 +442,7 @@ head::push_front_(elem* e) noexcept
 				break;
 		}
 
-		rv = link_before(simple_ptr{ e }, pos);
+		rv = link_after(simple_ptr{ e }, pos);
 	} while (rv != link_result::SUCCESS &&
 	    rv != link_result::ALREADY_LINKED);
 
