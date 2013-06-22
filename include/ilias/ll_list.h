@@ -134,14 +134,46 @@ inline void
 simple_elem_acqrel::release(const simple_elem& e, elem_refcnt nrefs) const
 noexcept
 {
-	if (nrefs > 0) {
-		if (e.m_refcnt.fetch_sub(nrefs,
-		    std::memory_order_release) < 2U) {
-			/* XXX check logic for delayed clearing. */
-			this->m_pred.store(this, std::memory_order_release);
-			this->m_succ.store(this, std::memory_order_release);
+	if (nrefs == 0)
+		return;
+
+	auto r = e.m_refcnt.load(std::memory_order_relaxed);
+	do {
+		assert(r >= nrefs);
+		if (r == nrefs) {
+			if (nrefs < 2U) {
+				e.m_refcnt.fetch_add(2U - nrefs,
+				    std::memory_order_acquire);
+				nrefs = 2U;
+			}
+
+			auto pred_store = add_present(simple_ptr{
+				const_cast<simple_elem*>(&e),
+				false
+			    });
+			auto succ_store = add_present(simple_ptr{
+				const_cast<simple_elem*>(&e),
+				false
+			    });
+			nrefs -= 2U;
+
+			e.m_pred.store(std::move(pred_store),
+			    std::memory_order_release);
+			e.m_succ.store(std::move(succ_store),
+			    std::memory_order_release);
+
+			if (nrefs > 0U) {
+				e.m_refcnt.fetch_sub(nrefs,
+				    std::memory_order_release);
+			} else {
+				std::atomic_thread_fence(
+				    std::memory_order_release);
+			}
+			return;
 		}
-	}
+	} while (!e.m_refcnt.compare_exchange_weak(r, r - nrefs,
+	    std::memory_order_release,
+	    std::memory_order_relaxed));
 }
 
 
