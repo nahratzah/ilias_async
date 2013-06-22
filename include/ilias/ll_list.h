@@ -27,6 +27,9 @@ enum class link_result : int {
 
 
 class simple_elem;
+class elem;
+class iter;
+class head;
 using elem_refcnt = unsigned short;
 
 struct simple_elem_acqrel
@@ -41,6 +44,10 @@ using simple_elem_ptr = llptr<simple_elem, simple_elem_acqrel, 1U>;
 using flags_type = typename simple_elem_ptr::flags_type;
 using simple_ptr = typename simple_elem_ptr::pointer;
 using simple_elem_range = std::tuple<simple_ptr, simple_ptr>;
+
+using elem_ptr = refpointer<elem, simple_elem_acqrel>;
+using iter_ptr = refpointer<iter, simple_elem_acqrel>;
+using head_ptr = refpointer<head, simple_elem_acqrel>;
 
 namespace {
 
@@ -121,20 +128,44 @@ protected:
 	void
 	wait_unused() const noexcept
 	{
-		elem_refcnt min, refs;
-		do {
-			refs = this->m_refcnt.load(std::memory_order_acquire);
-			min = this->unused_refcnt(std::memory_order_relaxed);
-		} while (refs != min);
+		while (this->m_pred.load(std::memory_order_relaxed) !=
+		    add_present(this));
+		while (this->m_succ.load(std::memory_order_relaxed) !=
+		    add_present(this));
+		while (this->m_refcnt.load(std::memory_order_relaxed) != 2U);
+		std::atomic_thread_fence(std::memory_order_acquire);
 	}
 
 public:
 	simple_elem() = default;
+	simple_elem(const simple_elem&) = delete;
+	simple_elem(simple_elem&&) = delete;
+	simple_elem& operator=(const simple_elem&) = delete;
 
 	~simple_elem() noexcept
 	{
 		this->wait_unused();
+
+		/*
+		 * Because our member pointers point at this,
+		 * their destruction would use the dangling (destructed) llptr
+		 * (m_succ, m_pred) to reset them to this.
+		 *
+		 * Since the release need not execute anyway, we manually
+		 * release m_pred and m_succ instead.
+		 */
+		auto succ = std::get<0>(
+		    this->m_succ.exchange(nullptr, std::memory_order_acquire));
+		auto pred = std::get<0>(
+		    this->m_pred.exchange(nullptr, std::memory_order_acquire));
+		assert(succ == this && pred == this);
+
+		assert(this->m_refcnt.load(std::memory_order_relaxed) == 2U);
+		succ.release();
+		pred.release();
 	}
+
+	bool operator==(const simple_elem&) const = delete;
 
 private:
 	class prepare_store;
@@ -181,8 +212,9 @@ noexcept
 
 
 class elem
-:	protected simple_elem
+:	public simple_elem
 {
+friend struct simple_elem_acqrel;
 friend class iter;
 friend class head;
 
@@ -204,12 +236,52 @@ public:
 
 	~elem() noexcept
 	{
+		this->unlink();
 		this->wait_unused();
 	}
 
 	elem& operator=(const elem&) = delete;
 	elem& operator=(elem&&) = delete;
 	bool operator==(const elem&) const = delete;
+
+	elem_ptr
+	succ() const noexcept
+	{
+		return static_pointer_cast<elem>(
+		    std::get<0>(this->simple_elem::succ()));
+	}
+
+	elem_ptr
+	pred() const noexcept
+	{
+		return static_pointer_cast<elem>(
+		    std::get<0>(this->simple_elem::pred()));
+	}
+
+	bool
+	is_iter() const noexcept
+	{
+		switch (this->m_type) {
+		default:
+			break;
+		case elem_type::ITER_FWD:
+		case elem_type::ITER_BACK:
+			return true;
+		}
+		return false;
+	}
+
+	bool
+	is_head() const noexcept
+	{
+		return (this->m_type == elem_type::HEAD);
+	}
+
+	bool
+	is_elem() const noexcept
+	{
+		return (this->m_type == elem_type::ELEM);
+	}
 };
 
 class iter
@@ -234,24 +306,29 @@ public:
 		/* Empty body. */
 	}
 
-	head(head&& o) noexcept
-	:	head{}
+	ILIAS_ASYNC_EXPORT head(head&& o) noexcept;
+
+	~head() noexcept
 	{
-		auto lnk = simple_elem::link_after(simple_ptr{ this }, simple_ptr{ &o });
-		assert(lnk == link_result::SUCCESS);
-		auto ulnk = o.unlink();
-		assert(ulnk);
+		this->unlink();
 	}
+
+	ILIAS_ASYNC_EXPORT bool empty() const noexcept;
+
+	ILIAS_ASYNC_EXPORT elem_ptr pop_front() noexcept;
+	ILIAS_ASYNC_EXPORT elem_ptr pop_back() noexcept;
 };
 
 
 } /* namespace ilias::ll_list_detail */
 
 
-template<typename Tag>
+template<typename Tag = void>
 class ll_list_hook
 :	private ll_list_detail::elem
 {
+template<typename FriendType, typename FriendTag> friend class ll_list;
+
 public:
 	ll_list_hook() = default;
 
@@ -292,9 +369,17 @@ public:
 	}
 };
 
-template<typename Type, typename Tag>
+template<typename Type, typename Tag = void>
 class ll_list
 {
+public:
+	using value_type = Type;
+	using reference = value_type&;
+	using const_reference = const value_type&;
+	using rvalue_reference = value_type&&;
+	using pointer = value_type*;
+	using pop_result = pointer;
+
 private:
 	ll_list_detail::head m_head;
 
@@ -303,9 +388,151 @@ public:
 	ll_list(const ll_list&) = delete;
 
 	ll_list(ll_list&& o) noexcept
-	:	ll_list{ std::move(o) }
+	:	m_head{ std::move(o.m_head) }
 	{
 		/* Empty body. */
+	}
+
+	bool
+	empty() const noexcept
+	{
+		return this->m_head.empty();
+	}
+};
+
+template<typename Type>
+class ll_list<Type, no_intrusive_tag>
+{
+public:
+	using value_type = Type;
+	using reference = value_type&;
+	using const_reference = const value_type&;
+	using rvalue_reference = value_type&&;
+	using pointer = value_type*;
+	using pop_result = opt_data<value_type>;
+
+private:
+	class elem
+	:	public ll_list_hook<>
+	{
+	public:
+		value_type m_value;
+
+		elem(const_reference v)
+		noexcept(std::is_nothrow_copy_constructible<value_type>::value)
+		:	m_value{ v }
+		{
+			/* Empty body. */
+		}
+
+		elem(rvalue_reference v)
+		noexcept(std::is_nothrow_move_constructible<value_type>::value)
+		:	m_value{ std::move(v) }
+		{
+			/* Empty body. */
+		}
+	};
+
+	using impl_type = ll_list<elem>;
+
+	impl_type m_impl;
+
+public:
+	~ll_list() noexcept
+	{
+		while (this->pop_front());
+	}
+
+	pop_result
+	pop_front() noexcept
+	{
+		pop_result rv;
+		std::unique_ptr<elem> p = this->m_impl.pop_front();
+		if (p)
+			rv = p->m_value;
+		return rv;
+	}
+
+	pop_result
+	pop_back() noexcept
+	{
+		pop_result rv;
+		std::unique_ptr<elem> p = this->m_impl.pop_back();
+		if (p)
+			rv = p->m_value;
+		return rv;
+	}
+};
+
+template<typename Type, typename AcqRel, typename Tag = void>
+class ll_smartptr_list
+{
+private:
+	using impl_type = ll_list<Type, Tag>;
+
+public:
+	using value_type = Type;
+	using reference = value_type&;
+	using const_reference = const value_type&;
+	using rvalue_reference = value_type&&;
+	using pointer = refpointer<Type, AcqRel>;
+	using pop_result = pointer;
+
+private:
+	impl_type m_impl;
+
+public:
+	~ll_smartptr_list() noexcept
+	{
+		while (this->pop_front());
+	}
+
+	bool
+	empty() const noexcept
+	{
+		return this->m_impl.empty();
+	}
+
+	pop_result pop_front() noexcept;
+	pop_result pop_back() noexcept;
+};
+
+template<typename Type, typename AcqRel>
+class ll_smartptr_list<Type, AcqRel, no_intrusive_tag>
+{
+private:
+	using impl_type = ll_list<refpointer<Type, AcqRel>, no_intrusive_tag>;
+
+public:
+	using value_type = Type;
+	using reference = value_type&;
+	using const_reference = const value_type&;
+	using rvalue_reference = value_type&&;
+	using pointer = refpointer<Type, AcqRel>;
+	using pop_result = pointer;
+
+private:
+	impl_type m_impl;
+
+public:
+	bool
+	empty() const noexcept
+	{
+		return this->m_impl.empty();
+	}
+
+	pop_result
+	pop_front() noexcept
+	{
+		auto p = this->m_impl.pop_front();
+		return (p ? *p : nullptr);
+	}
+
+	pop_result
+	pop_back() noexcept
+	{
+		auto p = this->m_impl.pop_back();
+		return (p ? *p : nullptr);
 	}
 };
 

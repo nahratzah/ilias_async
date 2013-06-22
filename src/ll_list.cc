@@ -320,5 +320,47 @@ noexcept
 	    std::memory_order_relaxed));
 }
 
+head::head(head&& o) noexcept
+:	elem{ elem_type::HEAD }
+{
+	simple_ptr self{ this };
+	simple_ptr optr{ this };
+
+	const link_result lnk = simple_elem::link_after(self, optr);
+	assert(lnk == link_result::SUCCESS);
+	const bool ulnk = o.unlink();
+	assert(ulnk);
+}
+
+bool
+head::empty() const noexcept
+{
+	simple_ptr s{ const_cast<head*>(this) };
+	do {
+		std::tie(s, std::ignore) = s->succ();
+	} while (static_cast<elem&>(*s).is_iter());
+	return static_cast<elem&>(*s).is_head();
+}
+
+elem_ptr
+head::pop_front() noexcept
+{
+	for (elem_ptr e = this->succ(); !e->is_head(); e = e->succ()) {
+		if (e->is_elem() && e->unlink())
+			return std::kill_dependency(e);
+	}
+	return nullptr;
+}
+
+elem_ptr
+head::pop_back() noexcept
+{
+	for (elem_ptr e = this->pred(); !e->is_head(); e = e->pred()) {
+		if (e->is_elem() && e->unlink())
+			return std::kill_dependency(e);
+	}
+	return nullptr;
+}
+
 
 }} /* namespace ilias::ll_list_detail */
