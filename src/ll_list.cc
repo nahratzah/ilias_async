@@ -56,6 +56,37 @@ public:
 	}
 };
 
+bool
+simple_elem::wait_unlinked() const noexcept
+{
+	bool done;
+
+	do {
+		done = true;
+		auto s = this->m_succ.load_no_acquire(
+		    std::memory_order_relaxed);
+		auto p = this->m_pred.load_no_acquire(
+		    std::memory_order_relaxed);
+
+		if (std::get<0>(s) == this) {
+			/* SKIP. */
+		} else if (std::get<1>(s) != DELETED)
+			return false;
+		else
+			done = false;
+
+		if (std::get<0>(p) == this) {
+			/* SKIP. */
+		} else if (std::get<1>(p) != DELETED)
+			return false;
+		else
+			done = false;
+	} while (!done);
+
+	std::atomic_thread_fence(std::memory_order_acquire);
+	return true;
+}
+
 simple_elem_ptr::element_type
 simple_elem::succ() const noexcept
 {
@@ -367,10 +398,9 @@ head::push_back_(elem* e) noexcept
 {
 	assert(e && e->is_elem());
 
-	/*
-	 * XXX This will block forever if the element is linked.
-	 */
-	e->wait_unused();
+	/* Wait until any in-progress unlink operations complete. */
+	if (!e->wait_unlinked())
+		return false;
 
 	link_result rv;
 	do {
@@ -395,10 +425,9 @@ head::push_front_(elem* e) noexcept
 {
 	assert(e && e->is_elem());
 
-	/*
-	 * XXX This will block forever if the element is linked.
-	 */
-	e->wait_unused();
+	/* Wait until any in-progress unlink operations complete. */
+	if (!e->wait_unlinked())
+		return false;
 
 	link_result rv;
 	do {

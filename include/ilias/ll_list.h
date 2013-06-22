@@ -125,7 +125,8 @@ private:
 	unused_refcnt(std::memory_order mo = std::memory_order_seq_cst) const
 	noexcept
 	{
-		return (std::get<0>(this->m_succ.load(mo)) == this ? 2U : 0U);
+		return (std::get<0>(this->m_succ.load_no_acquire(mo)) == this ?
+		    2U : 0U);
 	}
 
 protected:
@@ -139,6 +140,8 @@ protected:
 		while (this->m_refcnt.load(std::memory_order_relaxed) != 2U);
 		std::atomic_thread_fence(std::memory_order_acquire);
 	}
+
+	ILIAS_ASYNC_EXPORT bool wait_unlinked() const noexcept;
 
 public:
 	simple_elem() = default;
