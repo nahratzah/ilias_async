@@ -17,6 +17,56 @@ enum class elem_type : unsigned char {
 	ITER_BACK
 };
 
+enum link_result {
+	LR_SUCCESS = 0x1,
+	LR_PRED_DELETED = 0x2,
+	LR_SUCC_DELETED = 0x4,
+	LR_ALREADY_LINKED = 0x8
+};
+
+inline constexpr link_result
+operator&(const link_result& a, const link_result& b) noexcept
+{
+	return link_result(int(a) & int(b));
+}
+
+inline constexpr link_result
+operator^(const link_result& a, const link_result& b) noexcept
+{
+	return link_result(int(a) ^ int(b));
+}
+
+inline constexpr link_result
+operator|(const link_result& a, const link_result& b) noexcept
+{
+	return link_result(int(a) | int(b));
+}
+
+inline link_result&
+operator&=(link_result& a, const link_result& b) noexcept
+{
+	return a = (a & b);
+}
+
+inline link_result&
+operator^=(link_result& a, const link_result& b) noexcept
+{
+	return a = (a ^ b);
+}
+
+inline link_result&
+operator|=(link_result& a, const link_result& b) noexcept
+{
+	return a = (a | b);
+}
+
+inline constexpr bool
+ins_test(link_result v, link_result mask) noexcept
+{
+	return int(v & mask);
+}
+
+
 class simple_elem;
 using elem_refcnt = unsigned short;
 
@@ -33,22 +83,62 @@ using flags_type = typename simple_elem_ptr::flags_type;
 using simple_ptr = typename simple_elem_ptr::pointer;
 using simple_elem_range = std::tuple<simple_ptr, simple_ptr>;
 
+namespace {
+
+
 constexpr flags_type DELETED{ 1U };
 constexpr flags_type PRESENT{ 0U };
 
-template<typename Pointer>
-std::tuple<Pointer, flags_type>
-add_present(Pointer p) noexcept
+inline std::tuple<simple_ptr, flags_type>
+add_flags(simple_ptr p, flags_type fl) noexcept
 {
-	return std::make_tuple(p, PRESENT);
+	return std::make_tuple(std::move(p), fl);
+}
+inline std::tuple<simple_elem*, flags_type>
+add_flags(simple_elem* p, flags_type fl) noexcept
+{
+	return std::make_tuple(p, fl);
+}
+inline std::tuple<const simple_elem*, flags_type>
+add_flags(const simple_elem* p, flags_type fl) noexcept
+{
+	return std::make_tuple(p, fl);
 }
 
-template<typename Pointer>
-std::tuple<Pointer, flags_type>
-add_delete(Pointer p) noexcept
+inline std::tuple<simple_ptr, flags_type>
+add_present(simple_ptr p) noexcept
 {
-	return std::make_tuple(p, DELETED);
+	return add_flags(std::move(p), PRESENT);
 }
+inline std::tuple<simple_elem*, flags_type>
+add_present(simple_elem* p) noexcept
+{
+	return add_flags(std::move(p), PRESENT);
+}
+inline std::tuple<const simple_elem*, flags_type>
+add_present(const simple_elem* p) noexcept
+{
+	return add_flags(std::move(p), PRESENT);
+}
+
+inline std::tuple<simple_ptr, flags_type>
+add_delete(simple_ptr p) noexcept
+{
+	return add_flags(std::move(p), DELETED);
+}
+inline std::tuple<simple_elem*, flags_type>
+add_delete(simple_elem* p) noexcept
+{
+	return add_flags(std::move(p), DELETED);
+}
+inline std::tuple<const simple_elem*, flags_type>
+add_delete(const simple_elem* p) noexcept
+{
+	return add_flags(std::move(p), DELETED);
+}
+
+
+} /* namespace ilias::ll_list_detail::<unnamed> */
 
 
 class simple_elem
@@ -68,6 +158,7 @@ private:
 		return (std::get<0>(this->m_succ.load(mo)) == this ? 2U : 0U);
 	}
 
+protected:
 	void
 	wait_unused() const noexcept
 	{
@@ -131,9 +222,133 @@ noexcept
 }
 
 
+class elem
+:	protected simple_elem
+{
+friend class iter;
+friend class head;
+
+public:
+	const elem_type m_type{ elem_type::ELEM };
+
+private:
+	elem(elem_type type) noexcept
+	:	m_type{ type }
+	{
+		/* Empty body. */
+	}
+
+public:
+	elem() = default;
+
+	elem(const elem&) = delete;
+	elem(elem&&) = delete;
+
+	~elem() noexcept
+	{
+		this->wait_unused();
+	}
+
+	elem& operator=(const elem&) = delete;
+	elem& operator=(elem&&) = delete;
+	bool operator==(const elem&) const = delete;
+};
+
+class iter
+:	public elem
+{
+public:
+	iter(elem_type type) noexcept
+	:	elem{ type }
+	{
+		assert(type == elem_type::ITER_FWD ||
+		    type == elem_type::ITER_BACK);
+	}
+};
+
+class head
+:	public elem
+{
+public:
+	head() noexcept
+	:	elem{ elem_type::HEAD }
+	{
+		/* Empty body. */
+	}
+
+	head(head&& o) noexcept
+	:	head{}
+	{
+		bool success = simple_elem::link_after(
+		    simple_ptr{ this }, simple_ptr{ &o }) && o.unlink();
+		assert(success);
+	}
+};
+
+
 } /* namespace ilias::ll_list_detail */
 
 
+template<typename Tag>
+class ll_list_hook
+:	private ll_list_detail::elem
+{
+public:
+	ll_list_hook() = default;
+
+	ll_list_hook(const ll_list_hook&) noexcept
+	:	ll_list_hook{}
+	{
+		/* Empty body. */
+	}
+
+	ll_list_hook(ll_list_hook&&) noexcept
+	:	ll_list_hook{}
+	{
+		/* Empty body. */
+	}
+
+	ll_list_hook&
+	operator=(const ll_list_hook&) noexcept
+	{
+		return *this;
+	}
+
+	ll_list_hook&
+	operator=(ll_list_hook&&) noexcept
+	{
+		return *this;
+	}
+
+	bool
+	operator==(const ll_list_hook&) const noexcept
+	{
+		return true;
+	}
+
+	friend void
+	swap(ll_list_hook&, ll_list_hook&) noexcept
+	{
+		return;
+	}
+};
+
+template<typename Type, typename Tag>
+class ll_list
+{
+private:
+	ll_list_detail::head m_head;
+
+public:
+	ll_list() = default;
+	ll_list(const ll_list&) = delete;
+
+	ll_list(ll_list&& o) noexcept
+	:	ll_list{ std::move(o) }
+	{
+		/* Empty body. */
+	}
+};
 
 
 } /* namespace ilias */
