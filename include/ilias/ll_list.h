@@ -137,6 +137,14 @@ noexcept
 	if (nrefs == 0)
 		return;
 
+	/*
+	 * XXX This is potentially hard on the stack, since each element
+	 * may require release on another element.
+	 * Stack depth could quickly grow because of the recursion.
+	 *
+	 * Tail recursion will not work, since an unlinked element
+	 * results in 2 new elements potentially requiring unlinking.
+	 */
 	auto r = e.m_refcnt.load(std::memory_order_relaxed);
 	do {
 		assert(r >= nrefs);
