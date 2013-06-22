@@ -366,7 +366,7 @@ public:
 	noexcept(std::is_nothrow_move_constructible<value_type>::value ||
 	    std::is_nothrow_copy_constructible<value_type>::value)
 	{
-		auto e = this->m_impl.pop_front();
+		std::unique_ptr<elem> e = this->m_impl.pop_front();
 		pointer rv;
 		if (e)
 			rv.reset(std::move_if_noexcept(e->m_value));
