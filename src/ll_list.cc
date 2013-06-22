@@ -407,7 +407,8 @@ head::push_back_(elem* e) noexcept
 		elem_ptr pos{ this };
 		for (;;) {
 			elem_ptr pos_pred = pos->pred();
-			if (pos_pred->is_back_iter())
+			if (pos_pred->is_back_iter() ||
+			    (pos_pred->is_head() && pos_pred != this))
 				pos = std::move(pos_pred);
 			else
 				break;
@@ -434,7 +435,8 @@ head::push_front_(elem* e) noexcept
 		elem_ptr pos{ this };
 		for (;;) {
 			elem_ptr pos_succ = pos->succ();
-			if (pos_succ->is_forw_iter())
+			if (pos_succ->is_forw_iter() ||
+			    (pos_succ->is_head() && pos_succ != this))
 				pos = std::move(pos_succ);
 			else
 				break;
