@@ -205,6 +205,15 @@ public:
 		std::get<1>(r) = std::move(ins);
 		return link_before(std::move(r), std::move(succ));
 	}
+
+	static link_result
+	link(simple_ptr ins, simple_elem_range between) noexcept
+	{
+		simple_elem_range r;
+		std::get<0>(r) = ins;
+		std::get<1>(r) = std::move(ins);
+		return link(std::move(r), std::move(between));
+	}
 };
 
 inline void
@@ -338,8 +347,10 @@ public:
 	ILIAS_ASYNC_EXPORT elem_ptr pop_back() noexcept;
 
 private:
-	ILIAS_ASYNC_EXPORT bool push_back_(elem*) noexcept;
-	ILIAS_ASYNC_EXPORT bool push_front_(elem*) noexcept;
+	ILIAS_ASYNC_EXPORT static bool link_before_(const elem_ptr&, elem*)
+	    noexcept;
+	ILIAS_ASYNC_EXPORT static bool link_after_(const elem_ptr&, elem*)
+	    noexcept;
 
 public:
 	bool
@@ -354,7 +365,7 @@ public:
 			    "push_back requires an element");
 		}
 
-		return this->push_back_(e);
+		return link_before_(elem_ptr{ this }, e);
 	}
 
 	bool
@@ -366,10 +377,56 @@ public:
 		}
 		if (!e->is_elem()) {
 			throw std::invalid_argument("ll_list: "
-			    "push_back requires an element");
+			    "push_front requires an element");
 		}
 
-		return this->push_front_(e);
+		return link_after_(elem_ptr{ this }, e);
+	}
+
+	bool
+	insert_after(iter* i, elem* e)
+	{
+		if (!e) {
+			throw std::invalid_argument("ll_list: "
+			    "cannot insert nil");
+		}
+		if (!e->is_elem()) {
+			throw std::invalid_argument("ll_list: "
+			    "insert_after requires an element");
+		}
+		if (!i) {
+			throw std::invalid_argument("ll_list: "
+			    "nil iterator");
+		}
+		if (!i->is_iter()) {
+			throw std::invalid_argument("ll_list: "
+			    "push_front requires an iterator");
+		}
+
+		return link_after_(i, e);
+	}
+
+	bool
+	insert_before(iter* i, elem* e)
+	{
+		if (!e) {
+			throw std::invalid_argument("ll_list: "
+			    "cannot insert nil");
+		}
+		if (!e->is_elem()) {
+			throw std::invalid_argument("ll_list: "
+			    "insert_after requires an element");
+		}
+		if (!i) {
+			throw std::invalid_argument("ll_list: "
+			    "nil iterator");
+		}
+		if (!i->is_iter()) {
+			throw std::invalid_argument("ll_list: "
+			    "push_front requires an iterator");
+		}
+
+		return link_before_(i, e);
 	}
 };
 

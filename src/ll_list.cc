@@ -394,9 +394,10 @@ head::pop_back() noexcept
 }
 
 bool
-head::push_back_(elem* e) noexcept
+head::link_before_(const elem_ptr& pos0, elem* e) noexcept
 {
 	assert(e && e->is_elem());
+	assert(pos0 && (pos0->is_iter() || pos0->is_head()));
 
 	/* Wait until any in-progress unlink operations complete. */
 	if (!e->wait_unlinked())
@@ -404,27 +405,29 @@ head::push_back_(elem* e) noexcept
 
 	link_result rv;
 	do {
-		elem_ptr pos{ this };
+		elem_ptr pos = pos0;
+		elem_ptr pos_pred;
 		for (;;) {
-			elem_ptr pos_pred = pos->pred();
+			pos_pred = pos->pred();
 			if (pos_pred->is_back_iter() ||
-			    (pos_pred->is_head() && pos_pred != this))
+			    (pos_pred->is_head() && pos_pred != pos0))
 				pos = std::move(pos_pred);
 			else
 				break;
 		}
 
-		rv = link_before(simple_ptr{ e }, pos);
-	} while (rv != link_result::SUCCESS &&
-	    rv != link_result::ALREADY_LINKED);
+		rv = simple_elem::link(simple_ptr{ e },
+		    std::make_tuple(std::move(pos_pred), std::move(pos)));
+	} while (rv == link_result::RETRY);
 
 	return (rv == link_result::SUCCESS);
 }
 
 bool
-head::push_front_(elem* e) noexcept
+head::link_after_(const elem_ptr& pos0, elem* e) noexcept
 {
 	assert(e && e->is_elem());
+	assert(pos0 && (pos0->is_iter() || pos0->is_head()));
 
 	/* Wait until any in-progress unlink operations complete. */
 	if (!e->wait_unlinked())
@@ -432,19 +435,20 @@ head::push_front_(elem* e) noexcept
 
 	link_result rv;
 	do {
-		elem_ptr pos{ this };
+		elem_ptr pos = pos0;
+		elem_ptr pos_succ;
 		for (;;) {
-			elem_ptr pos_succ = pos->succ();
+			pos_succ = pos->succ();
 			if (pos_succ->is_forw_iter() ||
-			    (pos_succ->is_head() && pos_succ != this))
+			    (pos_succ->is_head() && pos_succ != pos0))
 				pos = std::move(pos_succ);
 			else
 				break;
 		}
 
-		rv = link_after(simple_ptr{ e }, pos);
-	} while (rv != link_result::SUCCESS &&
-	    rv != link_result::ALREADY_LINKED);
+		rv = simple_elem::link(simple_ptr{ e },
+		    std::make_tuple(std::move(pos), std::move(pos_succ)));
+	} while (rv == link_result::RETRY);
 
 	return (rv == link_result::SUCCESS);
 }
