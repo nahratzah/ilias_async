@@ -373,6 +373,19 @@ head::empty() const noexcept
 	return static_cast<elem&>(*s).is_head();
 }
 
+size_type
+head::size() const noexcept
+{
+	size_type rv = 0;
+	elem_ptr e{ const_cast<head*>(this) };
+
+	for (elem_ptr i = e->succ(); i != e; i = i->succ()) {
+		if (std::kill_dependency(i)->is_elem())
+			++rv;
+	}
+	return rv;
+}
+
 elem_ptr
 head::pop_front() noexcept
 {
@@ -451,6 +464,107 @@ head::link_after_(const elem_ptr& pos0, elem* e) noexcept
 	} while (rv == link_result::RETRY);
 
 	return (rv == link_result::SUCCESS);
+}
+
+basic_iter::basic_iter(head& h) noexcept
+{
+	link_result lr1 = simple_elem::link_after(
+	    simple_ptr{ &this->m_forw }, &h);
+	link_result lr2 = simple_elem::link_before(
+	    simple_ptr{ &this->m_back }, &h);
+
+	assert(lr1 == link_result::SUCCESS && lr1 == link_result::SUCCESS);
+}
+
+basic_iter::basic_iter(const basic_iter& i) noexcept
+{
+	link_result lr1 = simple_elem::link_after(
+	    simple_ptr{ &this->m_forw }, simple_ptr{ &i.m_forw });
+	link_result lr2 = simple_elem::link_before(
+	    simple_ptr{ &this->m_back }, simple_ptr{ &i.m_back });
+
+	assert((lr1 == link_result::SUCCESS && lr2 == link_result::SUCCESS) ||
+	    (lr1 == link_result::SUCC_DELETED &&
+	     lr2 == link_result::PRED_DELETED));
+}
+
+basic_iter::basic_iter(basic_iter&& i) noexcept
+{
+	link_result lr1 = simple_elem::link_after(
+	    simple_ptr{ &this->m_forw }, simple_ptr{ &i.m_forw });
+	link_result lr2 = simple_elem::link_before(
+	    simple_ptr{ &this->m_back }, simple_ptr{ &i.m_back });
+
+	assert((lr1 == link_result::SUCCESS && lr2 == link_result::SUCCESS) ||
+	    (lr1 == link_result::SUCC_DELETED &&
+	     lr2 == link_result::PRED_DELETED));
+
+	i.m_forw.unlink();
+	i.m_back.unlink();
+}
+
+basic_iter::~basic_iter() noexcept
+{
+	this->m_forw.unlink();
+	this->m_back.unlink();
+}
+
+basic_iter&
+basic_iter::operator=(const basic_iter& i) noexcept
+{
+	this->m_forw.unlink();
+	this->m_back.unlink();
+
+	this->m_forw.wait_unlinked();
+	link_result lr1 = simple_elem::link_after(
+	    simple_ptr{ &this->m_forw }, simple_ptr{ &i.m_forw });
+	this->m_back.wait_unlinked();
+	link_result lr2 = simple_elem::link_before(
+	    simple_ptr{ &this->m_back }, simple_ptr{ &i.m_back });
+
+	assert((lr1 == link_result::SUCCESS && lr2 == link_result::SUCCESS) ||
+	    (lr1 == link_result::SUCC_DELETED &&
+	     lr2 == link_result::PRED_DELETED));
+
+	return *this;
+}
+
+basic_iter&
+basic_iter::operator=(basic_iter&& i) noexcept
+{
+	this->m_forw.unlink();
+	this->m_back.unlink();
+
+	this->m_forw.wait_unlinked();
+	link_result lr1 = simple_elem::link_after(
+	    simple_ptr{ &this->m_forw }, simple_ptr{ &i.m_forw });
+	this->m_back.wait_unlinked();
+	link_result lr2 = simple_elem::link_before(
+	    simple_ptr{ &this->m_back }, simple_ptr{ &i.m_back });
+
+	assert((lr1 == link_result::SUCCESS && lr2 == link_result::SUCCESS) ||
+	    (lr1 == link_result::SUCC_DELETED &&
+	     lr2 == link_result::PRED_DELETED));
+
+	i.m_forw.unlink();
+	i.m_back.unlink();
+
+	return *this;
+}
+
+difference_type
+distance(const basic_iter& first, const basic_iter& last) noexcept
+{
+	difference_type rv = 0;
+	elem_ptr i{ &first.m_forw };
+	elem_ptr e{ &last.m_forw };
+
+	while (i != e) {
+		if (std::kill_dependency(i)->is_elem())
+			++rv;
+		i = i->succ();
+	}
+	return rv;
 }
 
 

@@ -6,6 +6,7 @@
 #include <ilias/refcnt.h>
 #include <atomic>
 #include <cassert>
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 
@@ -34,7 +35,10 @@ class simple_elem;
 class elem;
 class iter;
 class head;
+class basic_iter;
 using elem_refcnt = unsigned short;
+using size_type = std::uintptr_t;
+using difference_type = std::intptr_t;
 
 struct simple_elem_acqrel
 {
@@ -141,9 +145,9 @@ protected:
 		std::atomic_thread_fence(std::memory_order_acquire);
 	}
 
+public:
 	ILIAS_ASYNC_EXPORT bool wait_unlinked() const noexcept;
 
-public:
 	simple_elem() = default;
 	simple_elem(const simple_elem&) = delete;
 	simple_elem(simple_elem&&) = delete;
@@ -213,6 +217,15 @@ public:
 		std::get<0>(r) = ins;
 		std::get<1>(r) = std::move(ins);
 		return link(std::move(r), std::move(between));
+	}
+
+	bool
+	is_linked() const noexcept
+	{
+		auto succ = this->m_succ.load_no_acquire(
+		    std::memory_order_consume);
+		return !(std::get<1>(succ) == DELETED ||
+		    std::get<0>(succ) == this);
 	}
 };
 
@@ -342,6 +355,7 @@ public:
 	}
 
 	ILIAS_ASYNC_EXPORT bool empty() const noexcept;
+	ILIAS_ASYNC_EXPORT size_type size() const noexcept;
 
 	ILIAS_ASYNC_EXPORT elem_ptr pop_front() noexcept;
 	ILIAS_ASYNC_EXPORT elem_ptr pop_back() noexcept;
@@ -383,6 +397,7 @@ public:
 		return link_after_(elem_ptr{ this }, e);
 	}
 
+private:
 	bool
 	insert_after(iter* i, elem* e)
 	{
@@ -400,7 +415,11 @@ public:
 		}
 		if (!i->is_iter()) {
 			throw std::invalid_argument("ll_list: "
-			    "push_front requires an iterator");
+			    "insert_after requires an iterator");
+		}
+		if (!i->is_linked()) {
+			throw std::invalid_argument("ll_list: "
+			    "invalid iterator");
 		}
 
 		return link_after_(i, e);
@@ -415,7 +434,7 @@ public:
 		}
 		if (!e->is_elem()) {
 			throw std::invalid_argument("ll_list: "
-			    "insert_after requires an element");
+			    "insert_before requires an element");
 		}
 		if (!i) {
 			throw std::invalid_argument("ll_list: "
@@ -423,10 +442,198 @@ public:
 		}
 		if (!i->is_iter()) {
 			throw std::invalid_argument("ll_list: "
-			    "push_front requires an iterator");
+			    "insert_before requires an iterator");
+		}
+		if (!i->is_linked()) {
+			throw std::invalid_argument("ll_list: "
+			    "invalid iterator");
 		}
 
 		return link_before_(i, e);
+	}
+
+public:
+	bool insert_after(const basic_iter&, elem*);
+	bool insert_before(const basic_iter&, elem*);
+};
+
+class basic_iter
+{
+friend class head;
+
+private:
+	mutable iter m_forw{ elem_type::ITER_FWD };
+	mutable iter m_back{ elem_type::ITER_BACK };
+
+public:
+	basic_iter() = default;
+
+	ILIAS_ASYNC_EXPORT basic_iter(head& h) noexcept;
+	ILIAS_ASYNC_EXPORT basic_iter(const basic_iter& i) noexcept;
+	ILIAS_ASYNC_EXPORT basic_iter(basic_iter&& i) noexcept;
+	ILIAS_ASYNC_EXPORT ~basic_iter() noexcept;
+
+	ILIAS_ASYNC_EXPORT basic_iter& operator=(const basic_iter&) noexcept;
+	ILIAS_ASYNC_EXPORT basic_iter& operator=(basic_iter&&) noexcept;
+
+	bool
+	is_linked() const noexcept
+	{
+		return this->m_forw.is_linked() && this->m_back.is_linked();
+	}
+
+	ILIAS_ASYNC_EXPORT friend difference_type distance(
+	    const basic_iter&, const basic_iter&) noexcept;
+};
+
+inline bool
+head::insert_after(const basic_iter& i, elem* e)
+{
+	return this->insert_after(&i.m_forw, e);
+}
+
+inline bool
+head::insert_before(const basic_iter& i, elem* e)
+{
+	return this->insert_before(&i.m_back, e);
+}
+
+
+template<typename Base>
+class reverse_iterator_tmpl
+:	public Base
+{
+private:
+	Base m_base;
+
+	static constexpr bool
+	nothrow_move_copy_destroy()
+	{
+		return (std::is_nothrow_move_constructible<Base>::value ||
+		     !std::is_move_constructible<Base>::value) &&
+		    std::is_nothrow_copy_constructible<Base>::value &&
+		    std::is_nothrow_destructible<Base>::value;
+	}
+
+public:
+	reverse_iterator_tmpl() = default;
+	reverse_iterator_tmpl(const reverse_iterator_tmpl&) = default;
+	reverse_iterator_tmpl(reverse_iterator_tmpl&&) = default;
+	reverse_iterator_tmpl& operator=(const reverse_iterator_tmpl&) =
+	    default;
+	reverse_iterator_tmpl& operator=(reverse_iterator_tmpl&&) = default;
+
+	reverse_iterator_tmpl(const Base& b)
+	noexcept(std::is_nothrow_copy_constructible<Base>::value)
+	:	m_base{ b }
+	{
+		/* Empty body. */
+	}
+
+	reverse_iterator_tmpl(
+	    typename std::enable_if<std::is_move_assignable<Base>::value,
+	      Base&&>::type b)
+	noexcept(std::is_nothrow_move_constructible<Base>::value)
+	:	m_base{ std::move(b) }
+	{
+		/* Empty body. */
+	}
+
+	template<typename U>
+	reverse_iterator_tmpl(
+	    const reverse_iterator_tmpl<U>& o,
+	    typename std::enable_if<
+	      std::is_constructible<Base, const U&>::value, int>::type = 0)
+	noexcept(
+		std::is_nothrow_constructible<Base, const U&>::value)
+	:	m_base{ o.base() }
+	{
+		/* Empty body. */
+	}
+
+	const Base&
+	base() const noexcept
+	{
+		return this->m_base;
+	}
+
+	reverse_iterator_tmpl&
+	operator=(const Base& b)
+	noexcept(std::is_nothrow_assignable<Base, const Base&>::value)
+	{
+		this->m_base = b;
+		return *this;
+	}
+
+	typename std::enable_if<std::is_move_assignable<Base>::value,
+	    reverse_iterator_tmpl&>::type
+	operator=(Base&& b)
+	noexcept(std::is_nothrow_move_assignable<Base>::value)
+	{
+		this->m_base = std::move(b);
+		return *this;
+	}
+
+	bool
+	operator==(const reverse_iterator_tmpl& i) const noexcept
+	{
+		return this->m_base == i.m_base;
+	}
+
+	bool
+	operator==(const Base& i) const noexcept
+	{
+		return this->m_base == i;
+	}
+
+	friend bool
+	operator==(const Base& a, const reverse_iterator_tmpl& b) noexcept
+	{
+		return b == a;
+	}
+
+	reverse_iterator_tmpl
+	operator++(int) noexcept
+	{
+		return this->m_base--;
+	}
+
+	reverse_iterator_tmpl&
+	operator++() noexcept
+	{
+		--this->m_base;
+		return *this;
+	}
+
+	reverse_iterator_tmpl
+	operator--(int) noexcept
+	{
+		return this->m_base++;
+	}
+
+	reverse_iterator_tmpl&
+	operator--() noexcept
+	{
+		++this->m_base;
+		return *this;
+	}
+
+	friend reverse_iterator_tmpl
+	prev(const reverse_iterator_tmpl& i, difference_type n = 1)
+	noexcept(
+		nothrow_move_copy_destroy() &&
+		noexcept(next(std::declval<Base>(), n)))
+	{
+		return next(i.m_base, n);
+	}
+
+	friend reverse_iterator_tmpl
+	next(const reverse_iterator_tmpl& i, difference_type n = 1)
+	noexcept(
+		nothrow_move_copy_destroy() &&
+		noexcept(prev(std::declval<Base>(), n)))
+	{
+		return prev(i.m_base, n);
 	}
 };
 
@@ -480,117 +687,31 @@ public:
 	}
 };
 
-template<typename Type, typename Tag = void>
-class ll_list
-{
-public:
-	using value_type = Type;
-	using reference = value_type&;
-	using const_reference = const value_type&;
-	using rvalue_reference = value_type&&;
-	using pointer = value_type*;
-	using pop_result = pointer;
-
-private:
-	ll_list_detail::head m_head;
-
-public:
-	ll_list() = default;
-	ll_list(const ll_list&) = delete;
-
-	ll_list(ll_list&& o) noexcept
-	:	m_head{ std::move(o.m_head) }
-	{
-		/* Empty body. */
-	}
-
-	bool
-	empty() const noexcept
-	{
-		return this->m_head.empty();
-	}
-};
-
-template<typename Type>
-class ll_list<Type, no_intrusive_tag>
-{
-public:
-	using value_type = Type;
-	using reference = value_type&;
-	using const_reference = const value_type&;
-	using rvalue_reference = value_type&&;
-	using pointer = value_type*;
-	using pop_result = opt_data<value_type>;
-
-private:
-	class elem
-	:	public ll_list_hook<>
-	{
-	public:
-		value_type m_value;
-
-		elem(const_reference v)
-		noexcept(std::is_nothrow_copy_constructible<value_type>::value)
-		:	m_value{ v }
-		{
-			/* Empty body. */
-		}
-
-		elem(rvalue_reference v)
-		noexcept(std::is_nothrow_move_constructible<value_type>::value)
-		:	m_value{ std::move(v) }
-		{
-			/* Empty body. */
-		}
-	};
-
-	using impl_type = ll_list<elem>;
-
-	impl_type m_impl;
-
-public:
-	~ll_list() noexcept
-	{
-		while (this->pop_front());
-	}
-
-	pop_result
-	pop_front() noexcept
-	{
-		pop_result rv;
-		std::unique_ptr<elem> p = this->m_impl.pop_front();
-		if (p)
-			rv = p->m_value;
-		return rv;
-	}
-
-	pop_result
-	pop_back() noexcept
-	{
-		pop_result rv;
-		std::unique_ptr<elem> p = this->m_impl.pop_back();
-		if (p)
-			rv = p->m_value;
-		return rv;
-	}
-};
-
 template<typename Type, typename AcqRel, typename Tag = void>
 class ll_smartptr_list
 {
-private:
-	using impl_type = ll_list<Type, Tag>;
-
 public:
 	using value_type = Type;
 	using reference = value_type&;
 	using const_reference = const value_type&;
 	using rvalue_reference = value_type&&;
-	using pointer = refpointer<Type, AcqRel>;
+	using pointer = refpointer<value_type, AcqRel>;
+	using const_pointer = refpointer<const value_type, AcqRel>;
 	using pop_result = pointer;
+	using difference_type = ll_list_detail::difference_type;
+	using size_type = ll_list_detail::size_type;
 
 private:
-	impl_type m_impl;
+	class iterator;
+	class const_iterator;
+
+	using reverse_iterator =
+	    ll_list_detail::reverse_iterator_tmpl<iterator>;
+	using const_reverse_iterator =
+	    ll_list_detail::reverse_iterator_tmpl<const_iterator>;
+
+private:
+	ll_list_detail::head m_impl;
 
 public:
 	~ll_smartptr_list() noexcept
@@ -604,46 +725,279 @@ public:
 		return this->m_impl.empty();
 	}
 
+	size_type
+	size() const noexcept
+	{
+		return this->m_impl.size();
+	}
+
+	iterator
+	begin() noexcept
+	{
+		return ++iterator{ this->m_impl };
+	}
+	iterator
+	end() noexcept
+	{
+		return iterator{ this->m_impl };
+	}
+
+	const_iterator
+	cbegin() const noexcept
+	{
+		return ++const_iterator{ this->m_impl };
+	}
+	const_iterator
+	cend() const noexcept
+	{
+		return const_iterator{ this->m_impl };
+	}
+
+	reverse_iterator
+	rbegin() noexcept
+	{
+		return ++reverse_iterator{ this->m_impl };
+	}
+	reverse_iterator
+	rend() noexcept
+	{
+		return reverse_iterator{ this->m_impl };
+	}
+
+	const_reverse_iterator
+	crbegin() const noexcept
+	{
+		return ++const_reverse_iterator{ this->m_impl };
+	}
+	const_reverse_iterator
+	crend() const noexcept
+	{
+		return const_reverse_iterator{ this->m_impl };
+	}
+
+	const_iterator
+	begin() const noexcept
+	{
+		return this->cbegin();
+	}
+	const_iterator
+	end() const noexcept
+	{
+		return this->cend();
+	}
+
+	const_reverse_iterator
+	rbegin() const noexcept
+	{
+		return this->crbegin();
+	}
+	const_reverse_iterator
+	rend() const noexcept
+	{
+		return this->crend();
+	}
+
 	pop_result pop_front() noexcept;
 	pop_result pop_back() noexcept;
 };
 
-template<typename Type, typename AcqRel>
-class ll_smartptr_list<Type, AcqRel, no_intrusive_tag>
+
+template<typename Type, typename AcqRel, typename Tag>
+class ll_smartptr_list<Type, AcqRel, Tag>::iterator
+:	public std::iterator<
+	    std::bidirectional_iterator_tag,
+	    value_type,
+	    difference_type,
+	    pointer,
+	    reference>
 {
-private:
-	using impl_type = ll_list<refpointer<Type, AcqRel>, no_intrusive_tag>;
-
-public:
-	using value_type = Type;
-	using reference = value_type&;
-	using const_reference = const value_type&;
-	using rvalue_reference = value_type&&;
-	using pointer = refpointer<Type, AcqRel>;
-	using pop_result = pointer;
+friend class ll_smartptr_list::const_iterator;
+friend class ll_smartptr_list<Type, AcqRel, Tag>;
 
 private:
-	impl_type m_impl;
+	ll_list_detail::basic_iter m_impl;
+	ll_smartptr_list::pointer m_value;
+
+	iterator(ll_list_detail::head& h) noexcept
+	:	m_impl{ h }
+	{
+		/* Empty body. */
+	}
 
 public:
-	bool
-	empty() const noexcept
+	iterator() = default;
+	iterator(const iterator&) = default;
+	iterator(iterator&&) = default;
+	iterator& operator=(const iterator&) = default;
+	iterator& operator=(iterator&&) = default;
+
+	friend iterator
+	prev(iterator i, difference_type n)
+	noexcept
 	{
-		return this->m_impl.empty();
+		i.m_value = static_pointer_cast<value_type>(i.m_impl.succ(n));
+		return i;
 	}
 
-	pop_result
-	pop_front() noexcept
+	friend iterator
+	next(iterator i, difference_type n)
+	noexcept
 	{
-		auto p = this->m_impl.pop_front();
-		return (p ? *p : nullptr);
+		i.m_value = static_pointer_cast<value_type>(i.m_impl.pred(n));
+		return i;
 	}
 
-	pop_result
-	pop_back() noexcept
+	iterator&
+	operator++() noexcept
 	{
-		auto p = this->m_impl.pop_back();
-		return (p ? *p : nullptr);
+		this->m_value = static_pointer_cast<value_type>(
+		    this->m_impl.succ());
+		return *this;
+	}
+
+	iterator
+	operator++(int) noexcept
+	{
+		iterator clone = *this;
+		++*this;
+		return clone;
+	}
+
+	iterator&
+	operator--() noexcept
+	{
+		this->m_value = static_pointer_cast<value_type>(
+		    this->m_impl.pred());
+		return *this;
+	}
+
+	iterator
+	operator--(int) noexcept
+	{
+		iterator clone = *this;
+		--*this;
+		return clone;
+	}
+
+	pointer
+	operator->() const noexcept
+	{
+		return this->m_value;
+	}
+
+	reference
+	operator*() const noexcept
+	{
+		return *this->m_value;
+	}
+};
+
+template<typename Type, typename AcqRel, typename Tag>
+class ll_smartptr_list<Type, AcqRel, Tag>::const_iterator
+:	public std::iterator<
+	    std::bidirectional_iterator_tag,
+	    value_type,
+	    difference_type,
+	    pointer,
+	    reference>
+{
+friend class ll_smartptr_list<Type, AcqRel, Tag>;
+
+private:
+	ll_list_detail::basic_iter m_impl;
+	ll_smartptr_list::const_pointer m_value;
+
+	const_iterator(const ll_list_detail::head& h) noexcept
+	:	m_impl{ const_cast<ll_list_detail::head&>(h) }
+	{
+		/* Empty body. */
+	}
+
+public:
+	const_iterator() = default;
+	const_iterator(const const_iterator&) = default;
+	const_iterator(const_iterator&&) = default;
+	const_iterator& operator=(const const_iterator&) = default;
+	const_iterator& operator=(const_iterator&&) = default;
+
+	const_iterator(const iterator& i)
+	noexcept(
+		std::is_nothrow_copy_constructible<
+		    const_pointer>::value)
+	:	m_impl{ i.m_impl },
+		m_value{ i.m_value }
+	{
+		/* Empty body. */
+	}
+
+	const_iterator(iterator&& i)
+	noexcept(
+		std::is_nothrow_move_constructible<
+		    const_pointer>::value)
+	:	m_impl{ std::move(i.m_impl) },
+		m_value{ std::move(i.m_value) }
+	{
+		/* Empty body. */
+	}
+
+	friend const_iterator
+	prev(const_iterator i, difference_type n)
+	noexcept
+	{
+		i.m_value = static_pointer_cast<value_type>(i.m_impl.succ(n));
+		return i;
+	}
+
+	friend const_iterator
+	next(const_iterator i, difference_type n)
+	noexcept
+	{
+		i.m_value = static_pointer_cast<value_type>(i.m_impl.pred(n));
+		return i;
+	}
+
+	const_iterator&
+	operator++() noexcept
+	{
+		this->m_value = static_pointer_cast<value_type>(
+		    this->m_impl.succ());
+		return *this;
+	}
+
+	const_iterator
+	operator++(int) noexcept
+	{
+		const_iterator clone = *this;
+		++*this;
+		return clone;
+	}
+
+	const_iterator&
+	operator--() noexcept
+	{
+		this->m_value = static_pointer_cast<value_type>(
+		    this->m_impl.pred());
+		return *this;
+	}
+
+	const_iterator
+	operator--(int) noexcept
+	{
+		const_iterator clone = *this;
+		--*this;
+		return clone;
+	}
+
+	pointer
+	operator->() const noexcept
+	{
+		return this->m_value;
+	}
+
+	reference
+	operator*() const noexcept
+	{
+		return *this->m_value;
 	}
 };
 
