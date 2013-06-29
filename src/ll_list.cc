@@ -204,7 +204,7 @@ noexcept
 	return link_result::SUCCESS;
 }
 
-link_result
+link_ab_result
 simple_elem::link_after(simple_elem_range ins, simple_ptr pred)
 noexcept
 {
@@ -217,7 +217,7 @@ noexcept
 		    std::make_tuple(pred, std::move(succ)));
 		switch (lr) {
 		default:
-			return lr;
+			return ab_result(lr);
 		case link_result::SUCC_DELETED:
 		case link_result::RETRY:
 			std::tie(succ, std::ignore) = pred->succ();
@@ -228,7 +228,7 @@ noexcept
 	/* UNREACHABLE */
 }
 
-link_result
+link_ab_result
 simple_elem::link_before(simple_elem_range ins, simple_ptr succ)
 noexcept
 {
@@ -241,7 +241,7 @@ noexcept
 		    std::make_tuple(std::move(pred), succ));
 		switch (lr) {
 		default:
-			return lr;
+			return ab_result(lr);
 		case link_result::PRED_DELETED:
 		case link_result::RETRY:
 			std::tie(pred, std::ignore) = succ->pred();
@@ -357,8 +357,8 @@ head::head(head&& o) noexcept
 	simple_ptr self{ this };
 	simple_ptr optr{ this };
 
-	const link_result lnk = simple_elem::link_after(self, optr);
-	assert(lnk == link_result::SUCCESS);
+	const link_ab_result lnk = simple_elem::link_after(self, optr);
+	assert(lnk == link_ab_result::SUCCESS);
 	const bool ulnk = o.unlink();
 	assert(ulnk);
 }
@@ -468,36 +468,33 @@ head::link_after_(const elem_ptr& pos0, elem* e) noexcept
 
 basic_iter::basic_iter(head& h) noexcept
 {
-	link_result lr1 = simple_elem::link_after(
+	link_ab_result lr1 = simple_elem::link_after(
 	    simple_ptr{ &this->m_forw }, &h);
-	link_result lr2 = simple_elem::link_before(
+	link_ab_result lr2 = simple_elem::link_before(
 	    simple_ptr{ &this->m_back }, &h);
 
-	assert(lr1 == link_result::SUCCESS && lr1 == link_result::SUCCESS);
+	assert(lr1 == link_ab_result::SUCCESS &&
+	    lr2 == link_ab_result::SUCCESS);
 }
 
 basic_iter::basic_iter(const basic_iter& i) noexcept
 {
-	link_result lr1 = simple_elem::link_after(
+	link_ab_result lr1 = simple_elem::link_after(
 	    simple_ptr{ &this->m_forw }, simple_ptr{ &i.m_forw });
-	link_result lr2 = simple_elem::link_before(
+	link_ab_result lr2 = simple_elem::link_before(
 	    simple_ptr{ &this->m_back }, simple_ptr{ &i.m_back });
 
-	assert((lr1 == link_result::SUCCESS && lr2 == link_result::SUCCESS) ||
-	    (lr1 == link_result::SUCC_DELETED &&
-	     lr2 == link_result::PRED_DELETED));
+	assert(lr1 == lr2 && lr1 != link_ab_result::ALREADY_LINKED);
 }
 
 basic_iter::basic_iter(basic_iter&& i) noexcept
 {
-	link_result lr1 = simple_elem::link_after(
+	link_ab_result lr1 = simple_elem::link_after(
 	    simple_ptr{ &this->m_forw }, simple_ptr{ &i.m_forw });
-	link_result lr2 = simple_elem::link_before(
+	link_ab_result lr2 = simple_elem::link_before(
 	    simple_ptr{ &this->m_back }, simple_ptr{ &i.m_back });
 
-	assert((lr1 == link_result::SUCCESS && lr2 == link_result::SUCCESS) ||
-	    (lr1 == link_result::SUCC_DELETED &&
-	     lr2 == link_result::PRED_DELETED));
+	assert(lr1 == lr2 && lr1 != link_ab_result::ALREADY_LINKED);
 
 	i.m_forw.unlink();
 	i.m_back.unlink();
@@ -512,19 +509,22 @@ basic_iter::~basic_iter() noexcept
 basic_iter&
 basic_iter::operator=(const basic_iter& i) noexcept
 {
+	if (&i == this)
+		return *this;
+
 	this->m_forw.unlink();
 	this->m_back.unlink();
 
 	this->m_forw.wait_unlinked();
-	link_result lr1 = simple_elem::link_after(
-	    simple_ptr{ &this->m_forw }, simple_ptr{ &i.m_forw });
+	link_ab_result lr1 = simple_elem::link_after(
+	    simple_ptr{ &this->m_forw },
+	    simple_ptr{ &i.m_forw });
 	this->m_back.wait_unlinked();
-	link_result lr2 = simple_elem::link_before(
-	    simple_ptr{ &this->m_back }, simple_ptr{ &i.m_back });
+	link_ab_result lr2 = simple_elem::link_before(
+	    simple_ptr{ &this->m_back },
+	    simple_ptr{ &i.m_back });
 
-	assert((lr1 == link_result::SUCCESS && lr2 == link_result::SUCCESS) ||
-	    (lr1 == link_result::SUCC_DELETED &&
-	     lr2 == link_result::PRED_DELETED));
+	assert(lr1 == lr2 && lr1 != link_ab_result::ALREADY_LINKED);
 
 	return *this;
 }
@@ -532,19 +532,22 @@ basic_iter::operator=(const basic_iter& i) noexcept
 basic_iter&
 basic_iter::operator=(basic_iter&& i) noexcept
 {
+	if (&i == this)
+		return *this;
+
 	this->m_forw.unlink();
 	this->m_back.unlink();
 
 	this->m_forw.wait_unlinked();
-	link_result lr1 = simple_elem::link_after(
-	    simple_ptr{ &this->m_forw }, simple_ptr{ &i.m_forw });
+	link_ab_result lr1 = simple_elem::link_after(
+	    simple_ptr{ &this->m_forw },
+	    simple_ptr{ &i.m_forw });
 	this->m_back.wait_unlinked();
-	link_result lr2 = simple_elem::link_before(
-	    simple_ptr{ &this->m_back }, simple_ptr{ &i.m_back });
+	link_ab_result lr2 = simple_elem::link_before(
+	    simple_ptr{ &this->m_back },
+	    simple_ptr{ &i.m_back });
 
-	assert((lr1 == link_result::SUCCESS && lr2 == link_result::SUCCESS) ||
-	    (lr1 == link_result::SUCC_DELETED &&
-	     lr2 == link_result::PRED_DELETED));
+	assert(lr1 == lr2 && lr1 != link_ab_result::ALREADY_LINKED);
 
 	i.m_forw.unlink();
 	i.m_back.unlink();

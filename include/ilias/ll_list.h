@@ -23,12 +23,38 @@ enum class elem_type : unsigned char {
 };
 
 enum class link_result : int {
-	SUCCESS = 0x01,
-	PRED_DELETED = 0x02,
-	SUCC_DELETED = 0x04,
-	ALREADY_LINKED = 0x08,
-	RETRY = 0x10
+	SUCCESS,
+	PRED_DELETED,
+	SUCC_DELETED,
+	ALREADY_LINKED,
+	RETRY,
 };
+
+enum class link_ab_result : int {
+	SUCCESS,
+	INS_DELETED,
+	ALREADY_LINKED,
+};
+
+/* Convert link_result to link_ab_result, undefined for invalid conversions. */
+inline link_ab_result
+ab_result(const link_result& lr) noexcept
+{
+	switch (lr) {
+	case link_result::SUCCESS:
+		return link_ab_result::SUCCESS;
+	case link_result::PRED_DELETED:
+	case link_result::SUCC_DELETED:
+		return link_ab_result::INS_DELETED;
+	case link_result::ALREADY_LINKED:
+		return link_ab_result::ALREADY_LINKED;
+	default:
+		assert(false);
+	}
+
+	/* UNREACHABLE */
+	std::terminate();
+}
 
 
 class simple_elem;
@@ -186,13 +212,13 @@ public:
 	ILIAS_ASYNC_EXPORT simple_elem_ptr::element_type pred() const noexcept;
 	ILIAS_ASYNC_EXPORT static link_result link(
 	    simple_elem_range ins, simple_elem_range between) noexcept;
-	ILIAS_ASYNC_EXPORT static link_result link_after(
+	ILIAS_ASYNC_EXPORT static link_ab_result link_after(
 	    simple_elem_range ins, simple_ptr pred) noexcept;
-	ILIAS_ASYNC_EXPORT static link_result link_before(
+	ILIAS_ASYNC_EXPORT static link_ab_result link_before(
 	    simple_elem_range ins, simple_ptr succ) noexcept;
 	ILIAS_ASYNC_EXPORT bool unlink() noexcept;
 
-	static link_result
+	static link_ab_result
 	link_after(simple_ptr ins, simple_ptr pred) noexcept
 	{
 		simple_elem_range r;
@@ -201,7 +227,7 @@ public:
 		return link_after(std::move(r), std::move(pred));
 	}
 
-	static link_result
+	static link_ab_result
 	link_before(simple_ptr ins, simple_ptr succ) noexcept
 	{
 		simple_elem_range r;
