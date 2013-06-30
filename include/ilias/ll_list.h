@@ -313,6 +313,26 @@ public:
 		    std::get<0>(this->simple_elem::pred()));
 	}
 
+	elem_ptr
+	succ_elemhead() const noexcept
+	{
+		elem_ptr rv;
+		for (rv = this->succ();
+		    !rv->is_head() && !rv->is_elem();
+		    rv = rv->succ());
+		return rv;
+	}
+
+	elem_ptr
+	pred_elemhead() const noexcept
+	{
+		elem_ptr rv;
+		for (rv = this->pred();
+		    !rv->is_head() && !rv->is_elem();
+		    rv = rv->pred());
+		return rv;
+	}
+
 	bool
 	is_iter() const noexcept
 	{
@@ -511,8 +531,14 @@ public:
 	ILIAS_ASYNC_EXPORT friend difference_type distance(
 	    const basic_iter&, const basic_iter&) noexcept;
 
-	ILIAS_ASYNC_EXPORT elem_ptr pred() noexcept;
-	ILIAS_ASYNC_EXPORT elem_ptr succ() noexcept;
+	ILIAS_ASYNC_EXPORT elem_ptr pred(size_type n = 1) noexcept;
+	ILIAS_ASYNC_EXPORT elem_ptr succ(size_type n = 1) noexcept;
+	ILIAS_ASYNC_EXPORT bool link_at(elem_ptr e) noexcept;
+
+	ILIAS_ASYNC_EXPORT static elem_ptr succ_until(elem_ptr,
+	    const basic_iter&) noexcept;
+	ILIAS_ASYNC_EXPORT static elem_ptr pred_until(elem_ptr,
+	    const basic_iter&) noexcept;
 };
 
 inline bool
@@ -528,9 +554,263 @@ head::insert_before(const basic_iter& i, elem* e)
 }
 
 
+struct convert_tag {};
+
+
+template<typename List, typename RefPtr>
+class list_iterator
+:	public std::iterator<
+	    std::bidirectional_iterator_tag,
+	    typename RefPtr::element_type,
+	    difference_type,
+	    typename RefPtr::pointer,
+	    typename RefPtr::reference>
+{
+template<typename OL, typename ORP> friend class list_iterator;
+
+private:
+	using list_type = List;
+
+	basic_iter m_iter;
+	const list_type* m_list{ nullptr };
+	RefPtr m_value;
+
+	void
+	pred(size_type n = 1) noexcept
+	{
+		if (n == 0)
+			return;
+
+		elem_ptr e;
+		typename list_iterator::pointer v;
+
+		do {
+			e = this->m_iter.pred(n);
+			if (e && !e->is_head())
+				v = this->m_list->cast(e);
+			else
+				e = nullptr;
+			n = 1;
+		} while (v == nullptr || e != nullptr);
+
+		this->m_value = std::move(v);
+		return *this;
+	}
+
+	void
+	succ(size_type n = 1) noexcept
+	{
+		if (n == 0)
+			return;
+
+		elem_ptr e;
+		typename list_iterator::pointer v;
+
+		do {
+			e = this->m_iter.pred(n);
+			if (e && !e->is_head())
+				v = this->m_list->cast(e);
+			else
+				e = nullptr;
+			n = 1;
+		} while (v == nullptr || e != nullptr);
+
+		this->m_value = std::move(v);
+		return *this;
+	}
+
+public:
+	list_iterator() = default;
+	list_iterator(const list_iterator&) = default;
+	list_iterator(list_iterator&&) = default;
+
+	list_iterator& operator=(const list_iterator&) = default;
+	list_iterator& operator=(list_iterator&&) = default;
+
+	template<typename ORefPtr>
+	list_iterator(const list_iterator<List, ORefPtr>& o, convert_tag)
+	noexcept
+	:	m_iter{ o.m_iter },
+		m_list{ o.m_list }
+	{
+		using cast_type = typename list_iterator::value_type;
+
+		this->m_value = const_pointer_cast<cast_type>(o.get());
+	}
+
+	template<typename ORefPtr>
+	list_iterator(const list_iterator<List, ORefPtr>& o) noexcept
+	:	m_iter{ o.m_iter },
+		m_list{ o.m_list },
+		m_value{ o.m_value }
+	{
+		/* Empty body. */
+	}
+
+	list_iterator(const list_type& list, const head& h) noexcept
+	:	m_iter{ const_cast<head&>(h) },
+		m_list{ &list }
+	{
+		/* Empty body. */
+	}
+
+	list_iterator(const list_type& list, RefPtr e)
+	{
+		this->link_at(list, e);
+	}
+
+	bool
+	link_at(const list_type& list, RefPtr e)
+	{
+		bool rv;
+		elem* e_ = list.as_elem(e);
+		if (!e_) {
+			throw std::invalid_argument("ll_list iterator: "
+			    "cannot point at nil");
+		}
+
+		return do_noexcept([&]() -> bool {
+			rv = this->m_iter.link_at(e_);
+			this->m_list = (rv ? &list : nullptr);
+			this->m_value = e;
+			return rv;
+		    });
+	}
+
+	list_iterator&
+	operator++() noexcept
+	{
+		this->succ();
+		return *this;
+	}
+
+	list_iterator&
+	operator--() noexcept
+	{
+		this->pred();
+		return *this;
+	}
+
+	list_iterator
+	operator++(int) const noexcept
+	{
+		list_iterator clone = *this;
+		++clone;
+		return clone;
+	}
+
+	list_iterator
+	operator--(int) const noexcept
+	{
+		list_iterator clone = *this;
+		--clone;
+		return clone;
+	}
+
+	typename list_iterator::reference
+	operator*() const noexcept
+	{
+		return *this->m_value;
+	}
+
+	typename list_iterator::pointer
+	operator->() const noexcept
+	{
+		return this->m_value.get();
+	}
+
+	const RefPtr&
+	get() const noexcept
+	{
+		return this->m_value;
+	}
+
+	operator RefPtr() const noexcept
+	{
+		return this->get();
+	}
+
+	friend list_iterator
+	advance(list_iterator i, difference_type n) noexcept
+	{
+		if (n > 0)
+			i.succ(n);
+		if (n < 0)
+			i.pred(-n);
+		return i;
+	}
+
+	friend list_iterator
+	next(list_iterator i, difference_type n = 1) noexcept
+	{
+		if (n >= 0)
+			i.succ(n);
+		else
+			i.pred(-n);
+		return i;
+	}
+
+	friend list_iterator
+	prev(list_iterator i, difference_type n = 1) noexcept
+	{
+		if (n >= 0)
+			i.pred(n);
+		else
+			i.succ(-n);
+		return i;
+	}
+
+	/* Check if the iterator is associated with the given list. */
+	friend bool
+	check_validity(const list_iterator& i, const List& l) noexcept
+	{
+		return i.m_list == &l;
+	}
+
+	/*
+	 * Iterate over elements until the iterator 'e' is reached.
+	 * 'e' does not have to be properly linked for the post-condition.
+	 */
+	template<typename Fn>
+	friend Fn
+	for_each_iterator(list_iterator b, const list_iterator& e, Fn fn)
+	noexcept(
+		noexcept(fn(b)))
+	{
+		elem_ptr i = basic_iter::succ_until(&b.m_forw, e.m_iter);
+		while (i) {
+			fn(b);
+			while (i && !b.link_at(i))
+				i = basic_iter::succ_until(i, e.m_iter);
+		}
+		return fn;
+	}
+};
+
+template<typename List, typename RefPtr>
+void
+throw_validity(const list_iterator<List, RefPtr>& i, const List& l,
+    bool must_have_value)
+{
+	if (!check_validity(i, l) &&
+	    (!must_have_value || i.get() != nullptr)) {
+		throw std::invalid_argument("ll_list: "
+		    "invalid iterator");
+	}
+}
+
+
+/*
+ * Reverse iterator template for list types.
+ */
 template<typename Base>
 class reverse_iterator_tmpl
-:	public Base
+:	public std::iterator<
+	    typename std::iterator_traits<Base>::iterator_category,
+	    typename std::iterator_traits<Base>::value_type,
+	    typename std::iterator_traits<Base>::difference_type,
+	    typename std::iterator_traits<Base>::pointer,
+	    typename std::iterator_traits<Base>::reference>
 {
 private:
 	Base m_base;
@@ -580,6 +860,22 @@ public:
 		/* Empty body. */
 	}
 
+private:
+	struct enabler {};
+
+public:
+	template<typename... Args>
+	reverse_iterator_tmpl(Args&&... args,
+	    typename std::enable_if<
+	      std::is_constructible<Base, Args...>::value, enabler>::type =
+	      enabler{})
+	noexcept(
+		std::is_nothrow_constructible<Base, Args...>::value)
+	:	m_base{ std::forward<Args>(args)... }
+	{
+		/* Empty body. */
+	}
+
 	const Base&
 	base() const noexcept
 	{
@@ -601,24 +897,6 @@ public:
 	{
 		this->m_base = std::move(b);
 		return *this;
-	}
-
-	bool
-	operator==(const reverse_iterator_tmpl& i) const noexcept
-	{
-		return this->m_base == i.m_base;
-	}
-
-	bool
-	operator==(const Base& i) const noexcept
-	{
-		return this->m_base == i;
-	}
-
-	friend bool
-	operator==(const Base& a, const reverse_iterator_tmpl& b) noexcept
-	{
-		return b == a;
 	}
 
 	reverse_iterator_tmpl
@@ -647,6 +925,18 @@ public:
 		return *this;
 	}
 
+	typename reverse_iterator_tmpl::reference
+	operator*() const noexcept
+	{
+		return this->m_base.operator*();
+	}
+
+	typename reverse_iterator_tmpl::pointer
+	operator->() const noexcept
+	{
+		return this->m_base.operator->();
+	}
+
 	friend reverse_iterator_tmpl
 	prev(const reverse_iterator_tmpl& i, difference_type n = 1)
 	noexcept(
@@ -664,6 +954,15 @@ public:
 	{
 		return prev(i.m_base, n);
 	}
+
+	friend reverse_iterator_tmpl
+	advance(const reverse_iterator_tmpl& i, difference_type n)
+	noexcept(
+		nothrow_move_copy_destroy() &&
+		noexcept(advance(std::declval<Base>(), n)))
+	{
+		return advance(i.m_base, n);
+	}
 };
 
 
@@ -675,6 +974,8 @@ class ll_list_hook
 :	private ll_list_detail::elem
 {
 template<typename FriendType, typename FriendTag> friend class ll_list;
+template<typename FriendType, typename FriendAcqRel, typename FriendTag>
+    friend class ll_list;
 
 public:
 	ll_list_hook() = default;
@@ -716,7 +1017,8 @@ public:
 	}
 };
 
-template<typename Type, typename AcqRel, typename Tag = void>
+template<typename Type, typename AcqRel = default_refcount_mgr<Type>,
+    typename Tag = void>
 class ll_smartptr_list
 {
 public:
@@ -731,18 +1033,102 @@ public:
 	using size_type = ll_list_detail::size_type;
 
 private:
-	class iterator;
-	class const_iterator;
+	using hook_type = ll_list_hook<Tag>;
+	using hazard_t = hazard<ll_list_detail::head, ll_list_detail::elem>;
+
+	/* Cast pointer to elem_ptr. */
+	ll_list_detail::elem*
+	as_elem(const pointer& p) const noexcept
+	{
+		if (!p)
+			return nullptr;
+
+		return do_noexcept([](pointer p) -> ll_list_detail::elem* {
+			hook_type& hook = *p;
+			return &hook;
+		    }, p);
+	}
+
+	/* Cast pointer to elem_ptr. */
+	ll_list_detail::elem*
+	as_elem(const const_pointer& p) const noexcept
+	{
+		return as_elem(const_pointer_cast<value_type>(p));
+	}
+
+	/* Cast operation, to dereference an element back to the value_type. */
+	pointer
+	cast(const ll_list_detail::elem_ptr& hook) const noexcept
+	{
+		pointer rv;
+		if (hook) {
+			reference ref = static_cast<reference>(
+			    static_cast<hook_type&>(*hook));
+			hazard_t hz{ this->m_impl };
+
+			hz.do_hazard(*hook,
+			    [&]() {
+				if (hook->is_linked())
+					rv = pointer{ &ref };
+			    },
+			    [&]() {
+				rv = pointer{ &ref, false };
+			    });
+		}
+		return rv;
+	}
+
+	/* Hazard grant operation after unlinking an element. */
+	void
+	unlink_post(const_reference& p, unsigned int nrefs = 0) const noexcept
+	{
+		if (p) {
+			hook_type& hook = p;		/* Cast to hook. */
+			ll_list_detail::elem& e = hook;	/* Cast to elem. */
+			AcqRel acqrel;
+
+			hazard_t::grant([&acqrel, &p](unsigned int n) {
+				acqrel.acquire(p, n);
+			    },
+			    [&acqrel, &p](unsigned int n) {
+				acqrel.release(p, n);
+			    },
+			    this->m_impl, e, nrefs);
+		}
+	}
+
+private:
+	ll_list_detail::head m_impl;
+
+public:
+	using iterator = ll_list_detail::list_iterator<
+	    ll_smartptr_list, refpointer<value_type, AcqRel>>;
+	using const_iterator = ll_list_detail::list_iterator<
+	    ll_smartptr_list, refpointer<const value_type, AcqRel>>;
 
 	using reverse_iterator =
 	    ll_list_detail::reverse_iterator_tmpl<iterator>;
 	using const_reverse_iterator =
 	    ll_list_detail::reverse_iterator_tmpl<const_iterator>;
 
-private:
-	ll_list_detail::head m_impl;
+	ll_smartptr_list() = default;
+	ll_smartptr_list(const ll_smartptr_list&) = delete;
+	ll_smartptr_list(ll_smartptr_list&&) = default;
+	ll_smartptr_list& operator=(const ll_smartptr_list&) = delete;
+	ll_smartptr_list& operator=(ll_smartptr_list&&) = default;
 
-public:
+	template<typename Iter>
+	ll_smartptr_list(Iter b, Iter e)
+	noexcept(
+		noexcept(std::declval<ll_smartptr_list>().push_back(*b)) &&
+		noexcept(++b))
+	{
+		while (b != e) {
+			this->push_back(*b);
+			++b;
+		}
+	}
+
 	~ll_smartptr_list() noexcept
 	{
 		while (this->pop_front());
@@ -763,272 +1149,224 @@ public:
 	iterator
 	begin() noexcept
 	{
-		return ++iterator{ this->m_impl };
+		return ++iterator{ *this, this->m_impl };
 	}
 	iterator
 	end() noexcept
 	{
-		return iterator{ this->m_impl };
+		return iterator{ *this, this->m_impl };
 	}
 
 	const_iterator
 	cbegin() const noexcept
 	{
-		return ++const_iterator{ this->m_impl };
+		return ++const_iterator{ *this, this->m_impl };
 	}
 	const_iterator
 	cend() const noexcept
 	{
-		return const_iterator{ this->m_impl };
+		return const_iterator{ *this, this->m_impl };
 	}
 
 	reverse_iterator
 	rbegin() noexcept
 	{
-		return ++reverse_iterator{ this->m_impl };
+		return ++reverse_iterator{ *this, this->m_impl };
 	}
 	reverse_iterator
 	rend() noexcept
 	{
-		return reverse_iterator{ this->m_impl };
+		return reverse_iterator{ *this, this->m_impl };
 	}
 
 	const_reverse_iterator
 	crbegin() const noexcept
 	{
-		return ++const_reverse_iterator{ this->m_impl };
+		return ++const_reverse_iterator{ *this, this->m_impl };
 	}
 	const_reverse_iterator
 	crend() const noexcept
 	{
-		return const_reverse_iterator{ this->m_impl };
+		return const_reverse_iterator{ *this, this->m_impl };
 	}
 
 	const_iterator
 	begin() const noexcept
 	{
-		return this->cbegin();
+		return ++const_iterator{ *this, this->m_impl };
 	}
 	const_iterator
 	end() const noexcept
 	{
-		return this->cend();
+		return const_iterator{ *this, this->m_impl };
 	}
 
 	const_reverse_iterator
 	rbegin() const noexcept
 	{
-		return this->crbegin();
+		return ++const_reverse_iterator{ *this, this->m_impl };
 	}
 	const_reverse_iterator
 	rend() const noexcept
 	{
-		return this->crend();
+		return const_reverse_iterator{ *this, this->m_impl };
 	}
 
-	pop_result pop_front() noexcept;
-	pop_result pop_back() noexcept;
-};
-
-
-template<typename Type, typename AcqRel, typename Tag>
-class ll_smartptr_list<Type, AcqRel, Tag>::iterator
-:	public std::iterator<
-	    std::bidirectional_iterator_tag,
-	    value_type,
-	    difference_type,
-	    pointer,
-	    reference>
-{
-friend class ll_smartptr_list::const_iterator;
-friend class ll_smartptr_list<Type, AcqRel, Tag>;
-
-private:
-	ll_list_detail::basic_iter m_impl;
-	ll_smartptr_list::pointer m_value;
-
-	iterator(ll_list_detail::head& h) noexcept
-	:	m_impl{ h }
+	pop_result
+	pop_front() noexcept
 	{
-		/* Empty body. */
+		auto rv = this->cast(this->m_impl.pop_front());
+		unlink_post(rv, 1);
+		return rv;
 	}
 
-public:
-	iterator() = default;
-	iterator(const iterator&) = default;
-	iterator(iterator&&) = default;
-	iterator& operator=(const iterator&) = default;
-	iterator& operator=(iterator&&) = default;
-
-	friend iterator
-	prev(iterator i, difference_type n)
-	noexcept
+	pop_result
+	pop_back() noexcept
 	{
-		i.m_value = static_pointer_cast<value_type>(i.m_impl.succ(n));
-		return i;
-	}
-
-	friend iterator
-	next(iterator i, difference_type n)
-	noexcept
-	{
-		i.m_value = static_pointer_cast<value_type>(i.m_impl.pred(n));
-		return i;
-	}
-
-	iterator&
-	operator++() noexcept
-	{
-		this->m_value = static_pointer_cast<value_type>(
-		    this->m_impl.succ());
-		return *this;
+		auto rv = this->cast(this->m_impl.pop_back());
+		unlink_post(rv, 1);
+		return rv;
 	}
 
 	iterator
-	operator++(int) noexcept
+	iterator_to(const pointer& e) const
 	{
-		iterator clone = *this;
-		++*this;
-		return clone;
+		return iterator{ *this, e };
 	}
 
-	iterator&
-	operator--() noexcept
+	const_iterator
+	iterator_to(const const_pointer& e) const
 	{
-		this->m_value = static_pointer_cast<value_type>(
-		    this->m_impl.pred());
-		return *this;
+		return const_iterator{ *this, e };
+	}
+
+	bool
+	push_back(pointer p)
+	{
+		auto rv = this->m_impl.push_back(as_elem(p));
+		if (rv)
+			p.release();
+		return rv;
+	}
+
+	bool
+	push_front(pointer p)
+	{
+		auto rv = this->m_impl.push_front(as_elem(p));
+		if (rv)
+			p.release();
+		return rv;
 	}
 
 	iterator
-	operator--(int) noexcept
+	erase(const_iterator i)
 	{
-		iterator clone = *this;
-		--*this;
-		return clone;
+		throw_validity(i, this, true);
+		iterator rv{ i, ll_list_detail::convert_tag{} };
+		++rv;
+
+		do_noexcept([&]() {
+			if (as_elem(i.get())->unlink())
+				post_unlink(i, 1);
+		    });
+
+		return rv;
 	}
 
-	pointer
-	operator->() const noexcept
+	iterator
+	erase(const const_iterator& b, const const_iterator& e)
 	{
-		return this->m_value;
+		throw_validity(b, this, true);
+		throw_validity(e, this, false);
+		iterator rv{ e, ll_list_detail::convert_tag{} };
+
+		for_each_iterator(b, e, [this](const const_iterator& i) {
+			if (as_elem(i.get())->unlink())
+				post_unlink(i, 1);
+		    });
+		return rv;
 	}
 
-	reference
-	operator*() const noexcept
+	template<typename FN>
+	FN
+	for_each(FN fn)
+	noexcept(
+		noexcept(fn(std::declval<reference>())))
 	{
-		return *this->m_value;
+		for (auto i = this->m_impl.succ_elemhead();
+		    i != &this->m_impl;
+		    i = i->m_impl.succ_elemhead()) {
+			auto p = this->cast(i);
+			if (p)
+				fn(*p);
+		}
+
+		return fn;
+	}
+
+	template<typename FN>
+	FN
+	for_each_reverse(FN fn)
+	noexcept(
+		noexcept(fn(std::declval<reference>())))
+	{
+		for (auto i = this->m_impl.pred_elemhead();
+		    i != &this->m_impl;
+		    i = i->m_impl.pred_elemhead()) {
+			auto p = this->cast(i);
+			if (p)
+				fn(*p);
+		}
+
+		return fn;
+	}
+
+	template<typename FN>
+	FN
+	clear_and_dispose(FN fn)
+	noexcept(
+		noexcept(fn(std::declval<reference>())))
+	{
+		for (auto i = this->m_impl.pred_elemhead();
+		    i != &this->m_impl;
+		    i = i->m_impl.pred_elemhead()) {
+			if (!i->unlink())
+				continue;
+			auto p = this->cast(i);
+			if (p)
+				fn(*p);
+		}
+
+		return fn;
+	}
+
+	void
+	clear() noexcept
+	{
+		this->clear_and_dispose([](reference) {
+			/* Do nothing. */
+		    });
 	}
 };
 
-template<typename Type, typename AcqRel, typename Tag>
-class ll_smartptr_list<Type, AcqRel, Tag>::const_iterator
-:	public std::iterator<
-	    std::bidirectional_iterator_tag,
-	    value_type,
-	    difference_type,
-	    pointer,
-	    reference>
+
+/* Execute functor on each element in the range. */
+template<typename List, typename Ptr, typename Fn>
+Fn
+for_each(ll_list_detail::list_iterator<List, Ptr> b,
+    ll_list_detail::list_iterator<List, Ptr> e, Fn fn)
+noexcept(
+	noexcept(fn(
+	    std::declval<std::iterator_traits<
+	      ll_list_detail::list_iterator<List, Ptr>>::reference>())))
 {
-friend class ll_smartptr_list<Type, AcqRel, Tag>;
+	using iter_type = ll_list_detail::list_iterator<List, Ptr>;
 
-private:
-	ll_list_detail::basic_iter m_impl;
-	ll_smartptr_list::const_pointer m_value;
-
-	const_iterator(const ll_list_detail::head& h) noexcept
-	:	m_impl{ const_cast<ll_list_detail::head&>(h) }
-	{
-		/* Empty body. */
-	}
-
-public:
-	const_iterator() = default;
-	const_iterator(const const_iterator&) = default;
-	const_iterator(const_iterator&&) = default;
-	const_iterator& operator=(const const_iterator&) = default;
-	const_iterator& operator=(const_iterator&&) = default;
-
-	const_iterator(const iterator& i)
-	noexcept(
-		std::is_nothrow_copy_constructible<
-		    const_pointer>::value)
-	:	m_impl{ i.m_impl },
-		m_value{ i.m_value }
-	{
-		/* Empty body. */
-	}
-
-	const_iterator(iterator&& i)
-	noexcept(
-		std::is_nothrow_move_constructible<
-		    const_pointer>::value)
-	:	m_impl{ std::move(i.m_impl) },
-		m_value{ std::move(i.m_value) }
-	{
-		/* Empty body. */
-	}
-
-	friend const_iterator
-	prev(const_iterator i, difference_type n)
-	noexcept
-	{
-		i.m_value = static_pointer_cast<value_type>(i.m_impl.succ(n));
-		return i;
-	}
-
-	friend const_iterator
-	next(const_iterator i, difference_type n)
-	noexcept
-	{
-		i.m_value = static_pointer_cast<value_type>(i.m_impl.pred(n));
-		return i;
-	}
-
-	const_iterator&
-	operator++() noexcept
-	{
-		this->m_value = static_pointer_cast<value_type>(
-		    this->m_impl.succ());
-		return *this;
-	}
-
-	const_iterator
-	operator++(int) noexcept
-	{
-		const_iterator clone = *this;
-		++*this;
-		return clone;
-	}
-
-	const_iterator&
-	operator--() noexcept
-	{
-		this->m_value = static_pointer_cast<value_type>(
-		    this->m_impl.pred());
-		return *this;
-	}
-
-	const_iterator
-	operator--(int) noexcept
-	{
-		const_iterator clone = *this;
-		--*this;
-		return clone;
-	}
-
-	pointer
-	operator->() const noexcept
-	{
-		return this->m_value;
-	}
-
-	reference
-	operator*() const noexcept
-	{
-		return *this->m_value;
-	}
-};
+	for_each_iterator(b, e, [&fn](const iter_type& i) {
+		fn(*i);
+	    });
+	return fn;
+}
 
 
 } /* namespace ilias */

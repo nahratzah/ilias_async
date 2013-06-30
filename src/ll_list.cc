@@ -571,101 +571,156 @@ distance(const basic_iter& first, const basic_iter& last) noexcept
 }
 
 elem_ptr
-basic_iter::pred() noexcept
+basic_iter::pred(size_type n) noexcept
 {
+	assert(n > 0);
 	if (!this->m_back.is_linked())
 		return nullptr;
 
-	/* Use e to iterate over the list. */
+	/* Start search at m_forw. */
 	elem_ptr e{ &this->m_back };
 
+	/* Unlink m_back, m_forw. */
+	this->m_back.unlink();
+	this->m_forw.unlink();
+
+	/* Search forward until the n'th element or head. */
+	while (n-- > 0 && !e->is_head())
+		e = e->pred_elemhead();
+
 	for (;;) {
-		/* Unlink m_back, m_forw. */
+		/* Ensure iterator is no longer in use. */
+		this->m_back.wait_unlinked();
+		this->m_forw.wait_unlinked();
+
+		/* Link iterator around found element e. */
+		link_ab_result bk_link, fw_link;
+		if ((bk_link = simple_elem::link_before(
+		      simple_ptr{ &this->m_back }, e)) ==
+		      link_ab_result::SUCCESS &&
+		    (fw_link = simple_elem::link_after(
+		      simple_ptr{ &this->m_forw }, e)) ==
+		      link_ab_result::SUCCESS)
+			return e;
+
+		assert(bk_link == link_ab_result::INS_DELETED ||
+		    fw_link == link_ab_result::INS_DELETED);
+		assert(!e->is_head());
+
+		/* Link failure, unlink everything. */
 		this->m_back.unlink();
 		this->m_forw.unlink();
 
-		/* Find predecessor element. */
-		for (e = e->pred();
-		    !e->is_elem() && !e->is_head();
-		    e = e->pred());
-
-		/* Link m_back before the found predecessor e. */
-		this->m_back.wait_unlinked();
-		const auto bk_link = simple_elem::link_before(
-		    simple_ptr{ &this->m_back }, e);
-		assert(!e->is_head() || bk_link == link_ab_result::SUCCESS);
-		if (bk_link == link_ab_result::INS_DELETED)
-			continue;
-
-		/* Link m_forw after the found predecessor e. */
-		this->m_forw.wait_unlinked();
-		const auto fw_link = simple_elem::link_after(
-		    simple_ptr{ &this->m_forw }, e);
-		assert(!e->is_head() || fw_link == link_ab_result::SUCCESS);
-		if (fw_link == link_ab_result::INS_DELETED)
-			continue;
-
-		/*
-		 * m_forw and m_back are not linked, therefore linking cannot
-		 * fail with ALREADY_LINKED.
-		 */
-		assert(bk_link != link_ab_result::ALREADY_LINKED &&
-		    fw_link != link_ab_result::ALREADY_LINKED);
-
-		/* GUARD: bk_link == fw_link == link_ab_result::SUCCESS */
-		break;
+		/* Find predecessor of deleted element instead. */
+		e = e->pred_elemhead();
 	}
-
-	return e;
 }
 
 elem_ptr
-basic_iter::succ() noexcept
+basic_iter::succ(size_type n) noexcept
 {
-	if (!this->m_back.is_linked())
+	assert(n > 0);
+	if (!this->m_forw.is_linked())
 		return nullptr;
 
-	/* Use e to iterate over the list. */
-	elem_ptr e{ &this->m_back };
+	/* Start search at m_forw. */
+	elem_ptr e{ &this->m_forw };
+
+	/* Unlink m_back, m_forw. */
+	this->m_back.unlink();
+	this->m_forw.unlink();
+
+	/* Search forward until the n'th element or head. */
+	while (n-- > 0 && !e->is_head())
+		e = e->succ_elemhead();
 
 	for (;;) {
-		/* Unlink m_back, m_forw. */
+		/* Ensure iterator is no longer in use. */
+		this->m_back.wait_unlinked();
+		this->m_forw.wait_unlinked();
+
+		/* Link iterator around found element e. */
+		link_ab_result bk_link, fw_link;
+		if ((bk_link = simple_elem::link_before(
+		      simple_ptr{ &this->m_back }, e)) ==
+		      link_ab_result::SUCCESS &&
+		    (fw_link = simple_elem::link_after(
+		      simple_ptr{ &this->m_forw }, e)) ==
+		      link_ab_result::SUCCESS)
+			return e;
+
+		assert(bk_link == link_ab_result::INS_DELETED ||
+		    fw_link == link_ab_result::INS_DELETED);
+		assert(!e->is_head());
+
+		/* Link failure, unlink everything. */
 		this->m_back.unlink();
 		this->m_forw.unlink();
 
-		/* Find predecessor element. */
-		for (e = e->succ();
-		    !e->is_elem() && !e->is_head();
-		    e = e->succ());
-
-		/* Link m_back before the found predecessor e. */
-		this->m_back.wait_unlinked();
-		const auto bk_link = simple_elem::link_before(
-		    simple_ptr{ &this->m_back }, e);
-		assert(!e->is_head() || bk_link == link_ab_result::SUCCESS);
-		if (bk_link == link_ab_result::INS_DELETED)
-			continue;
-
-		/* Link m_forw after the found predecessor e. */
-		this->m_forw.wait_unlinked();
-		const auto fw_link = simple_elem::link_after(
-		    simple_ptr{ &this->m_forw }, e);
-		assert(!e->is_head() || fw_link == link_ab_result::SUCCESS);
-		if (fw_link == link_ab_result::INS_DELETED)
-			continue;
-
-		/*
-		 * m_forw and m_back are not linked, therefore linking cannot
-		 * fail with ALREADY_LINKED.
-		 */
-		assert(bk_link != link_ab_result::ALREADY_LINKED &&
-		    fw_link != link_ab_result::ALREADY_LINKED);
-
-		/* GUARD: bk_link == fw_link == link_ab_result::SUCCESS */
-		break;
+		/* Find successor of deleted element instead. */
+		e = e->succ_elemhead();
 	}
+}
 
-	return e;
+bool
+basic_iter::link_at(elem_ptr e) noexcept
+{
+	assert(e->is_elem());
+
+	this->m_back.unlink();
+	this->m_forw.unlink();
+
+	/* Link m_back before e. */
+	this->m_back.wait_unlinked();
+	const auto bk_link = simple_elem::link_before(
+	    simple_ptr{ &this->m_back }, e);
+
+	/* Link m_forw after e. */
+	this->m_forw.wait_unlinked();
+	const auto fw_link = simple_elem::link_after(
+	    simple_ptr{ &this->m_back }, e);
+
+	/* If both links succeeded, operation was successful. */
+	if (bk_link == link_ab_result::SUCCESS &&
+	    fw_link == link_ab_result::SUCCESS)
+		return true;
+
+	/* Failure to link, unlink iterator. */
+	this->m_back.unlink();
+	this->m_forw.unlink();
+	return false;
+}
+
+elem_ptr
+basic_iter::succ_until(elem_ptr i, const basic_iter& e) noexcept
+{
+	if (!i)
+		return nullptr;
+
+	const iter& e_ = e.m_back;
+	i = i->succ();
+	while (i && !i->is_elem()) {
+		if (i == &e_ || i->is_head())
+			return nullptr;
+		i = i->succ();
+	}
+	return i;
+}
+
+elem_ptr
+basic_iter::pred_until(elem_ptr i, const basic_iter& e) noexcept
+{
+	if (!i)
+		return nullptr;
+
+	const iter& e_ = e.m_forw;
+	i = i->pred();
+	while (i && !i->is_elem()) {
+		if (i == &e_ || i->is_head())
+			return nullptr;
+		i = i->pred();
+	}
+	return i;
 }
 
 
