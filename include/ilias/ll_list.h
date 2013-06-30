@@ -510,6 +510,9 @@ public:
 
 	ILIAS_ASYNC_EXPORT friend difference_type distance(
 	    const basic_iter&, const basic_iter&) noexcept;
+
+	ILIAS_ASYNC_EXPORT elem_ptr pred() noexcept;
+	ILIAS_ASYNC_EXPORT elem_ptr succ() noexcept;
 };
 
 inline bool

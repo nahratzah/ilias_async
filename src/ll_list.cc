@@ -570,5 +570,103 @@ distance(const basic_iter& first, const basic_iter& last) noexcept
 	return rv;
 }
 
+elem_ptr
+basic_iter::pred() noexcept
+{
+	if (!this->m_back.is_linked())
+		return nullptr;
+
+	/* Use e to iterate over the list. */
+	elem_ptr e{ &this->m_back };
+
+	for (;;) {
+		/* Unlink m_back, m_forw. */
+		this->m_back.unlink();
+		this->m_forw.unlink();
+
+		/* Find predecessor element. */
+		for (e = e->pred();
+		    !e->is_elem() && !e->is_head();
+		    e = e->pred());
+
+		/* Link m_back before the found predecessor e. */
+		this->m_back.wait_unlinked();
+		const auto bk_link = simple_elem::link_before(
+		    simple_ptr{ &this->m_back }, e);
+		assert(!e->is_head() || bk_link == link_ab_result::SUCCESS);
+		if (bk_link == link_ab_result::INS_DELETED)
+			continue;
+
+		/* Link m_forw after the found predecessor e. */
+		this->m_forw.wait_unlinked();
+		const auto fw_link = simple_elem::link_after(
+		    simple_ptr{ &this->m_forw }, e);
+		assert(!e->is_head() || fw_link == link_ab_result::SUCCESS);
+		if (fw_link == link_ab_result::INS_DELETED)
+			continue;
+
+		/*
+		 * m_forw and m_back are not linked, therefore linking cannot
+		 * fail with ALREADY_LINKED.
+		 */
+		assert(bk_link != link_ab_result::ALREADY_LINKED &&
+		    fw_link != link_ab_result::ALREADY_LINKED);
+
+		/* GUARD: bk_link == fw_link == link_ab_result::SUCCESS */
+		break;
+	}
+
+	return e;
+}
+
+elem_ptr
+basic_iter::succ() noexcept
+{
+	if (!this->m_back.is_linked())
+		return nullptr;
+
+	/* Use e to iterate over the list. */
+	elem_ptr e{ &this->m_back };
+
+	for (;;) {
+		/* Unlink m_back, m_forw. */
+		this->m_back.unlink();
+		this->m_forw.unlink();
+
+		/* Find predecessor element. */
+		for (e = e->succ();
+		    !e->is_elem() && !e->is_head();
+		    e = e->succ());
+
+		/* Link m_back before the found predecessor e. */
+		this->m_back.wait_unlinked();
+		const auto bk_link = simple_elem::link_before(
+		    simple_ptr{ &this->m_back }, e);
+		assert(!e->is_head() || bk_link == link_ab_result::SUCCESS);
+		if (bk_link == link_ab_result::INS_DELETED)
+			continue;
+
+		/* Link m_forw after the found predecessor e. */
+		this->m_forw.wait_unlinked();
+		const auto fw_link = simple_elem::link_after(
+		    simple_ptr{ &this->m_forw }, e);
+		assert(!e->is_head() || fw_link == link_ab_result::SUCCESS);
+		if (fw_link == link_ab_result::INS_DELETED)
+			continue;
+
+		/*
+		 * m_forw and m_back are not linked, therefore linking cannot
+		 * fail with ALREADY_LINKED.
+		 */
+		assert(bk_link != link_ab_result::ALREADY_LINKED &&
+		    fw_link != link_ab_result::ALREADY_LINKED);
+
+		/* GUARD: bk_link == fw_link == link_ab_result::SUCCESS */
+		break;
+	}
+
+	return e;
+}
+
 
 }} /* namespace ilias::ll_list_detail */
