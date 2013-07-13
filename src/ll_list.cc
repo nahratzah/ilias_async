@@ -295,7 +295,7 @@ simple_elem::unlink() noexcept
 }
 
 void
-simple_elem_acqrel::release(const simple_elem& e, elem_refcnt nrefs) const
+simple_elem_acqrel::release(const simple_elem& e, elem_refcnt nrefs)
 noexcept
 {
 	if (nrefs == 0)

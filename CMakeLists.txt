@@ -107,7 +107,6 @@ list (APPEND hdrs
 	include/ilias/llptr.h
 	include/ilias/ll_list.h
 	include/ilias/ll_queue.h
-	include/ilias/ll.h
 	include/ilias/refcnt.h
 	include/ilias/msg_queue.h
 	include/ilias/mq_ptr.h
@@ -123,7 +122,6 @@ list (APPEND srcs
 	src/hazard.cc
 	src/ll_list.cc
 	src/ll_queue.cc
-	src/ll.cc
 	src/refcnt.cc
 	src/msg_queue.cc
 	src/mq_ptr.cc

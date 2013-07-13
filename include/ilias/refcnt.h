@@ -161,57 +161,38 @@ protected:
 template<typename Type>
 struct default_refcount_mgr
 {
-	template<
-		typename RV = decltype(refcnt_release(
-		    std::declval<const Type&>(),
-		    std::declval<unsigned int>()))>
-	RV
+	static void
 	acquire(const Type& v, unsigned int nrefs) noexcept
 	{
-		return refcnt_acquire(v, nrefs);
+		refcnt_acquire(v, nrefs);
 	}
 
-	template<
-		typename RV = decltype(refcnt_release(
-		    std::declval<const Type&>(),
-		    std::declval<unsigned int>()))>
-	RV
+	static void
 	release(const Type& v, unsigned int nrefs) noexcept
 	{
-		return refcnt_release(v, nrefs);
-	}
-
-	void
-	acquire(const Type& v) noexcept
-	{
-		refcnt_acquire(v);
-	}
-
-	void
-	release(const Type& v) noexcept
-	{
-		refcnt_release(v);
+		refcnt_release(v, nrefs);
 	}
 };
 
 template<typename Type, typename AcqRel = default_refcount_mgr<Type> >
-class refpointer :
-	private AcqRel
+class refpointer
 {
 public:
-	typedef Type element_type;
-	typedef element_type* pointer;
-	typedef element_type& reference;
+	using element_type = Type;
+	using pointer = element_type*;
+	using reference = element_type&;
 
 private:
+	using const_reference = const element_type&;
+
 	pointer m_ptr;
 
 	/* Shortcuts to avoid lengthy no-except specifiers. */
 	static constexpr bool noexcept_acquire = noexcept(
-		AcqRel().acquire(*pointer())
+		AcqRel::acquire(std::declval<const_reference>(), 1U)
 	    );
 	static constexpr bool noexcept_release = noexcept(
-		AcqRel().release(*pointer())
+		AcqRel::release(std::declval<const_reference>(), 1U)
 	    );
 	static constexpr bool noexcept_acqrel =
 	    noexcept_acquire && noexcept_release;
@@ -271,7 +252,7 @@ public:
 		pointer tmp = nullptr;
 		swap(tmp, this->m_ptr);
 		if (tmp)
-			this->AcqRel::release(*tmp);
+			AcqRel::release(*tmp, 1U);
 	}
 
 	void
@@ -282,10 +263,10 @@ public:
 
 		pointer tmp = o.m_ptr;
 		if (tmp)
-			this->AcqRel::acquire(*tmp);
+			AcqRel::acquire(*tmp, 1U);
 		swap(tmp, this->m_ptr);
 		if (tmp)
-			this->AcqRel::release(*tmp);
+			AcqRel::release(*tmp, 1U);
 	}
 
 	void
@@ -299,7 +280,7 @@ public:
 		swap(this->m_ptr, o.m_ptr);
 
 		if (old)
-			this->AcqRel::release(*old);
+			AcqRel::release(*old, 1U);
 	}
 
 	void
@@ -309,11 +290,11 @@ public:
 		using std::swap;
 
 		if (do_acquire && p)
-			this->AcqRel::acquire(*p);
+			AcqRel::acquire(*p, 1U);
 		pointer tmp = p;
 		swap(tmp, this->m_ptr);
 		if (tmp)
-			this->AcqRel::release(*tmp);
+			AcqRel::release(*tmp, 1U);
 	}
 
 	template<typename U, typename U_AcqRel>

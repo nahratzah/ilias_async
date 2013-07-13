@@ -449,7 +449,7 @@ wq_run_lock::lock(workq_service& wqs) noexcept
 	 * or when the runq is depleted.
 	 */
 	for (;;) {
-		auto wq = wqs.m_wq_runq.pop_front_nowait();
+		auto wq = wqs.m_wq_runq.pop_front();
 		if (!wq)
 			break;		/* GUARD */
 		else if (this->lock(*wq)) {
@@ -984,10 +984,10 @@ namespace workq_detail {
 void
 wq_deleter::operator()(const workq_job* wqj) const noexcept
 {
-	wqj->get_workq()->m_runq.unlink_robust(
+	wqj->get_workq()->m_runq.erase(
 	    wqj->get_workq()->m_runq.iterator_to(
 	    const_cast<workq_job&>(*wqj)));
-	wqj->get_workq()->m_p_runq.unlink_robust(
+	wqj->get_workq()->m_p_runq.erase(
 	    wqj->get_workq()->m_p_runq.iterator_to(
 	    const_cast<workq_job&>(*wqj)));
 	const_cast<workq_job*>(wqj)->deactivate();
@@ -1011,7 +1011,7 @@ wq_deleter::operator()(const workq_job* wqj) const noexcept
 void
 wq_deleter::operator()(const workq* wq) const noexcept
 {
-	wq->get_workq_service()->m_wq_runq.unlink_robust(
+	wq->get_workq_service()->m_wq_runq.erase(
 	    wq->get_workq_service()->m_wq_runq.iterator_to(
 	    const_cast<workq&>(*wq)));
 

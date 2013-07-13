@@ -17,7 +17,7 @@
 #define ILIAS_WORKQ_H
 
 #include <ilias/ilias_async_export.h>
-#include <ilias/ll.h>
+#include <ilias/ll_list.h>
 #include <ilias/refcnt.h>
 #include <ilias/threadpool_intf.h>
 #include <atomic>
@@ -159,22 +159,22 @@ protected:
 template<typename Type>
 struct workq_intref_mgr
 {
-	void
-	acquire(const Type& v) noexcept
+	static void
+	acquire(const Type& v, std::uintptr_t n = 1) noexcept
 	{
 		const workq_int& i = v;
-		const auto o = i.int_refcnt.fetch_add(1, std::memory_order_acquire);
-		assert(o + 1 != 0);
+		const auto o = i.int_refcnt.fetch_add(n, std::memory_order_acquire);
+		assert(o + n != 0);
 	}
 
-	void
-	release(const Type& v) noexcept
+	static void
+	release(const Type& v, std::uintptr_t n = 1) noexcept
 	{
 		const workq_int& i = v;
-		const auto o = i.int_refcnt.fetch_sub(1, std::memory_order_release);
-		assert(o > 0);
+		const auto o = i.int_refcnt.fetch_sub(n, std::memory_order_release);
+		assert(o >= n);
 
-		if (o == 0 && i.int_suicide.load(std::memory_order_acquire))	/* XXX consume? */
+		if (o == n && i.int_suicide.load(std::memory_order_acquire))	/* XXX consume? */
 			delete &v;
 	}
 };
@@ -293,8 +293,8 @@ workq_deactivate(const std::shared_ptr<JobType>& j) noexcept
 
 class ILIAS_ASYNC_EXPORT workq_job :
 	public workq_detail::workq_int,
-	public ll_base_hook<workq_detail::runq_tag>,
-	public ll_base_hook<workq_detail::parallel_tag>
+	public ll_list_hook<workq_detail::runq_tag>,
+	public ll_list_hook<workq_detail::parallel_tag>
 {
 friend class workq;	/* Because MSVC and GCC cannot access private types in friend definitions. :P */
 friend class workq_service;
@@ -356,7 +356,7 @@ public:
 
 class workq final :
 	public workq_detail::workq_int,
-	public ll_base_hook<workq_detail::runq_tag>,
+	public ll_list_hook<workq_detail::runq_tag>,
 	public refcount_base<workq, workq_detail::wq_deleter>
 {
 friend class workq_service;
@@ -374,15 +374,12 @@ public:
 	};
 
 private:
-	typedef ll_smartptr_list<workq_detail::workq_intref<workq_job>,
-	    ll_base<workq_job, workq_detail::runq_tag>,
-	    refpointer_acquire<workq_job, workq_detail::workq_intref_mgr<workq_job> >,
-	    refpointer_release<workq_job, workq_detail::workq_intref_mgr<workq_job> > > job_runq;
-
-	typedef ll_smartptr_list<workq_detail::workq_intref<workq_job>,
-	    ll_base<workq_job, workq_detail::parallel_tag>,
-	    refpointer_acquire<workq_job, workq_detail::workq_intref_mgr<workq_job> >,
-	    refpointer_release<workq_job, workq_detail::workq_intref_mgr<workq_job> > > job_p_runq;
+	using job_runq = ll_smartptr_list<workq_job,
+	    workq_detail::workq_intref_mgr<workq_job>,
+	    workq_detail::runq_tag>;
+	using job_p_runq = ll_smartptr_list<workq_job,
+	    workq_detail::workq_intref_mgr<workq_job>,
+	    workq_detail::parallel_tag>;
 
 	job_runq m_runq;
 	job_p_runq m_p_runq;
@@ -623,7 +620,7 @@ public:
 
 
 class ILIAS_ASYNC_EXPORT co_runnable :
-	public ll_base_hook<coroutine_tag>,
+	public ll_list_hook<coroutine_tag>,
 	public workq_job
 {
 friend class ilias::workq_service;
@@ -713,15 +710,12 @@ public:
 
 
 private:
-	typedef ll_smartptr_list<workq_detail::workq_intref<workq>,
-	    ll_base<workq, workq_detail::runq_tag>,
-	    refpointer_acquire<workq, workq_detail::workq_intref_mgr<workq> >,
-	    refpointer_release<workq, workq_detail::workq_intref_mgr<workq> > > wq_runq;
-
-	typedef ll_smartptr_list<workq_detail::workq_intref<workq_detail::co_runnable>,
-	    ll_base<workq_detail::co_runnable, workq_detail::coroutine_tag>,
-	    refpointer_acquire<workq_detail::co_runnable, workq_detail::workq_intref_mgr<workq_detail::co_runnable> >,
-	    refpointer_release<workq_detail::co_runnable, workq_detail::workq_intref_mgr<workq_detail::co_runnable> > > co_runq;
+	using wq_runq = ll_smartptr_list<workq,
+	    workq_detail::workq_intref_mgr<workq>,
+	    workq_detail::runq_tag>;
+	using co_runq = ll_smartptr_list<workq_detail::co_runnable,
+	    workq_detail::workq_intref_mgr<workq_detail::co_runnable>,
+	    workq_detail::coroutine_tag>;
 
 	wq_runq m_wq_runq;
 	co_runq m_co_runq;
