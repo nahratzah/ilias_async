@@ -36,6 +36,8 @@ enum class link_ab_result : int {
 	ALREADY_LINKED,
 };
 
+template<typename List, typename RefPtr> class list_iterator;
+
 /* Convert link_result to link_ab_result, undefined for invalid conversions. */
 inline link_ab_result
 ab_result(const link_result& lr) noexcept
@@ -191,15 +193,15 @@ public:
 		 * Since the release need not execute anyway, we manually
 		 * release m_pred and m_succ instead.
 		 */
-		auto succ = std::get<0>(
-		    this->m_succ.exchange(nullptr, std::memory_order_acquire));
-		auto pred = std::get<0>(
-		    this->m_pred.exchange(nullptr, std::memory_order_acquire));
-		assert(succ == this && pred == this);
+		auto succ =
+		    this->m_succ.exchange(nullptr, std::memory_order_acquire);
+		auto pred =
+		    this->m_pred.exchange(nullptr, std::memory_order_acquire);
+		assert(std::get<0>(succ) == this && std::get<0>(pred) == this);
 
 		assert(this->m_refcnt.load(std::memory_order_relaxed) == 2U);
-		succ.release();
-		pred.release();
+		std::get<0>(succ).release();
+		std::get<0>(pred).release();
 	}
 
 	bool operator==(const simple_elem&) const = delete;
@@ -506,6 +508,7 @@ public:
 class basic_iter
 {
 friend class head;
+template<typename List, typename RefPtr> friend class list_iterator;
 
 private:
 	mutable iter m_forw{ elem_type::ITER_FWD };
@@ -582,7 +585,7 @@ private:
 			return;
 
 		elem_ptr e;
-		typename list_iterator::pointer v;
+		RefPtr v;
 
 		do {
 			e = this->m_iter.pred(n);
@@ -594,7 +597,6 @@ private:
 		} while (v == nullptr || e != nullptr);
 
 		this->m_value = std::move(v);
-		return *this;
 	}
 
 	void
@@ -604,7 +606,7 @@ private:
 			return;
 
 		elem_ptr e;
-		typename list_iterator::pointer v;
+		RefPtr v;
 
 		do {
 			e = this->m_iter.pred(n);
@@ -616,7 +618,6 @@ private:
 		} while (v == nullptr || e != nullptr);
 
 		this->m_value = std::move(v);
-		return *this;
 	}
 
 public:
@@ -777,11 +778,16 @@ public:
 	noexcept(
 		noexcept(fn(b)))
 	{
-		elem_ptr i = basic_iter::succ_until(&b.m_forw, e.m_iter);
+		elem_ptr i = basic_iter::succ_until(
+		    &b.m_iter.m_forw, e.m_iter);
 		while (i) {
-			fn(b);
-			while (i && !b.link_at(i))
-				i = basic_iter::succ_until(i, e.m_iter);
+			auto p = b.m_list->cast(i);
+			if (p) {
+				b.link_at(*b.m_list, p);
+				fn(b);
+			}
+
+			i = basic_iter::succ_until(i, e.m_iter);
 		}
 		return fn;
 	}
@@ -975,7 +981,7 @@ class ll_list_hook
 {
 template<typename FriendType, typename FriendTag> friend class ll_list;
 template<typename FriendType, typename FriendAcqRel, typename FriendTag>
-    friend class ll_list;
+    friend class ll_smartptr_list;
 
 public:
 	ll_list_hook() = default;
@@ -1021,6 +1027,9 @@ template<typename Type, typename AcqRel = default_refcount_mgr<Type>,
     typename Tag = void>
 class ll_smartptr_list
 {
+template<typename List, typename RefPtr>
+    friend class ll_list_detail::list_iterator;
+
 public:
 	using value_type = Type;
 	using reference = value_type&;
@@ -1080,18 +1089,19 @@ private:
 
 	/* Hazard grant operation after unlinking an element. */
 	void
-	unlink_post(const_reference& p, unsigned int nrefs = 0) const noexcept
+	unlink_post(const value_type* p, unsigned int nrefs = 0) const noexcept
 	{
 		if (p) {
-			hook_type& hook = p;		/* Cast to hook. */
-			ll_list_detail::elem& e = hook;	/* Cast to elem. */
+			const hook_type& hook = *p;	/* Cast to hook. */
+			const ll_list_detail::elem& e = hook;
+							/* Cast to elem. */
 			AcqRel acqrel;
 
-			hazard_t::grant([&acqrel, &p](unsigned int n) {
-				acqrel.acquire(p, n);
+			hazard_t::grant([&acqrel, p](unsigned int n) {
+				acqrel.acquire(*p, n);
 			    },
-			    [&acqrel, &p](unsigned int n) {
-				acqrel.release(p, n);
+			    [&acqrel, p](unsigned int n) {
+				acqrel.release(*p, n);
 			    },
 			    this->m_impl, e, nrefs);
 		}
@@ -1216,7 +1226,7 @@ public:
 	pop_front() noexcept
 	{
 		auto rv = this->cast(this->m_impl.pop_front());
-		unlink_post(rv, 1);
+		unlink_post(rv.get(), 1);
 		return rv;
 	}
 
@@ -1224,7 +1234,7 @@ public:
 	pop_back() noexcept
 	{
 		auto rv = this->cast(this->m_impl.pop_back());
-		unlink_post(rv, 1);
+		unlink_post(rv.get(), 1);
 		return rv;
 	}
 
@@ -1261,13 +1271,13 @@ public:
 	iterator
 	erase(const_iterator i)
 	{
-		throw_validity(i, this, true);
+		throw_validity(i, *this, true);
 		iterator rv{ i, ll_list_detail::convert_tag{} };
 		++rv;
 
 		do_noexcept([&]() {
 			if (as_elem(i.get())->unlink())
-				post_unlink(i, 1);
+				unlink_post(i.get().get(), 1);
 		    });
 
 		return rv;
@@ -1276,13 +1286,13 @@ public:
 	iterator
 	erase(const const_iterator& b, const const_iterator& e)
 	{
-		throw_validity(b, this, true);
-		throw_validity(e, this, false);
+		throw_validity(b, *this, true);
+		throw_validity(e, *this, false);
 		iterator rv{ e, ll_list_detail::convert_tag{} };
 
 		for_each_iterator(b, e, [this](const const_iterator& i) {
 			if (as_elem(i.get())->unlink())
-				post_unlink(i, 1);
+				unlink_post(i.get().get(), 1);
 		    });
 		return rv;
 	}
@@ -1357,7 +1367,7 @@ for_each(ll_list_detail::list_iterator<List, Ptr> b,
     ll_list_detail::list_iterator<List, Ptr> e, Fn fn)
 noexcept(
 	noexcept(fn(
-	    std::declval<std::iterator_traits<
+	    std::declval<typename std::iterator_traits<
 	      ll_list_detail::list_iterator<List, Ptr>>::reference>())))
 {
 	using iter_type = ll_list_detail::list_iterator<List, Ptr>;
