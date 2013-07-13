@@ -301,18 +301,19 @@ noexcept
 	if (nrefs == 0)
 		return;
 
-	/*
-	 * XXX This is potentially hard on the stack, since each element
-	 * may require release on another element.
-	 * Stack depth could quickly grow because of the recursion.
-	 *
-	 * Tail recursion will not work, since an unlinked element
-	 * results in 2 new elements potentially requiring unlinking.
-	 */
 	auto r = e.m_refcnt.load(std::memory_order_relaxed);
 	do {
 		assert(r >= nrefs);
 		if (r == nrefs) {
+			if (!std::get<0>(e.m_pred.load_no_acquire(
+			     std::memory_order_relaxed)) ||
+			    !std::get<0>(e.m_succ.load_no_acquire(
+			     std::memory_order_relaxed))) {
+				e.m_refcnt.fetch_sub(nrefs,
+				    std::memory_order_release);
+				return;
+			}
+
 			if (nrefs < 2U) {
 				e.m_refcnt.fetch_add(2U - nrefs,
 				    std::memory_order_acquire);

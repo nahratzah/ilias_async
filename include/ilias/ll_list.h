@@ -1268,33 +1268,92 @@ public:
 		return rv;
 	}
 
+	template<typename Disposer>
 	iterator
-	erase(const_iterator i)
+	erase_and_dispose(const_iterator i, Disposer disposer)
 	{
 		throw_validity(i, *this, true);
 		iterator rv{ i, ll_list_detail::convert_tag{} };
 		++rv;
 
 		do_noexcept([&]() {
-			if (as_elem(i.get())->unlink())
+			if (as_elem(i.get())->unlink()) {
 				unlink_post(i.get().get(), 1);
+				disposer(*i.get());
+			}
 		    });
 
 		return rv;
 	}
-
+	template<typename Disposer>
 	iterator
-	erase(const const_iterator& b, const const_iterator& e)
+	erase_and_dispose(const const_iterator& b, const const_iterator& e,
+	    Disposer disposer)
 	{
 		throw_validity(b, *this, true);
 		throw_validity(e, *this, false);
 		iterator rv{ e, ll_list_detail::convert_tag{} };
 
 		for_each_iterator(b, e, [this](const const_iterator& i) {
-			if (as_elem(i.get())->unlink())
+			if (as_elem(i.get())->unlink()) {
 				unlink_post(i.get().get(), 1);
+				disposer(i.get());
+			}
 		    });
 		return rv;
+	}
+
+	iterator
+	erase(const_iterator i)
+	{
+		return this->erase_and_dispose(i, [](const_reference) {
+			return;
+		    });
+	}
+	iterator
+	erase(const const_iterator& b, const const_iterator& e)
+	{
+		return this->erase_and_dispose(b, e, [](const_reference) {
+			return;
+		    });
+	}
+
+	template<typename Predicate, typename Disposer>
+	void
+	remove_and_dispose_if(Predicate predicate, Disposer disposer)
+	{
+		for (auto i = this->m_impl.succ_elemhead();
+		    i != &this->m_impl;
+		    i = i->m_impl.succ_elemhead()) {
+			auto p = this->cast(i);
+			if (p && predicate(p) && i->unlink())
+				disposer(*p);
+		}
+	}
+	template<typename Predicate>
+	void
+	remove_if(Predicate predicate)
+	{
+		this->remove_and_dispose_if(std::move(predicate),
+		    [](const_reference) {
+			return;
+		    });
+	}
+	template<typename Disposer>
+	void
+	remove_and_dispose(const_reference v, Disposer disposer)
+	{
+		this->remove_and_dispose_if([&v](const pointer p) {
+			return v == *p;
+		    },
+		    std::move(disposer));
+	}
+	void
+	remove(const_reference v)
+	{
+		this->remove_if([&v](const pointer p) {
+			return v == *p;
+		    });
 	}
 
 	template<typename FN>
