@@ -95,6 +95,24 @@ if (NOT HAS___THREAD AND NOT HAS_THREAD_LOCAL)
 else ()
 	add_definitions (-DHAS_TLS=1)
 endif ()
+# Enable thread-local (constructor/destructor based) workaround if required.
+if (NOT HAS_THREAD_LOCAL)
+	# Add to srcs, since this is not a public header.
+	list (APPEND srcs internal/thread_local.h internal/thread_local.cc)
+	add_definitions (-DHAS_THREAD_LOCAL=0)
+else ()
+	add_definitions (-DHAS_THREAD_LOCAL=1)
+endif ()
+# Declare __thread/declspec/... keyword.
+if (WIN32)
+	add_definitions ("-DTHREAD_LOCAL=declspec(thread)")
+elseif (HAS_THREAD_LOCAL)
+	add_definitions ("-DTHREAD_LOCAL=thread_local")
+elseif (HAS___THREAD)
+	add_definitions ("-DTHREAD_LOCAL=__thread")
+else ()
+	add_definitions ("-DTHREAD_LOCAL=DO_NOT_USE_THREAD_LOCAL")
+endif ()
 
 # Test for atomic shared_ptr operations.
 file (READ "CMake/source/atomic_shared_ptr.cc" ATOMIC_SHARED_PTR_CC)
