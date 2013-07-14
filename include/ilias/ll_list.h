@@ -523,8 +523,8 @@ private:
 	}
 
 public:
-	bool insert_after(const basic_iter&, elem*);
-	bool insert_before(const basic_iter&, elem*);
+	inline bool insert_after(const basic_iter&, elem*);
+	inline bool insert_before(const basic_iter&, elem*);
 };
 
 class basic_iter
@@ -592,6 +592,7 @@ class list_iterator
 	    typename std::pointer_traits<RefPtr>::element_type&>
 {
 template<typename OL, typename ORP> friend class list_iterator;
+template<typename Type, typename AR, typename Tag> friend class ll_list;
 
 private:
 	using list_type = List;
@@ -631,7 +632,7 @@ private:
 		RefPtr v;
 
 		do {
-			e = this->m_iter.pred(n);
+			e = this->m_iter.succ(n);
 			if (e && !e->is_head())
 				v = this->m_list->cast(e);
 			else
@@ -751,6 +752,12 @@ public:
 	operator RefPtr() const noexcept
 	{
 		return this->get();
+	}
+
+	RefPtr
+	release() const noexcept
+	{
+		return std::move(this->m_value);
 	}
 
 	friend list_iterator
@@ -951,6 +958,14 @@ public:
 	{
 		++this->m_base;
 		return *this;
+	}
+
+	auto
+	release() const
+	noexcept(noexcept(std::declval<Base>().release()))
+	->	decltype(std::declval<Base>().release())
+	{
+		return this->m_base.release();
 	}
 
 	typename reverse_iterator_tmpl::reference
@@ -1424,12 +1439,26 @@ public:
 	}
 
 	/*
+	 * Insert operation.
+	 */
+	iterator
+	insert(const const_iterator& i, typename base::pointer p)
+	{
+		throw_validity(i, *this, false);
+		iterator rv{ i, ll_list_detail::convert_tag{} };
+
+		if (this->m_impl.insert_before(i.m_iter, this->as_elem(p)))
+			base::ptr_release(p);
+		return rv;
+	}
+
+	/*
 	 * Erase operation.
 	 */
 
 	template<typename Disposer>
 	iterator
-	erase_and_dispose(const_iterator i,
+	erase_and_dispose(const const_iterator& i,
 	    Disposer disposer)
 	{
 		throw_validity(i, *this, true);

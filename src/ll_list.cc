@@ -9,27 +9,28 @@ class simple_elem::prepare_store
 {
 private:
 	simple_elem_ptr& m_ptr;
+	const simple_ptr m_expect;
 	bool success;
 
 public:
-	prepare_store(simple_elem_ptr& p, simple_ptr v) noexcept
+	prepare_store(simple_elem_ptr& p, simple_ptr expect, simple_ptr v)
+	noexcept
 	:	m_ptr{ p },
-		success{
-			p.compare_exchange_strong(
-			    add_present(std::get<0>(
-			      p.load(std::memory_order_relaxed))),
-			    add_present(std::move(v)),
-			    std::memory_order_relaxed,
-			    std::memory_order_relaxed)
-		}
+		m_expect{ expect },
+		success{ false }
 	{
-		/* Empty body. */
+		success = p.compare_exchange_strong(
+		    add_present(std::move(expect)),
+		    add_present(std::move(v)),
+		    std::memory_order_relaxed,
+		    std::memory_order_relaxed);
 	}
 
 	prepare_store(const prepare_store&) = delete;
 
 	prepare_store(prepare_store&& o) noexcept
 	:	m_ptr{ o.m_ptr },
+		m_expect{ o.m_expect },
 		success{ false }
 	{
 		using std::swap;
@@ -39,8 +40,10 @@ public:
 
 	~prepare_store() noexcept
 	{
-		if (this->success)
-			this->m_ptr.reset(std::memory_order_relaxed);
+		if (this->success) {
+			this->m_ptr.store(add_present(this->m_expect),
+			    std::memory_order_relaxed);
+		}
 	}
 
 	explicit operator bool() const noexcept
@@ -179,8 +182,8 @@ noexcept
 
 	assert(b && e && pred && succ);
 
-	prepare_store b_store{ b->m_pred, pred },
-	    e_store{ e->m_succ, succ };
+	prepare_store b_store{ b->m_pred, b, pred },
+	    e_store{ e->m_succ, e, succ };
 	if (!b_store || !e_store)
 		return link_result::ALREADY_LINKED;
 
@@ -298,58 +301,29 @@ void
 simple_elem_acqrel::release(const simple_elem& e, elem_refcnt nrefs)
 noexcept
 {
+	simple_elem*const nil = nullptr;
+
 	if (nrefs == 0)
 		return;
 
-	auto r = e.m_refcnt.load(std::memory_order_relaxed);
-	do {
-		assert(r >= nrefs);
-		if (r == nrefs) {
-			if (!std::get<0>(e.m_pred.load_no_acquire(
-			     std::memory_order_relaxed)) ||
-			    !std::get<0>(e.m_succ.load_no_acquire(
-			     std::memory_order_relaxed))) {
-				e.m_refcnt.fetch_sub(nrefs,
-				    std::memory_order_release);
-				return;
-			}
+	auto r = e.m_refcnt.fetch_sub(nrefs, std::memory_order_release);
+	assert(r >= nrefs);
+	if (r != nrefs)
+		return;
 
-			if (nrefs < 2U) {
-				e.m_refcnt.fetch_add(2U - nrefs,
-				    std::memory_order_acquire);
-				nrefs = 2U;
-			} else {
-				std::atomic_thread_fence(
-				    std::memory_order_acquire);
-			}
+	auto p = e.m_pred.load_no_acquire(std::memory_order_relaxed);
+	if (p != add_present(&e) && p != add_present(nil)) {
+		e.m_pred.store(add_present(
+		    simple_ptr{ const_cast<simple_elem*>(&e) }),
+		    std::memory_order_release);
+	}
 
-			auto pred_store = add_present(simple_ptr{
-				const_cast<simple_elem*>(&e),
-				false
-			    });
-			auto succ_store = add_present(simple_ptr{
-				const_cast<simple_elem*>(&e),
-				false
-			    });
-			nrefs -= 2U;
-
-			e.m_pred.store(std::move(pred_store),
-			    std::memory_order_release);
-			e.m_succ.store(std::move(succ_store),
-			    std::memory_order_release);
-
-			if (nrefs > 0U) {
-				e.m_refcnt.fetch_sub(nrefs,
-				    std::memory_order_release);
-			} else {
-				std::atomic_thread_fence(
-				    std::memory_order_release);
-			}
-			return;
-		}
-	} while (!e.m_refcnt.compare_exchange_weak(r, r - nrefs,
-	    std::memory_order_release,
-	    std::memory_order_relaxed));
+	auto s = e.m_succ.load_no_acquire(std::memory_order_relaxed);
+	if (s != add_present(&e) && s != add_present(nil)) {
+		e.m_succ.store(add_present(
+		    simple_ptr{ const_cast<simple_elem*>(&e) }),
+		    std::memory_order_release);
+	}
 }
 
 head::head(head&& o) noexcept
@@ -430,8 +404,14 @@ head::link_before_(const elem_ptr& pos0, elem* e) noexcept
 				break;
 		}
 
-		rv = simple_elem::link(simple_ptr{ e },
-		    std::make_tuple(std::move(pos_pred), std::move(pos)));
+		simple_ptr e_ptr{ e };
+		rv = simple_elem::link(e_ptr,
+		    std::make_tuple(pos_pred, pos));
+
+		/* XXX Debug */
+		pos.reset();
+		pos_pred.reset();
+		e_ptr.reset();
 	} while (rv == link_result::RETRY);
 
 	return (rv == link_result::SUCCESS);
