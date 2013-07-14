@@ -870,8 +870,8 @@ workq_service::workq_service()
 
 workq_service::~workq_service() noexcept
 {
-	assert(this->m_wq_runq.empty());
-	assert(this->m_co_runq.empty());
+	this->m_wq_runq.clear();
+	this->m_co_runq.clear();
 
 	atomic_store(&this->m_wakeup_cb, nullptr);
 }
@@ -889,7 +889,7 @@ workq_service::co_to_runq(
     std::size_t max_threads) noexcept
 {
 	assert(max_threads > 0);
-	const bool pushback_succeeded = (this->m_co_runq.push_back(co));
+	const bool pushback_succeeded = this->m_co_runq.push_back(co);
 	assert(pushback_succeeded);
 	this->wakeup(max_threads);
 }
@@ -928,30 +928,28 @@ workq_service::aid(unsigned int count) noexcept
 	using workq_detail::co_runnable;
 
 	unsigned int i;
-	auto co = begin(this->m_co_runq);
+
 	for (i = 0; i < count; ++i) {
 		/* Run co-runnables before workqs. */
-		if (co != end(this->m_co_runq)) {
-			do {
-				workq_intref<co_runnable> co_ptr = co.get();
-
+		if (!this->m_co_runq.empty()) {
+			auto co = begin(this->m_co_runq);
+			bool ran = false;
+			while (co.get() && i < count) {
 				/* Acquire lock and
 				 * publish intent to execute. */
-				wq_stack stack(*co_ptr);
+				wq_stack stack{ *co };
 
-				/* Release list refcount,
-				 * so co_runnable::release() can unlink. */
-				co = this->m_co_runq.end();
-
-				if (co_ptr->co_run())
+				if ((ran = co->co_run()))
 					++i;
-				co = this->m_co_runq.begin();
-			} while (i < count && co != end(this->m_co_runq));
+				++co;
+			}
+
+			/* Retest counter. */
 			continue;
 		}
 
 		/* Run a workq. */
-		workq_detail::wq_run_lock rlck(*this);
+		workq_detail::wq_run_lock rlck{ *this };
 		if (!rlck.is_locked()) {
 			/* GUARD: No co-runnables, nor workqs available. */
 			break;
@@ -963,9 +961,6 @@ workq_service::aid(unsigned int count) noexcept
 			wq_stack stack(std::move(rlck));
 			job->run();
 		}
-
-		/* Update co-routine iterator. */
-		co = begin(this->m_co_runq);
 	}
 
 	return (i > 0);

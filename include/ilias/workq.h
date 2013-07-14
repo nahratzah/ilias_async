@@ -724,8 +724,11 @@ private:
 	ILIAS_ASYNC_LOCAL workq_service();
 	ILIAS_ASYNC_LOCAL ~workq_service() noexcept;
 
-	ILIAS_ASYNC_LOCAL void wq_to_runq(workq_detail::workq_intref<workq>) noexcept;
-	ILIAS_ASYNC_LOCAL void co_to_runq(workq_detail::workq_intref<workq_detail::co_runnable>, std::size_t) noexcept;
+	ILIAS_ASYNC_LOCAL void wq_to_runq(workq_detail::workq_intref<workq>)
+	    noexcept;
+	ILIAS_ASYNC_LOCAL void co_to_runq(
+	    workq_detail::workq_intref<workq_detail::co_runnable>, std::size_t)
+	    noexcept;
 	ILIAS_ASYNC_LOCAL void wakeup(std::size_t = 1) noexcept;
 
 public:
@@ -745,29 +748,33 @@ private:
 	workq::run_lck m_lck;
 
 public:
-	workq_pop_state() noexcept :
-		m_wq(),
+	workq_pop_state()
+	noexcept
+	:	m_wq(),
 		m_lck()
 	{
 		/* Empty body. */
 	}
 
-	workq_pop_state(const workq_pop_state& o) noexcept :
-		m_wq(o.m_wq),
+	workq_pop_state(const workq_pop_state& o)
+	noexcept
+	:	m_wq(o.m_wq),
 		m_lck(o.m_lck)
 	{
 		/* Empty body. */
 	}
 
-	workq_pop_state(workq_pop_state&& o) noexcept :
-		m_wq(std::move(o.m_wq)),
+	workq_pop_state(workq_pop_state&& o)
+	noexcept
+	:	m_wq(std::move(o.m_wq)),
 		m_lck(std::move(o.m_lck))
 	{
 		/* Empty body. */
 	}
 
-	workq_pop_state(workq_ptr wq, workq::run_lck lck = workq::RUN_SINGLE) noexcept :
-		m_wq(wq),
+	workq_pop_state(workq_ptr wq, workq::run_lck lck = workq::RUN_SINGLE)
+	noexcept
+	:	m_wq(wq),
 		m_lck(lck)
 	{
 		/* Empty body. */
