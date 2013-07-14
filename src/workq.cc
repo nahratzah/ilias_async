@@ -19,6 +19,9 @@
 #if !HAS_TLS
 #include "tls_fallback.h"
 #endif
+#if !HAS_THREAD_LOCAL
+#include "thread_local.h"
+#endif
 
 
 #ifdef _MSC_VER
@@ -251,6 +254,8 @@ public:
 		m_tls(get_wq_tls()),
 		m_wqs(&wqs)
 	{
+		using std::begin;
+
 		if (this->m_tls.wqs)
 			throw publish_wqs_busy();
 		this->m_tls.wqs = this->m_wqs;
@@ -448,23 +453,39 @@ wq_run_lock::lock(workq_service& wqs) noexcept
 	 * Loop terminates when either we manage to lock a job on a workq,
 	 * or when the runq is depleted.
 	 */
+	auto& runq_iter = wqs.get_runq_iterpos();
 	for (;;) {
-		auto wq = wqs.m_wq_runq.pop_front();
-		if (!wq)
+		auto wq = (++runq_iter).get();
+		if (!wq) {
+			if (!wqs.m_wq_runq.empty())
+				continue;	/* Iterator wraparound. */
 			break;		/* GUARD */
-		else if (this->lock(*wq)) {
+		} else if (this->lock(*wq)) {
 			/* Acquired a job: workq may stay on the runq. */
-			wqs.m_wq_runq.push_back(std::move(wq));
-			wqs.wakeup();
 			break;		/* GUARD */
 		} else {
 			/*
 			 * No job acquired, workq is depleted and
-			 * (automatically) removed from the runq:
-			 * wq is unlinked when scope of the loop ends.
+			 * must be removed.
 			 */
+			wqs.m_wq_runq.erase(runq_iter);
+
+			/*
+			 * Retest to see if the workq has a job.
+			 *
+			 * This test is important, because without it there
+			 * will be a race condition where the job acquires new
+			 * workq between the lock (above) and the erase call
+			 * we just did.
+			 */
+			if (this->lock(*wq)) {
+				wqs.m_wq_runq.insert(runq_iter, std::move(wq));
+				wqs.wakeup();
+				break;
+			}
 		}
 	}
+	runq_iter.release();
 	return this->is_locked();
 }
 
@@ -861,6 +882,27 @@ workq_service::threadpool_client::has_work() noexcept
 {
 	threadpool_client_lock lck{ *this };
 	return (this->has_client() && !this->m_self.empty());
+}
+
+workq_service::wq_runq::iterator&
+workq_service::get_runq_iterpos() noexcept
+{
+	using runq_iterator = wq_runq::iterator;
+	using tls_type = std::tuple<runq_iterator, workq_service*>;
+
+#if HAS_THREAD_LOCAL
+	static thread_local tls_type m_impl;
+	tls_type& tls = m_impl;
+#else
+	static tls_cd<tls_type> m_impl;
+	tls_type& tls = *m_impl;
+#endif
+
+	if (std::get<1>(tls) != this) {
+		std::get<0>(tls) = this->m_wq_runq.begin();
+		std::get<1>(tls) = this;
+	}
+	return std::get<0>(tls);
 }
 
 workq_service::workq_service()

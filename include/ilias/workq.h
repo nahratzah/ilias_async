@@ -721,6 +721,8 @@ private:
 	co_runq m_co_runq;
 	threadpool_client_ptr<threadpool_client> m_wakeup_cb;
 
+	ILIAS_ASYNC_LOCAL wq_runq::iterator& get_runq_iterpos() noexcept;
+
 	ILIAS_ASYNC_LOCAL workq_service();
 	ILIAS_ASYNC_LOCAL ~workq_service() noexcept;
 
