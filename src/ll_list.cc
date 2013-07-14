@@ -404,14 +404,8 @@ head::link_before_(const elem_ptr& pos0, elem* e) noexcept
 				break;
 		}
 
-		simple_ptr e_ptr{ e };
-		rv = simple_elem::link(e_ptr,
+		rv = simple_elem::link(simple_ptr{ e },
 		    std::make_tuple(pos_pred, pos));
-
-		/* XXX Debug */
-		pos.reset();
-		pos_pred.reset();
-		e_ptr.reset();
 	} while (rv == link_result::RETRY);
 
 	return (rv == link_result::SUCCESS);
