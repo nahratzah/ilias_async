@@ -33,8 +33,6 @@ template<typename Type, typename AcqRel>
 struct acqrel_helper
 {
 private:
-	mutable AcqRel m_acqrel;
-
 	using ref_t = Type&;
 
 public:
@@ -47,11 +45,11 @@ public:
 	template<typename Refcount, typename Return>
 	void
 	acquire(ref_t p, std::size_t nrefs,
-	    Return (AcqRel::*)(ref_t, Refcount) = &AcqRel::acquire)
+	    Return (*)(ref_t, Refcount) = &AcqRel::acquire)
 	const noexcept
 	{
 		if (nrefs > 0)
-			this->m_acqrel.acquire(p, nrefs);
+			AcqRel::acquire(p, nrefs);
 	}
 
 	/*
@@ -63,11 +61,11 @@ public:
 	template<typename Refcount, typename Return>
 	void
 	release(ref_t p, std::size_t nrefs,
-	    Return (AcqRel::*)(ref_t, Refcount) = &AcqRel::release)
+	    Return (*)(ref_t, Refcount) = &AcqRel::release)
 	const noexcept
 	{
 		if (nrefs > 0)
-			this->m_acqrel.release(p, nrefs);
+			AcqRel::release(p, nrefs);
 	}
 
 	/*
@@ -79,7 +77,7 @@ public:
 	acquire(ref_t p, std::size_t nrefs, ...) const noexcept
 	{
 		while (nrefs-- > 0)
-			this->m_acqrel.acquire(p);
+			AcqRel::acquire(p);
 	}
 
 	/*
@@ -91,7 +89,7 @@ public:
 	release(ref_t p, std::size_t nrefs, ...) const noexcept
 	{
 		while (nrefs-- > 0)
-			this->m_acqrel.release(p);
+			AcqRel::release(p);
 	}
 };
 
