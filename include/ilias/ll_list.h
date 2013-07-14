@@ -610,14 +610,16 @@ private:
 		elem_ptr e;
 		RefPtr v;
 
-		do {
+		for (;;) {
 			e = this->m_iter.pred(n);
-			if (e && !e->is_head())
+			if (!e)
+				break;
+			else if (!e->is_head()) {
 				v = this->m_list->cast(e);
-			else
-				e = nullptr;
+				break;
+			}
 			n = 1;
-		} while (v == nullptr || e != nullptr);
+		}
 
 		this->m_value = std::move(v);
 	}
@@ -631,14 +633,16 @@ private:
 		elem_ptr e;
 		RefPtr v;
 
-		do {
+		for (;;) {
 			e = this->m_iter.succ(n);
-			if (e && !e->is_head())
+			if (!e)
+				break;
+			else if (!e->is_head()) {
 				v = this->m_list->cast(e);
-			else
-				e = nullptr;
+				break;
+			}
 			n = 1;
-		} while (v == nullptr || e != nullptr);
+		}
 
 		this->m_value = std::move(v);
 	}
