@@ -1,5 +1,7 @@
 #include <ilias/ll_list.h>
 
+#include <iostream> // DEBUG
+
 
 namespace ilias {
 namespace ll_list_detail {
@@ -298,6 +300,17 @@ simple_elem::unlink() noexcept
 }
 
 void
+simple_elem_acqrel::acquire(const simple_elem& e, elem_refcnt nrefs)
+noexcept
+{
+	if (nrefs == 0)
+		return;
+	std::cerr << "simple_elem_acqrel::acquire(" << &e << ", " << nrefs << ")";	// DEBUG
+	auto r = e.m_refcnt.fetch_add(nrefs, std::memory_order_acquire);
+	std::cerr << "  " << r << "  -->  " << r + nrefs << std::endl;	// DEBUG
+}
+
+void
 simple_elem_acqrel::release(const simple_elem& e, elem_refcnt nrefs)
 noexcept
 {
@@ -305,8 +318,10 @@ noexcept
 
 	if (nrefs == 0)
 		return;
+	std::cerr << "simple_elem_acqrel::release(" << &e << ", " << nrefs << ")";	// DEBUG
 
 	auto r = e.m_refcnt.fetch_sub(nrefs, std::memory_order_release);
+	std::cerr << "  " << r << "  -->  " << r - nrefs << std::endl;	// DEBUG
 	assert(r >= nrefs);
 	if (r != nrefs)
 		return;

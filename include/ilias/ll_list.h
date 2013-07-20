@@ -92,8 +92,8 @@ using difference_type = std::intptr_t;
 
 struct simple_elem_acqrel
 {
-	static inline void acquire(const simple_elem&, elem_refcnt)
-	    noexcept;
+	ILIAS_ASYNC_EXPORT static void acquire(const simple_elem&,
+	    elem_refcnt) noexcept;
 	ILIAS_ASYNC_EXPORT static void release(const simple_elem&,
 	    elem_refcnt) noexcept;
 };
@@ -278,16 +278,6 @@ public:
 		    std::get<0>(succ) == this);
 	}
 };
-
-inline void
-simple_elem_acqrel::acquire(const simple_elem& e, elem_refcnt nrefs)
-noexcept
-{
-	if (nrefs > 0) {
-		e.m_refcnt.fetch_add(nrefs,
-		    std::memory_order_acquire);
-	}
-}
 
 
 class elem
