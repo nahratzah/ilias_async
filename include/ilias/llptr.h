@@ -42,11 +42,8 @@ public:
 	 *
 	 * SFINAE based.
 	 */
-	template<typename Refcount, typename Return>
 	void
-	acquire(ref_t p, std::size_t nrefs,
-	    Return (*)(ref_t, Refcount) = &AcqRel::acquire)
-	const noexcept
+	acquire(ref_t p, std::size_t nrefs) const noexcept
 	{
 		if (nrefs > 0)
 			AcqRel::acquire(p, nrefs);
@@ -58,38 +55,11 @@ public:
 	 *
 	 * SFINAE based.
 	 */
-	template<typename Refcount, typename Return>
 	void
-	release(ref_t p, std::size_t nrefs,
-	    Return (*)(ref_t, Refcount) = &AcqRel::release)
-	const noexcept
+	release(ref_t p, std::size_t nrefs) const noexcept
 	{
 		if (nrefs > 0)
 			AcqRel::release(p, nrefs);
-	}
-
-	/*
-	 * Fallback implementation of acquire, if the SFINAE above fails.
-	 *
-	 * To acquire N references, N calls to AcqRel::acquire are performed.
-	 */
-	void
-	acquire(ref_t p, std::size_t nrefs, ...) const noexcept
-	{
-		while (nrefs-- > 0)
-			AcqRel::acquire(p);
-	}
-
-	/*
-	 * Fallback implementation of release, if the SFINAE above fails.
-	 *
-	 * To release N references, N calls to AcqRel::release are performed.
-	 */
-	void
-	release(ref_t p, std::size_t nrefs, ...) const noexcept
-	{
-		while (nrefs-- > 0)
-			AcqRel::release(p);
 	}
 };
 
@@ -751,7 +721,8 @@ private:
 public:
 	template<typename Expect, typename Set>
 	bool
-	compare_exchange_weak(Expect&& expect, Set&& set, std::memory_order mo = std::memory_order_seq_cst)
+	compare_exchange_weak(Expect&& expect, Set&& set,
+	    std::memory_order mo = std::memory_order_seq_cst)
 	noexcept
 	{
 		return this->compare_exchange_weak(
@@ -762,7 +733,8 @@ public:
 
 	template<typename Expect, typename Set>
 	bool
-	compare_exchange_strong(Expect&& expect, Set&& set, std::memory_order mo = std::memory_order_seq_cst)
+	compare_exchange_strong(Expect&& expect, Set&& set,
+	    std::memory_order mo = std::memory_order_seq_cst)
 	noexcept
 	{
 		return this->compare_exchange_strong(

@@ -92,10 +92,10 @@ using difference_type = std::intptr_t;
 
 struct simple_elem_acqrel
 {
-	static inline void acquire(const simple_elem&, elem_refcnt = 1U)
+	static inline void acquire(const simple_elem&, elem_refcnt)
 	    noexcept;
 	ILIAS_ASYNC_EXPORT static void release(const simple_elem&,
-	    elem_refcnt = 1U) noexcept;
+	    elem_refcnt) noexcept;
 };
 
 using simple_elem_ptr = llptr<simple_elem, simple_elem_acqrel, 1U>;
