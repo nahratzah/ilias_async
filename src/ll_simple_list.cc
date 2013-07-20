@@ -2,10 +2,11 @@
 
 namespace ilias {
 namespace ll_list_detail {
+namespace ll_simple_list {
 
 
 inline data_t
-ll_simple_list::elem::succ() const noexcept
+elem::succ() const noexcept
 {
 	data_t succ = this->m_succ_.load(std::memory_order_consume);
 	for (;;) {
@@ -29,7 +30,7 @@ ll_simple_list::elem::succ() const noexcept
 }
 
 inline data_t
-ll_simple_list::elem::pred() const noexcept
+elem::pred() const noexcept
 {
 	data_t pred = this->m_pred_.load(std::memory_order_consume);
 	for (;;) {
@@ -77,7 +78,7 @@ ll_simple_list::elem::pred() const noexcept
 }
 
 bool
-ll_simple_list::elem::unlink() noexcept
+elem::unlink() noexcept
 {
 	bool result = false;
 
@@ -149,7 +150,7 @@ ll_simple_list::elem::unlink() noexcept
 }
 
 link_result
-ll_simple_list::elem::link_between_(std::tuple<elem*, elem*> ins,
+elem::link_between_(std::tuple<elem*, elem*> ins,
     std::tuple<elem_ptr, elem_ptr> pos) noexcept
 {
 	/*
@@ -266,7 +267,7 @@ ll_simple_list::elem::link_between_(std::tuple<elem*, elem*> ins,
 }
 
 link_result
-ll_simple_list::elem::link_before_(std::tuple<elem*, elem*> ins,
+elem::link_before_(std::tuple<elem*, elem*> ins,
     elem_ptr pos) noexcept
 {
 	assert(std::get<0>(ins) != nullptr && std::get<1>(ins) != nullptr &&
@@ -292,7 +293,7 @@ ll_simple_list::elem::link_before_(std::tuple<elem*, elem*> ins,
 }
 
 link_result
-ll_simple_list::elem::link_after_(std::tuple<elem*, elem*> ins,
+elem::link_after_(std::tuple<elem*, elem*> ins,
     elem_ptr pos) noexcept
 {
 	assert(std::get<0>(ins) != nullptr && std::get<1>(ins) != nullptr &&
@@ -318,4 +319,4 @@ ll_simple_list::elem::link_after_(std::tuple<elem*, elem*> ins,
 }
 
 
-}} /* namespace ilias::ll_list_detail */
+}}} /* namespace ilias::ll_list_detail::ll_simple_list */

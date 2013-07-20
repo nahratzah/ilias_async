@@ -8,12 +8,10 @@
 
 namespace ilias {
 namespace ll_list_detail {
+namespace ll_simple_list {
 
 
 using refcount_t = unsigned int;
-using flags_t = std::bitset<1>;
-constexpr flags_t PRESENT{ 0UL };
-constexpr flags_t DELETED{ 1UL };
 
 enum class link_result : unsigned char {
 	SUCCESS,
@@ -22,32 +20,35 @@ enum class link_result : unsigned char {
 	INVALID_POS
 };
 
-class ll_simple_list
-{
-public:
-	class elem;
-	class elem_range;
+class elem;
+class elem_range;
 
-	struct elem_refcnt_mgr {
-		static inline void acquire(const elem&, refcount_t);
-		static inline void release(const elem&, refcount_t);
-	};
-
-	using elem_ptr = refpointer<elem, elem_refcnt_mgr>;
-	using elem_llptr = llptr<elem, elem_refcnt_mgr, 1>;
-
-protected:
-
-private:
-	elem m_head_;
+/*
+ * Manage reference counting.
+ *
+ * The reference counters in ll_simple_list do not invoke delete,
+ * they only prevent a destructor from completing while an element
+ * is in use.
+ * In this, they function more like a shared lock than an actual
+ * reference counter.
+ */
+struct elem_refcnt_mgr {
+	static inline void acquire(const elem&, refcount_t);
+	static inline void release(const elem&, refcount_t);
 };
 
-using data_t = ll_simple_list::elem_llptr::element_type;
+using elem_ptr = refpointer<elem, elem_refcnt_mgr>;
+using elem_llptr = llptr<elem, elem_refcnt_mgr, 1>;
+using flags_t = elem_llptr::flags_type;
+using data_t = elem_llptr::element_type;
 
-class ll_simple_list::elem
+constexpr flags_t PRESENT{ 0UL };
+constexpr flags_t DELETED{ 1UL };
+
+class elem
 {
-friend struct ll_simple_list::elem_refcnt_mgr;
-friend class ll_simple_list::elem_range;
+friend struct elem_refcnt_mgr;
+friend class elem_range;
 
 public:
 	inline elem() noexcept;
@@ -100,9 +101,9 @@ private:
 	    std::tuple<elem*, elem*>, elem_ptr);
 };
 
-class ll_simple_list::elem_range
+class elem_range
 {
-friend class ll_simple_list::elem;
+friend class elem;
 
 public:
 	elem_range() = default;
@@ -138,7 +139,7 @@ private:
 };
 
 
-}} /* namespace ilias::ll_list_detail */
+}}} /* namespace ilias::ll_list_detail::ll_simple_list */
 
 
 #include <ilias/detail/ll_simple_list-inl.h>
