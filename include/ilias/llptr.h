@@ -566,11 +566,6 @@ public:
 		    expect_ = convert_get(expect),
 		    convert_get(set),
 		    mo_success, mo_fail)) {
-			if (this->compare_exchange_strong(expect_,
-			    std::move(set),
-			    mo_success, mo_fail))
-				return true;
-
 			/*
 			 * Skip hazard logic if there is no need to acquire
 			 * the reference.
