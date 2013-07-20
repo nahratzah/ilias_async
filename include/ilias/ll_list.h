@@ -277,6 +277,13 @@ public:
 		return !(std::get<1>(succ) == DELETED ||
 		    std::get<0>(succ) == this);
 	}
+
+	/* For debugging purposes only. */
+	elem_refcnt
+	get_simple_elem_refcnt() const noexcept
+	{
+		return this->m_refcnt;
+	}
 };
 
 
@@ -1051,6 +1058,14 @@ public:
 	{
 		return;
 	}
+
+#ifndef NDEBUG
+	friend ll_list_detail::elem_refcnt
+	get_simple_elem_refcnt(const ll_list_hook& self) noexcept
+	{
+		return self.get_simple_elem_refcnt();
+	}
+#endif
 };
 
 
