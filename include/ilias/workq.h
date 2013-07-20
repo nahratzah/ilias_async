@@ -159,8 +159,10 @@ protected:
 template<typename Type>
 struct workq_intref_mgr
 {
+	using type = typename std::remove_const<Type>::type;
+
 	static void
-	acquire(const Type& v, std::uintptr_t n = 1) noexcept
+	acquire(const type& v, std::uintptr_t n = 1) noexcept
 	{
 		const workq_int& i = v;
 		const auto o = i.int_refcnt.fetch_add(n, std::memory_order_acquire);
@@ -168,7 +170,7 @@ struct workq_intref_mgr
 	}
 
 	static void
-	release(const Type& v, std::uintptr_t n = 1) noexcept
+	release(const type& v, std::uintptr_t n = 1) noexcept
 	{
 		const workq_int& i = v;
 		const auto o = i.int_refcnt.fetch_sub(n, std::memory_order_release);
@@ -177,6 +179,13 @@ struct workq_intref_mgr
 		if (o == n && i.int_suicide.load(std::memory_order_acquire))	/* XXX consume? */
 			delete &v;
 	}
+};
+
+template<typename Type>
+struct workq_intref_mgr<const Type>
+:	public workq_intref_mgr<Type>
+{
+	/* Proxy for type. */
 };
 
 template<typename Type> using workq_intref = refpointer<Type, workq_intref_mgr<Type> >;

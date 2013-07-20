@@ -454,13 +454,16 @@ wq_run_lock::lock(workq_service& wqs) noexcept
 	 * or when the runq is depleted.
 	 */
 	auto& runq_iter = wqs.get_runq_iterpos();
+	auto wq = (++runq_iter).get();
 	for (;;) {
-		auto wq = (++runq_iter).get();
 		if (!wq) {
-			if (!wqs.m_wq_runq.empty())
-				continue;	/* Iterator wraparound. */
-			break;		/* GUARD */
-		} else if (this->lock(*wq)) {
+			runq_iter = wqs.m_wq_runq.begin();
+			wq = runq_iter.get();
+			if (!wq)
+				break;	/* GUARD */
+		}
+
+		if (this->lock(*wq)) {
 			/* Acquired a job: workq may stay on the runq. */
 			break;		/* GUARD */
 		} else {
@@ -921,8 +924,10 @@ workq_service::~workq_service() noexcept
 void
 workq_service::wq_to_runq(workq_detail::workq_intref<workq> wq) noexcept
 {
-	if (this->m_wq_runq.push_front(wq))
-		this->wakeup();
+	/* Load insert position suitable for this thread. */
+	auto ipos = this->get_runq_iterpos();
+	this->m_wq_runq.insert(++ipos, wq);
+	this->wakeup();
 }
 
 void
@@ -1048,24 +1053,13 @@ wq_deleter::operator()(const workq_job* wqj) const noexcept
 void
 wq_deleter::operator()(const workq* wq) const noexcept
 {
-	wq->get_workq_service()->m_wq_runq.erase(
-	    wq->get_workq_service()->m_wq_runq.iterator_to(
-	    const_cast<workq&>(*wq)));
-
 	/*
-	 * If this wq is being destroyed from within its own worker thread,
-	 * inform the internal references that they are responsible
-	 * for destruction.
+	 * Workq are lazily destroyed: they hold no observable state.
+	 * If the workq exists on a runq, the action of trying to run
+	 * it will release the workq and cause it to be destroyed.
 	 */
-	if (get_wq_tls().find(*wq)) {
-		wq->int_suicide.store(true, std::memory_order_release);
-		return;
-	}
-
-	/* Wait for the last internal reference to go away. */
-	wq->wait_unreferenced();
-
-	delete wq;
+	workq_intref<const workq> wq_ptr{ wq };
+	wq->int_suicide.store(true, std::memory_order_release);
 }
 
 void
