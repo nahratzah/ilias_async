@@ -170,9 +170,9 @@ class simple_elem
 friend struct simple_elem_acqrel;
 
 protected:
+	mutable std::atomic<elem_refcnt> m_refcnt{ 0U };
 	mutable simple_elem_ptr m_succ{ add_present(this) },
 	    m_pred{ add_present(this) };
-	mutable std::atomic<elem_refcnt> m_refcnt{ 0U };
 
 private:
 	elem_refcnt
@@ -543,6 +543,13 @@ public:
 
 	ILIAS_ASYNC_EXPORT basic_iter& operator=(const basic_iter&) noexcept;
 	ILIAS_ASYNC_EXPORT basic_iter& operator=(basic_iter&&) noexcept;
+	ILIAS_ASYNC_EXPORT bool operator==(const basic_iter&) const noexcept;
+
+	bool
+	operator!=(const basic_iter& o) const noexcept
+	{
+		return !(*this == o);
+	}
 
 	bool
 	is_linked() const noexcept
@@ -651,6 +658,22 @@ public:
 
 	list_iterator& operator=(const list_iterator&) = default;
 	list_iterator& operator=(list_iterator&&) = default;
+
+	bool
+	operator==(const list_iterator& o) const noexcept
+	{
+		if (this->m_list == nullptr)
+			return o.m_list == nullptr;
+
+		return this->m_list == o.m_list &&
+		    this->m_iter == o.m_iter;
+	}
+
+	bool
+	operator!=(const list_iterator& o) const noexcept
+	{
+		return !(*this == o);
+	}
 
 	template<typename ORefPtr>
 	list_iterator(const list_iterator<List, ORefPtr>& o, convert_tag)

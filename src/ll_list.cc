@@ -308,6 +308,9 @@ noexcept
 	std::cerr << "simple_elem_acqrel::acquire(" << &e << ", " << nrefs << ")";	// DEBUG
 	auto r = e.m_refcnt.fetch_add(nrefs, std::memory_order_acquire);
 	std::cerr << "  " << r << "  -->  " << r + nrefs << std::endl;	// DEBUG
+	assert(r + nrefs > r);
+
+	assert(r < 1000);
 }
 
 void
@@ -457,6 +460,7 @@ head::link_after_(const elem_ptr& pos0, elem* e) noexcept
 }
 
 basic_iter::basic_iter(head& h) noexcept
+:	basic_iter{}
 {
 	link_ab_result lr1 = simple_elem::link_after(
 	    simple_ptr{ &this->m_forw }, &h);
@@ -468,6 +472,7 @@ basic_iter::basic_iter(head& h) noexcept
 }
 
 basic_iter::basic_iter(const basic_iter& i) noexcept
+:	basic_iter{}
 {
 	link_ab_result lr1 = simple_elem::link_after(
 	    simple_ptr{ &this->m_forw }, simple_ptr{ &i.m_forw });
@@ -478,6 +483,7 @@ basic_iter::basic_iter(const basic_iter& i) noexcept
 }
 
 basic_iter::basic_iter(basic_iter&& i) noexcept
+:	basic_iter{}
 {
 	link_ab_result lr1 = simple_elem::link_after(
 	    simple_ptr{ &this->m_forw }, simple_ptr{ &i.m_forw });
@@ -543,6 +549,26 @@ basic_iter::operator=(basic_iter&& i) noexcept
 	i.m_back.unlink();
 
 	return *this;
+}
+
+bool
+basic_iter::operator==(const basic_iter& other) const noexcept
+{
+	for (elem_ptr i = this->m_back.succ();
+	    i && i->is_iter();
+	    i = i->succ()) {
+		if (i == &other.m_back || i == &other.m_forw)
+			return true;
+	}
+
+	for (elem_ptr i = other.m_back.succ();
+	    i && i->is_iter();
+	    i = i->succ()) {
+		if (i == &this->m_back || i == &this->m_forw)
+			return true;
+	}
+
+	return false;
 }
 
 difference_type
