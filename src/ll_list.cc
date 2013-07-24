@@ -6,10 +6,11 @@ namespace ll_list_detail {
 
 
 elem_ptr
-basic_iter::next() noexcept
+basic_iter::next(basic_list::size_type n) noexcept
 {
 	if (this->owner_ == nullptr || !this->is_linked())
 		return nullptr;
+	assert(n > 0);
 
 	constexpr std::array<elem_type, 2> types = {
 		elem_type::HEAD,
@@ -17,7 +18,12 @@ basic_iter::next() noexcept
 	    };
 
 	return do_noexcept([&]() {
+		/* Step n items. */
 		elem_ptr i = this->forw_.succ(types);
+		for (basic_list::size_type n_ = 1; n_ < n; ++n)
+			i = i->succ(types);
+
+		/* Try to link. */
 		while (!link_at(this->owner_, i))
 			i = i->succ(types);
 		return i;
@@ -25,10 +31,11 @@ basic_iter::next() noexcept
 }
 
 elem_ptr
-basic_iter::prev() noexcept
+basic_iter::prev(basic_list::size_type n) noexcept
 {
 	if (this->owner_ == nullptr || !this->is_linked())
 		return nullptr;
+	assert(n > 0);
 
 	constexpr std::array<elem_type, 2> types = {
 		elem_type::HEAD,
@@ -36,7 +43,12 @@ basic_iter::prev() noexcept
 	    };
 
 	return do_noexcept([&]() {
+		/* Step n items. */
 		elem_ptr i = this->back_.pred(types);
+		for (basic_list::size_type n_ = 1; n_ < n; ++n)
+			i = i->pred(types);
+
+		/* Try to link. */
 		while (!link_at(this->owner_, i))
 			i = i->pred(types);
 		return i;
