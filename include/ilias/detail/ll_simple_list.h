@@ -97,9 +97,9 @@ private:
 	ILIAS_ASYNC_EXPORT static link_result link_between_(
 	    std::tuple<elem*, elem*>, std::tuple<elem_ptr, elem_ptr>) noexcept;
 	ILIAS_ASYNC_EXPORT static link_result link_before_(
-	    std::tuple<elem*, elem*>, elem_ptr);
+	    std::tuple<elem*, elem*>, elem_ptr) noexcept;
 	ILIAS_ASYNC_EXPORT static link_result link_after_(
-	    std::tuple<elem*, elem*>, elem_ptr);
+	    std::tuple<elem*, elem*>, elem_ptr) noexcept;
 };
 
 class elem_range

@@ -15,7 +15,7 @@ elem::succ() const noexcept
 		/* Test if successor is not being unlinked. */
 		data_t succ_succ = std::get<0>(succ)->m_succ_.load(
 		    std::memory_order_consume);
-		if (std::get<1>(succ_succ_flags) == PRESENT)
+		if (std::get<1>(succ_succ) == PRESENT)
 			return succ;
 
 		/* Replace direct successor, skipping unlinked successor. */
@@ -40,7 +40,7 @@ elem::pred() const noexcept
 
 		/* We are deleted, may not search forward. */
 		if (std::get<1>(pred) == DELETED) {
-			data_t pred_pred = pred->pred();
+			data_t pred_pred = std::get<0>(pred)->pred();
 			if (this->m_pred_.compare_exchange_weak(
 			    pred,
 			    add_deleted(std::get<0>(pred_pred)),
@@ -115,36 +115,36 @@ elem::unlink() noexcept
 	}
 
 	/* Make pred skip this. */
-	if (pred->m_succ_.compare_exchange_strong(
+	if (std::get<0>(pred)->m_succ_.compare_exchange_strong(
 	    add_present(this),
-	    add_present(succ),
+	    add_present(std::get<0>(succ)),
 	    std::memory_order_release,
 	    std::memory_order_relaxed)) {
 		/* Do nothing. */
-	} else if (pred->m_succ_.compare_exchange_strong(
+	} else if (std::get<0>(pred)->m_succ_.compare_exchange_strong(
 	    add_deleted(this),
-	    add_deleted(succ),
+	    add_deleted(std::get<0>(succ)),
 	    std::memory_order_release,
 	    std::memory_order_relaxed)) {
 		/* Do nothing. */
 	} else
-		pred->succ();
+		std::get<0>(pred)->succ();
 
 	/* Make succ skip this. */
-	if (succ->m_pred_.compare_exchange_strong(
+	if (std::get<0>(succ)->m_pred_.compare_exchange_strong(
 	    add_present(this),
-	    add_present(pred),
+	    add_present(std::get<0>(pred)),
 	    std::memory_order_release,
 	    std::memory_order_relaxed)) {
 		/* Do nothing. */
-	} else if (succ->m_pred_.compare_exchange_strong(
+	} else if (std::get<0>(succ)->m_pred_.compare_exchange_strong(
 	    add_deleted(this),
-	    add_deleted(pred),
+	    add_deleted(std::get<0>(pred)),
 	    std::memory_order_release,
 	    std::memory_order_relaxed)) {
 		/* Do nothing. */
 	} else
-		succ->pred();
+		std::get<0>(succ)->pred();
 
 	return result;
 }
@@ -227,7 +227,7 @@ elem::link_between_(std::tuple<elem*, elem*> ins,
 
 	/* Change ins, so it has appropriate links to pos. */
 	cond_assign ins0_linked{
-		std::get<0>(ins).m_pred_,
+		std::get<0>(ins)->m_pred_,
 		std::get<0>(ins),
 		std::get<0>(pos)
 	    };
@@ -235,7 +235,7 @@ elem::link_between_(std::tuple<elem*, elem*> ins,
 		return link_result::INS0_LINKED;
 
 	cond_assign ins1_linked{
-		std::get<1>(ins).m_succ_,
+		std::get<1>(ins)->m_succ_,
 		std::get<1>(ins),
 		std::get<1>(pos)
 	    };
@@ -245,7 +245,7 @@ elem::link_between_(std::tuple<elem*, elem*> ins,
 	assert(ins0_linked && ins1_linked);
 
 	/* Change pos0 from pos1 to ins0. */
-	if (!std::get<0>(pos).m_succ_.compare_exchange_strong(
+	if (!std::get<0>(pos)->m_succ_.compare_exchange_strong(
 	     add_present(std::get<1>(pos).get()),
 	     add_present(std::get<0>(ins)),
 	     std::memory_order_release,
@@ -257,12 +257,12 @@ elem::link_between_(std::tuple<elem*, elem*> ins,
 	ins1_linked.commit();
 
 	/* Link complete, fix pos1 predecessor. */
-	if (!std::get<1>(pos).m_pred_.compare_exchange_strong(
+	if (!std::get<1>(pos)->m_pred_.compare_exchange_strong(
 	    add_present(std::get<0>(pos).get()),
 	    add_present(std::get<1>(ins)),
 	    std::memory_order_release,
 	    std::memory_order_relaxed))
-		std::get<1>(pos).pred();
+		std::get<1>(pos)->pred();
 	return link_result::SUCCESS;
 }
 
@@ -280,13 +280,13 @@ elem::link_before_(std::tuple<elem*, elem*> ins,
 		if (fl == DELETED)
 			return link_result::INVALID_POS;
 
-		auto rv = this->link_between(std::move(ins),
+		auto rv = link_between_(std::move(ins),
 		    std::make_tuple(std::move(pos_pred), pos));
 		switch (rv) {
 		default:
 			return rv;
 		case link_result::INVALID_POS:
-			/* Reload pos->succ() in next iteration. */
+			/* Reload pos->pred() in next iteration. */
 			break;
 		}
 	}
@@ -306,7 +306,7 @@ elem::link_after_(std::tuple<elem*, elem*> ins,
 		if (fl == DELETED)
 			return link_result::INVALID_POS;
 
-		auto rv = this->link_between(std::move(ins),
+		auto rv = link_between_(std::move(ins),
 		    std::make_tuple(pos, std::move(pos_succ)));
 		switch (rv) {
 		default:
