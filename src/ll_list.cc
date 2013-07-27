@@ -8,14 +8,15 @@ namespace ll_list_detail {
 elem_ptr
 basic_iter::next(basic_list::size_type n) noexcept
 {
-	if (this->owner_ == nullptr || !this->is_linked())
-		return nullptr;
 	assert(n > 0);
+	if (this->owner_ == nullptr)
+		return nullptr;
+	assert(this->forw_.is_linked() && this->back_.is_linked());
 
-	constexpr std::array<elem_type, 2> types = {
+	constexpr std::array<elem_type, 2> types{{
 		elem_type::HEAD,
 		elem_type::ELEM
-	    };
+	    }};
 
 	return do_noexcept([&]() {
 		/* Step n items. */
@@ -33,14 +34,15 @@ basic_iter::next(basic_list::size_type n) noexcept
 elem_ptr
 basic_iter::prev(basic_list::size_type n) noexcept
 {
-	if (this->owner_ == nullptr || !this->is_linked())
-		return nullptr;
 	assert(n > 0);
+	if (this->owner_ == nullptr)
+		return nullptr;
+	assert(this->forw_.is_linked() && this->back_.is_linked());
 
-	constexpr std::array<elem_type, 2> types = {
+	constexpr std::array<elem_type, 2> types{{
 		elem_type::HEAD,
 		elem_type::ELEM
-	    };
+	    }};
 
 	return do_noexcept([&]() {
 		/* Step n items. */
@@ -62,28 +64,35 @@ basic_iter::link_at_(basic_list* list, elem_ptr pos) noexcept
 
 	this->forw_.unlink();
 	this->back_.unlink();
-	this->owner_ = list;
 
-	const auto rv_forw = ll_simple_list::link_after(
+	const auto rv_forw = ll_simple_list::elem::link_after(
 	    &this->forw_, pos);
-	assert(rv_forw != link_result::INS0_LINKED &&
-	    rv_forw != link_result::INS1_LINKED);
+	assert(rv_forw != ll_simple_list::link_result::INS0_LINKED &&
+	    rv_forw != ll_simple_list::link_result::INS1_LINKED);
 
-	const auto rv_back = ll_simple_list::link_before(
+	const auto rv_back = ll_simple_list::elem::link_before(
 	    &this->back_, pos);
-	assert(rv_back != link_result::INS0_LINKED &&
-	    rv_back != link_result::INS1_LINKED);
+	assert(rv_back != ll_simple_list::link_result::INS0_LINKED &&
+	    rv_back != ll_simple_list::link_result::INS1_LINKED);
 
-	return (rv_forw == link_result::SUCCESS &&
-	    rv_back == link_result::SUCCESS);
+	if (rv_forw == ll_simple_list::link_result::SUCCESS &&
+	    rv_back == ll_simple_list::link_result::SUCCESS) {
+		this->owner_ = list;
+		return true;
+	}
+
+	this->owner_ = nullptr;
+	this->forw_.unlink();
+	this->back_.unlink();
+	return false;
 }
 
 bool
 forw_equal(const basic_iter& a, const basic_iter& b) noexcept
 {
-	if (a.list != b.list)
+	if (a.owner_ != b.owner_)
 		return false;
-	if (!a.list)
+	if (!a.owner_)
 		return true;
 
 	assert(a.forw_.is_linked());
@@ -109,9 +118,9 @@ forw_equal(const basic_iter& a, const basic_iter& b) noexcept
 bool
 back_equal(const basic_iter& a, const basic_iter& b) noexcept
 {
-	if (a.list != b.list)
+	if (a.owner_ != b.owner_)
 		return false;
-	if (!a.list)
+	if (!a.owner_)
 		return true;
 
 	assert(a.back_.is_linked());

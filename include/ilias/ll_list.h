@@ -1,6 +1,10 @@
+#ifndef ILIAS_LL_LIST_H
+#define ILIAS_LL_LIST_H
+
 #include <ilias/ilias_async_export.h>
 #include <ilias/refcnt.h>
 #include <ilias/detail/ll_simple_list.h>
+#include <array>
 
 
 namespace ilias {
@@ -21,8 +25,10 @@ struct tag_head {};
 
 
 class elem;
-using elem_ptr = refpointer<elem, ll_simple_list::elem_acqrel_mgr>;
-using const_elem_ptr = refpointer<const elem, ll_simple_list::elem_acqrel_mgr>;
+class basic_list;
+class basic_iter;
+using elem_ptr = refpointer<elem, ll_simple_list::elem_refcnt_mgr>;
+using const_elem_ptr = refpointer<const elem, ll_simple_list::elem_refcnt_mgr>;
 
 
 class elem
@@ -35,9 +41,9 @@ public:
 	inline elem_ptr succ() const noexcept;
 	inline elem_ptr pred() const noexcept;
 
-	template<unsigned int N> elem_ptr succ(std::array<elem_type, N>)
+	template<std::size_t N> elem_ptr succ(const std::array<elem_type, N>&)
 	    const noexcept;
-	template<unsigned int N> elem_ptr pred(std::array<elem_type, N>)
+	template<std::size_t N> elem_ptr pred(const std::array<elem_type, N>&)
 	    const noexcept;
 
 	inline bool is_head() const noexcept;
@@ -55,6 +61,8 @@ private:
 
 class basic_list
 {
+friend class basic_iter;
+
 public:
 	using size_type = std::uintptr_t;
 	using difference_type = std::intptr_t;
@@ -63,7 +71,8 @@ public:
 	inline size_type size() const noexcept;
 	inline bool empty() const noexcept;
 
-	push_front(elem* e)
+	bool push_front(elem* e);
+	bool push_back(elem* e);
 
 private:
 	elem head_;
@@ -127,7 +136,7 @@ template<typename Iter, direction Dir> class iter_direction;
 template<typename Tag = void>
 class ll_list_hook
 {
-template<typename Type, typename Tag, typename AcqRel> friend
+template<typename FType, typename FTag, typename FAcqRel> friend
     class ll_smartptr_list;
 
 private:
@@ -169,8 +178,8 @@ public:
 
 	/* Iterators. */
 
-	inline iterator iterator_to(reference);
-	inline const_iterator iterator_to(const_reference) const;
+	inline iterator iterator_to(reference) noexcept;
+	inline const_iterator iterator_to(const_reference) const noexcept;
 	inline iterator begin() noexcept;
 	inline iterator end() noexcept;
 
@@ -189,6 +198,8 @@ public:
 	    const iterator&, Disposer)
 		noexcept(noexcept(std::declval<Disposer>(
 		    std::declval<pointer&&>())));
+	inline iterator erase(const const_iterator&) noexcept;
+	inline iterator erase(const iterator&) noexcept;
 
 	/* XXX Figure out how to erase an iterator range properly. */
 
@@ -201,10 +212,11 @@ private:
 	    const pointer&) noexcept;
 	static inline ll_list_detail::const_elem_ptr as_elem_(
 	    const const_pointer&) noexcept;
-	inline pointer as_type_(const elem_ptr& p) noexcept;
-	inline const_pointer as_type_(const const_elem_ptr& p) noexcept;
-	inline bool unlink(const pointer& p) noexcept;
-	inline bool unlink(const const_pointer& p) noexcept;
+	inline pointer as_type_(const ll_list_detail::elem_ptr&) noexcept;
+	inline const_pointer as_type_(const ll_list_detail::const_elem_ptr&)
+	    noexcept;
+	inline bool unlink(const pointer&) noexcept;
+	inline bool unlink(const const_pointer&) noexcept;
 
 	ll_list_detail::basic_list impl_;
 };
@@ -214,11 +226,12 @@ namespace ll_list_iter_detail {
 
 
 template<typename Type, typename Tag, typename AcqRel, bool IsConstIter>
-class ll_smartptr_list_iterator
-:	public typename std::conditional<IsConstIter,
+class ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
+    IsConstIter>
+:	public std::conditional<IsConstIter,
 		std::iterator<
 		    std::bidirectional_iterator_tag,
-		    typename const ll_smartptr_list<Type, Tag, AcqRel>::
+		    const typename ll_smartptr_list<Type, Tag, AcqRel>::
 		     value_type,
 		    typename ll_smartptr_list<Type, Tag, AcqRel>::
 		     difference_type,
@@ -244,7 +257,7 @@ private:
 	using parent_t = typename std::conditional<IsConstIter,
 		std::iterator<
 		    std::bidirectional_iterator_tag,
-		    typename const ll_smartptr_list<Type, Tag, AcqRel>::
+		    const typename ll_smartptr_list<Type, Tag, AcqRel>::
 		     value_type,
 		    typename ll_smartptr_list<Type, Tag, AcqRel>::
 		     difference_type,
@@ -263,15 +276,17 @@ private:
 		    typename ll_smartptr_list<Type, Tag, AcqRel>::
 		     reference>
 		>::type;
-	using list_t = typename ll_smartptr_list<Type, Tag, AcqRel>;
+	using list_t = ll_smartptr_list<Type, Tag, AcqRel>;
 
 public:
-	iterator() = default;
-	iterator(const iterator&) = default;
-	iterator(iterator&&) = default;
+	ll_smartptr_list_iterator() = default;
+	ll_smartptr_list_iterator(const ll_smartptr_list_iterator&) = default;
+	ll_smartptr_list_iterator(ll_smartptr_list_iterator&&) = default;
 
-	iterator& operator=(const iterator&) = default;
-	iterator& operator=(iterator&&) = default;
+	ll_smartptr_list_iterator& operator=(
+	    const ll_smartptr_list_iterator&) = default;
+	ll_smartptr_list_iterator& operator=(
+	    ll_smartptr_list_iterator&&) = default;
 
 	inline typename parent_t::pointer get() const
 	    noexcept;
@@ -298,8 +313,8 @@ private:
 };
 
 
-template<typename Derived, typename Iter>
-class iter_direction<Derived, Iter, forward>
+template<typename Iter>
+class iter_direction<Iter, forward>
 :	public Iter
 {
 private:
@@ -322,7 +337,7 @@ public:
 	    ll_list_detail::basic_list::difference_type = 1) noexcept;
 };
 
-template<typename Derived, typename Iter>
+template<typename Iter>
 class iter_direction<Iter, reverse>
 :	public Iter
 {
@@ -348,3 +363,7 @@ public:
 
 
 }} /* namespace ilias::ll_list_iter_detail */
+
+#include <ilias/ll_list-inl.h>
+
+#endif /* ILIAS_LL_LIST_H */

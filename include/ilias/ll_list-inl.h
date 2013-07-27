@@ -1,3 +1,6 @@
+#ifndef ILIAS_LL_LIST_INL
+#define ILIAS_LL_LIST_INL
+
 namespace ilias {
 namespace ll_list_detail {
 
@@ -27,9 +30,9 @@ elem::pred() const noexcept
 	    this->ll_simple_list::elem::pred()));
 }
 
-template<unsigned int N>
+template<std::size_t N>
 elem_ptr
-elem::succ(std::array<elem_type, N> types) const noexcept
+elem::succ(const std::array<elem_type, N>& types) const noexcept
 {
 	using std::begin;
 	using std::end;
@@ -38,6 +41,20 @@ elem::succ(std::array<elem_type, N> types) const noexcept
 	while (std::find(begin(types), end(types), i->get_type()) ==
 	    end(types))
 		i = i->succ();
+	return i;
+}
+
+template<std::size_t N>
+elem_ptr
+elem::pred(const std::array<elem_type, N>& types) const noexcept
+{
+	using std::begin;
+	using std::end;
+
+	elem_ptr i = this->pred();
+	while (std::find(begin(types), end(types), i->get_type()) ==
+	    end(types))
+		i = i->pred();
 	return i;
 }
 
@@ -100,7 +117,8 @@ basic_list::size() const noexcept
 inline bool
 basic_list::empty() const noexcept
 {
-	for (elem_ptr i = this->head_.succ();
+	elem_ptr i;
+	for (i = this->head_.succ();
 	    !i->is_head() && !i->is_elem();
 	    i = i->succ());
 	return i->is_head();
@@ -113,10 +131,10 @@ basic_list::push_front(elem* e)
 		throw std::invalid_argument("null element");
 
 	return do_noexcept([&]() {
-		auto rv = ll_basic_list::elem::link_after(e,
+		auto rv = elem::link_after(e,
 		    elem_ptr{ &this->head_ });
-		assert(rv != ll_basic_list::link_result::INVALID_POS);
-		return (rv == ll_basic_list::link_result::SUCCESS);
+		assert(rv != ll_simple_list::link_result::INVALID_POS);
+		return (rv == ll_simple_list::link_result::SUCCESS);
 	    });
 }
 
@@ -127,16 +145,16 @@ basic_list::push_back(elem* e)
 		throw std::invalid_argument("null element");
 
 	return do_noexcept([&]() {
-		auto rv = ll_basic_list::elem::link_before(e,
+		auto rv = elem::link_before(e,
 		    elem_ptr{ &this->head_ });
-		assert(rv != ll_basic_list::link_result::INVALID_POS);
-		return (rv == ll_basic_list::link_result::SUCCESS);
+		assert(rv != ll_simple_list::link_result::INVALID_POS);
+		return (rv == ll_simple_list::link_result::SUCCESS);
 	    });
 }
 
 
 inline basic_iter::basic_iter() noexcept
-:	owner_{ nullptr }
+:	owner_{ nullptr },
 	forw_{ elem_type::ITER_FORW },
 	back_{ elem_type::ITER_BACK }
 {
@@ -147,8 +165,10 @@ inline basic_iter::basic_iter(const basic_iter& other) noexcept
 :	basic_iter{}
 {
 	if ((this->owner_ = other.owner_) != nullptr) {
-		ll_simple_list::link_after(&this->forw_, &other.forw_);
-		ll_simple_list::link_before(&this->back_, &other.back_);
+		ll_simple_list::elem::link_after(&this->forw_,
+		    elem_ptr{ const_cast<elem*>(&other.forw_) });
+		ll_simple_list::elem::link_before(&this->back_,
+		    elem_ptr{ const_cast<elem*>(&other.back_) });
 	}
 }
 
@@ -156,8 +176,10 @@ inline basic_iter::basic_iter(basic_iter&& other) noexcept
 :	basic_iter{}
 {
 	if ((this->owner_ = other.owner_) != nullptr) {
-		ll_simple_list::link_after(&this->forw_, &other.forw_);
-		ll_simple_list::link_before(&this->back_, &other.back_);
+		ll_simple_list::elem::link_after(&this->forw_,
+		    elem_ptr{ &other.forw_ });
+		ll_simple_list::elem::link_before(&this->back_,
+		    elem_ptr{ &other.back_ });
 		other.unlink();
 	}
 }
@@ -165,10 +187,10 @@ inline basic_iter::basic_iter(basic_iter&& other) noexcept
 inline elem_ptr
 basic_iter::link_at(basic_list* list, tag where)
 {
-	constexpr std::array<elem_type, 2> types = {
+	constexpr std::array<elem_type, 2> types{{
 		elem_type::HEAD,
 		elem_type::ELEM
-	    };
+	    }};
 
 	elem_ptr f;
 	switch (where) {
@@ -215,7 +237,7 @@ inline bool
 basic_iter::unlink() noexcept
 {
 	if (this->owner_) {
-		this->forw_.unlink()
+		this->forw_.unlink();
 		this->back_.unlink();
 		this->owner_ = nullptr;
 		return true;
@@ -239,7 +261,7 @@ ll_smartptr_list<Type, Tag, AcqRel>::push_back(
 template<typename Type, typename Tag, typename AcqRel>
 inline bool
 ll_smartptr_list<Type, Tag, AcqRel>::push_front(
-    typename ll_smartptr_list::pointer<Type, Tag, AcqRel> p)
+    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
 {
 	this->impl_.push_front(as_elem_(p));
 	p.release();
@@ -248,7 +270,7 @@ ll_smartptr_list<Type, Tag, AcqRel>::push_front(
 template<typename Type, typename Tag, typename AcqRel>
 template<typename Disposer>
 inline typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
-ll_smartptr_list<Type, Tag, AcqRel>::erase(
+ll_smartptr_list<Type, Tag, AcqRel>::erase_and_dispose(
     const typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator& iter,
     Disposer disposer)
 noexcept(noexcept(disposer(std::declval<pointer&&>())))
@@ -260,7 +282,7 @@ noexcept(noexcept(disposer(std::declval<pointer&&>())))
 template<typename Type, typename Tag, typename AcqRel>
 template<typename Disposer>
 inline typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
-ll_smartptr_list<Type, Tag, AcqRel>::erase(
+ll_smartptr_list<Type, Tag, AcqRel>::erase_and_dispose(
     const typename ll_smartptr_list<Type, Tag, AcqRel>::iterator& iter,
     Disposer disposer)
 noexcept(noexcept(disposer(std::declval<pointer&&>())))
@@ -272,6 +294,24 @@ noexcept(noexcept(disposer(std::declval<pointer&&>())))
 	if (this->unlink(p))
 		disposer(std::move(p));
 	return rv;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+inline typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
+ll_smartptr_list<Type, Tag, AcqRel>::erase(
+    const typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator& iter)
+noexcept
+{
+	return this->erase_and_dispose(iter, [](pointer) { /* SKIP */ });
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+inline typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
+ll_smartptr_list<Type, Tag, AcqRel>::erase(
+    const typename ll_smartptr_list<Type, Tag, AcqRel>::iterator& iter)
+noexcept
+{
+	return this->erase_and_dispose(iter, [](pointer) { /* SKIP */ });
 }
 
 template<typename Type, typename Tag, typename AcqRel>
@@ -299,8 +339,9 @@ noexcept
 }
 
 template<typename Type, typename Tag, typename AcqRel>
-inline ll_smartptr_list<Type, Tag, AcqRel>::pointer
-ll_smartptr_list<Type, Tag, AcqRel>::as_type_(const elem_ptr& p) noexcept
+inline typename ll_smartptr_list<Type, Tag, AcqRel>::pointer
+ll_smartptr_list<Type, Tag, AcqRel>::as_type_(
+    const ll_list_detail::elem_ptr& p) noexcept
 {
 	if (p == nullptr || !p->is_elem())
 		return nullptr;
@@ -328,8 +369,9 @@ ll_smartptr_list<Type, Tag, AcqRel>::as_type_(const elem_ptr& p) noexcept
 }
 
 template<typename Type, typename Tag, typename AcqRel>
-inline ll_smartptr_list<Type, Tag, AcqRel>::const_pointer
-ll_smartptr_list<Type, Tag, AcqRel>::as_type_(const const_elem_ptr& p) noexcept
+inline typename ll_smartptr_list<Type, Tag, AcqRel>::const_pointer
+ll_smartptr_list<Type, Tag, AcqRel>::as_type_(
+    const ll_list_detail::const_elem_ptr& p) noexcept
 {
 	if (p == nullptr || !p->is_elem())
 		return nullptr;
@@ -427,7 +469,7 @@ ll_smartptr_list<Type, Tag, AcqRel>::iterator_to(
 }
 
 template<typename Type, typename Tag, typename AcqRel>
-ll_smartptr_list<Type, Tag, AcqRel>::iterator
+typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
 ll_smartptr_list<Type, Tag, AcqRel>::begin() noexcept
 {
 	bool success;
@@ -439,7 +481,7 @@ ll_smartptr_list<Type, Tag, AcqRel>::begin() noexcept
 }
 
 template<typename Type, typename Tag, typename AcqRel>
-ll_smartptr_list<Type, Tag, AcqRel>::iterator
+typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
 ll_smartptr_list<Type, Tag, AcqRel>::end() noexcept
 {
 	bool success;
@@ -472,10 +514,10 @@ ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
 }
 
 template<typename Type, typename Tag, typename AcqRel, bool IsConstIter>
-const typename ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
- IsConstIter>::parent_t::pointer&
+typename ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
+ IsConstIter>::parent_t::reference
 ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
-    IsConstIter>::operator->() const noexcept
+    IsConstIter>::operator*() const noexcept
 {
 	return *this->get();
 }
@@ -505,14 +547,14 @@ ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
 }
 
 template<typename Type, typename Tag, typename AcqRel, bool IsConstIter>
-bool
+void
 ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
  IsConstIter>::link_at_(
     ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
      IsConstIter>::list_t* list,
     ll_list_detail::basic_iter::tag where)
 {
-	using elem_ptr_t = std::conditional<IsConstIter,
+	using elem_ptr_t = typename std::conditional<IsConstIter,
 		ll_list_detail::const_elem_ptr,
 		ll_list_detail::elem_ptr
 	    >::type;
@@ -566,44 +608,44 @@ ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
 }
 
 
-template<typename Derived, typename Iter>
-typename iter_direction<Derived, Iter, forward>::derived_t&
-iter_direction<Derived, Iter, forward>::operator++() noexcept
+template<typename Iter>
+typename iter_direction<Iter, forward>::derived_t&
+iter_direction<Iter, forward>::operator++() noexcept
 {
 	this->iter_t::next();
 	return *this;
 }
 
-template<typename Derived, typename Iter>
-typename iter_direction<Derived, Iter, forward>::derived_t&
-iter_direction<Derived, Iter, forward>::operator--() noexcept
+template<typename Iter>
+typename iter_direction<Iter, forward>::derived_t&
+iter_direction<Iter, forward>::operator--() noexcept
 {
 	this->iter_t::prev();
 	return *this;
 }
 
-template<typename Derived, typename Iter>
-typename iter_direction<Derived, Iter, forward>::derived_t
-iter_direction<Derived, Iter, forward>::operator++() const noexcept
+template<typename Iter>
+typename iter_direction<Iter, forward>::derived_t
+iter_direction<Iter, forward>::operator++(int) const noexcept
 {
 	derived_t clone = *this;
 	this->iter_t::next();
 	return clone;
 }
 
-template<typename Derived, typename Iter>
-typename iter_direction<Derived, Iter, forward>::derived_t
-iter_direction<Derived, Iter, forward>::operator--() const noexcept
+template<typename Iter>
+typename iter_direction<Iter, forward>::derived_t
+iter_direction<Iter, forward>::operator--(int) const noexcept
 {
 	derived_t clone = *this;
 	this->iter_t::prev();
 	return clone;
 }
 
-template<typename Derived, typename Iter>
-typename iter_direction<Derived, Iter, forward>::derived_t
-next(typename iter_direction<Derived, Iter, forward>::derived_t iter,
-    ll_list_detail::basic_list::difference_type n) const noexcept
+template<typename Iter>
+typename iter_direction<Iter, forward>::derived_t
+next(typename iter_direction<Iter, forward>::derived_t iter,
+    ll_list_detail::basic_list::difference_type n) noexcept
 {
 	if (n > 0)
 		iter.iter_t::next(n);
@@ -612,10 +654,10 @@ next(typename iter_direction<Derived, Iter, forward>::derived_t iter,
 	return iter;
 }
 
-template<typename Derived, typename Iter>
-typename iter_direction<Derived, Iter, forward>::derived_t
-prev(typename iter_direction<Derived, Iter, forward>::derived_t iter,
-    ll_list_detail::basic_list::difference_type n) const noexcept
+template<typename Iter>
+typename iter_direction<Iter, forward>::derived_t
+prev(typename iter_direction<Iter, forward>::derived_t iter,
+    ll_list_detail::basic_list::difference_type n) noexcept
 {
 	if (n > 0)
 		iter.iter_t::prev(n);
@@ -624,10 +666,10 @@ prev(typename iter_direction<Derived, Iter, forward>::derived_t iter,
 	return iter;
 }
 
-template<typename Derived, typename Iter>
-typename iter_direction<Derived, Iter, forward>::derived_t
-advance(typename iter_direction<Derived, Iter, forward>::derived_t iter,
-    ll_list_detail::basic_list::difference_type n) const noexcept
+template<typename Iter>
+typename iter_direction<Iter, forward>::derived_t
+advance(typename iter_direction<Iter, forward>::derived_t iter,
+    ll_list_detail::basic_list::difference_type n) noexcept
 {
 	if (n > 0)
 		iter.iter_t::next(n);
@@ -637,44 +679,44 @@ advance(typename iter_direction<Derived, Iter, forward>::derived_t iter,
 }
 
 
-template<typename Derived, typename Iter>
-typename iter_direction<Derived, Iter, forward>::derived_t&
-iter_direction<Derived, Iter, forward>::operator++() noexcept
+template<typename Iter>
+typename iter_direction<Iter, reverse>::derived_t&
+iter_direction<Iter, reverse>::operator++() noexcept
 {
 	this->iter_t::prev();
 	return *this;
 }
 
-template<typename Derived, typename Iter>
-typename iter_direction<Derived, Iter, forward>::derived_t&
-iter_direction<Derived, Iter, forward>::operator--() noexcept
+template<typename Iter>
+typename iter_direction<Iter, reverse>::derived_t&
+iter_direction<Iter, reverse>::operator--() noexcept
 {
 	this->iter_t::next();
 	return *this;
 }
 
-template<typename Derived, typename Iter>
-typename iter_direction<Derived, Iter, forward>::derived_t
-iter_direction<Derived, Iter, forward>::operator++() const noexcept
+template<typename Iter>
+typename iter_direction<Iter, reverse>::derived_t
+iter_direction<Iter, reverse>::operator++(int) const noexcept
 {
 	derived_t clone = *this;
 	this->iter_t::prev();
 	return clone;
 }
 
-template<typename Derived, typename Iter>
-typename iter_direction<Derived, Iter, forward>::derived_t
-iter_direction<Derived, Iter, forward>::operator--() const noexcept
+template<typename Iter>
+typename iter_direction<Iter, reverse>::derived_t
+iter_direction<Iter, reverse>::operator--(int) const noexcept
 {
 	derived_t clone = *this;
 	this->iter_t::next();
 	return clone;
 }
 
-template<typename Derived, typename Iter>
-typename iter_direction<Derived, Iter, forward>::derived_t
-next(typename iter_direction<Derived, Iter, forward>::derived_t iter,
-    ll_list_detail::basic_list::difference_type n) const noexcept
+template<typename Iter>
+typename iter_direction<Iter, reverse>::derived_t
+next(typename iter_direction<Iter, reverse>::derived_t iter,
+    ll_list_detail::basic_list::difference_type n) noexcept
 {
 	if (n > 0)
 		iter.iter_t::prev(n);
@@ -683,10 +725,10 @@ next(typename iter_direction<Derived, Iter, forward>::derived_t iter,
 	return iter;
 }
 
-template<typename Derived, typename Iter>
-typename iter_direction<Derived, Iter, forward>::derived_t
-prev(typename iter_direction<Derived, Iter, forward>::derived_t iter,
-    ll_list_detail::basic_list::difference_type n) const noexcept
+template<typename Iter>
+typename iter_direction<Iter, reverse>::derived_t
+prev(typename iter_direction<Iter, reverse>::derived_t iter,
+    ll_list_detail::basic_list::difference_type n) noexcept
 {
 	if (n > 0)
 		iter.iter_t::next(n);
@@ -695,10 +737,10 @@ prev(typename iter_direction<Derived, Iter, forward>::derived_t iter,
 	return iter;
 }
 
-template<typename Derived, typename Iter>
-typename iter_direction<Derived, Iter, forward>::derived_t
-advance(typename iter_direction<Derived, Iter, forward>::derived_t iter,
-    ll_list_detail::basic_list::difference_type n) const noexcept
+template<typename Iter>
+typename iter_direction<Iter, reverse>::derived_t
+advance(typename iter_direction<Iter, reverse>::derived_t iter,
+    ll_list_detail::basic_list::difference_type n) noexcept
 {
 	if (n > 0)
 		iter.iter_t::prev(n);
@@ -709,3 +751,5 @@ advance(typename iter_direction<Derived, Iter, forward>::derived_t iter,
 
 
 }} /* namespace ilias::ll_list_iter_detail */
+
+#endif /* ILIAS_LL_LIST_INL */
