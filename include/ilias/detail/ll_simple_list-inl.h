@@ -55,7 +55,7 @@ elem_refcnt_mgr::release(const elem& e,
 	assert(r >= nrefs);
 
 	if (r == nrefs) {
-		auto assign = add_present(elem_ptr{ this });
+		auto assign = add_present(elem_ptr{ const_cast<elem*>(&e) });
 		e.m_pred_.store(assign, std::memory_order_release);
 		e.m_succ_.store(std::move(assign), std::memory_order_release);
 	}
@@ -101,7 +101,7 @@ elem::is_linked() const noexcept
 
 	return
 	    (std::get<0>(p) != this && std::get<1>(p) == PRESENT) ||
-	    (std::get<0>(s) != this && std::get<1>(s) == PRESENT)
+	    (std::get<0>(s) != this && std::get<1>(s) == PRESENT);
 }
 
 inline bool
@@ -109,9 +109,9 @@ elem::is_unused() const noexcept
 {
 	return
 	    (this->m_pred_.load_no_acquire(std::memory_order_acquire) ==
-	     add_present(this))
+	     add_present(this)) &&
 	    (this->m_succ_.load_no_acquire(std::memory_order_acquire) ==
-	     add_present(this))
+	     add_present(this)) &&
 	    (this->m_refcnt_.load(std::memory_order_acquire) == 2U);
 }
 
@@ -194,7 +194,7 @@ elem::link_between(elem_range&& r,
 
 inline link_result
 elem::link_before(elem_range&& r,
-    std::tuple<elem_ptr, elem_ptr> pos)
+    elem_ptr pos)
 {
 	if (r.empty())
 		return link_result::SUCCESS;
@@ -208,7 +208,7 @@ elem::link_before(elem_range&& r,
 
 inline link_result
 elem::link_after(elem_range&& r,
-    std::tuple<elem_ptr, elem_ptr> pos)
+    elem_ptr pos)
 {
 	if (r.empty())
 		return link_result::SUCCESS;
@@ -224,12 +224,12 @@ elem::link_after(elem_range&& r,
 inline elem_range::elem_range(elem_range&& other) noexcept
 :	elem_range{}
 {
-	other.push_front(&this->m_self);
+	other.push_front(&this->m_self_);
 	other.m_self_.unlink();
 }
 
 template<typename Iter>
-inline elem_range::elem_range(Iter b, Iter e) noexcept
+inline elem_range::elem_range(Iter b, Iter e)
 {
 	using namespace std::placeholders;
 	using std::for_each;
@@ -242,7 +242,7 @@ inline elem_range::~elem_range() noexcept
 {
 	for (elem_ptr e = std::get<0>(this->m_self_.succ());
 	    e != &this->m_self_;
-	    e = e->succ());
+	    e = std::get<0>(e->succ()))
 		e->unlink();
 	assert(this->empty());
 }
@@ -256,12 +256,12 @@ elem_range::push_front(elem* e)
 		throw std::invalid_argument("elem_range: linked element");
 
 	auto rv = elem::link_after(std::make_tuple(e, e),
-	    elem_ptr{ &this->self_ });
+	    elem_ptr{ &this->m_self_ });
 	switch (rv) {
-	case SUCCESS:
+	case link_result::SUCCESS:
 		return;
-	case INS0_LINKED:
-	case INS1_LINKED:
+	case link_result::INS0_LINKED:
+	case link_result::INS1_LINKED:
 		throw std::invalid_argument("elem_range: linked element");
 	default:
 		/* UNREACHABLE */
@@ -279,12 +279,12 @@ elem_range::push_back(elem* e)
 		throw std::invalid_argument("elem_range: linked element");
 
 	auto rv = elem::link_before(std::make_tuple(e, e),
-	    elem_ptr{ &this->self_ });
+	    elem_ptr{ &this->m_self_ });
 	switch (rv) {
-	case SUCCESS:
+	case link_result::SUCCESS:
 		return;
-	case INS0_LINKED:
-	case INS1_LINKED:
+	case link_result::INS0_LINKED:
+	case link_result::INS1_LINKED:
 		throw std::invalid_argument("elem_range: linked element");
 	default:
 		/* UNREACHABLE */
@@ -296,20 +296,22 @@ elem_range::push_back(elem* e)
 inline bool
 elem_range::empty() const noexcept
 {
-	return (this->m_self_.succ() == &this->m_self_);
+	return (std::get<0>(this->m_self_.succ()) == &this->m_self_);
 }
 
 
 inline elem_range::release_::release_(elem_range& r) noexcept
 :	self_{ r },
-	commited{ false }
+	commited_{ false }
 {
-	std::get<0>(this->data_) = this->self_.m_self_.m_succ_.exchange(
-	    add_present(elem_ptr{ &this->self_.m_self_ }),
-	    std::memory_order_acquire);
-	std::get<1>(this->data_) = this->self_.m_self_.m_pred_.exchange(
-	    add_present(elem_ptr{ &this->self_.m_self_ }),
-	    std::memory_order_acquire);
+	std::get<0>(this->data_) = std::get<0>(
+	    this->self_.m_self_.m_succ_.exchange(
+	     add_present(elem_ptr{ &this->self_.m_self_ }),
+	     std::memory_order_acquire));
+	std::get<1>(this->data_) = std::get<0>(
+	    this->self_.m_self_.m_pred_.exchange(
+	     add_present(elem_ptr{ &this->self_.m_self_ }),
+	     std::memory_order_acquire));
 
 	if (std::get<0>(this->data_) == std::get<1>(this->data_)) {
 		assert(std::get<0>(this->data_) == &r.m_self_);
@@ -320,10 +322,10 @@ inline elem_range::release_::release_(elem_range& r) noexcept
 		assert(std::get<1>(this->data_) != &r.m_self_);
 
 		std::get<0>(this->data_)->m_pred_.store(
-		    add_present(std::get<0>(this->data_))
+		    add_present(std::get<0>(this->data_)),
 		    std::memory_order_relaxed);
 		std::get<1>(this->data_)->m_succ_.store(
-		    add_present(std::get<1>(this->data_))
+		    add_present(std::get<1>(this->data_)),
 		    std::memory_order_relaxed);
 	}
 }
@@ -333,13 +335,13 @@ inline elem_range::release_::~release_() noexcept
 	if (!this->commited_ &&
 	    this->data_ != std::make_tuple(nullptr, nullptr)) {
 		auto rv = elem::link_after(this->get(),
-		    elem_ptr{ &this->self_ });
+		    elem_ptr{ &this->self_.m_self_ });
 		assert(rv == link_result::SUCCESS);
 	}
 }
 
 inline std::tuple<elem*, elem*>
-elem_range::release_::get() noexcept
+elem_range::release_::get() const noexcept
 {
 	assert(this->data_ != std::make_tuple(nullptr, nullptr));
 	return std::tuple<elem*, elem*>{

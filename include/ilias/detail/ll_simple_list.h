@@ -4,6 +4,7 @@
 #include <ilias/ilias_async_export.h>
 #include <ilias/llptr.h>
 #include <ilias/refcnt.h>
+#include <atomic>
 #include <tuple>
 
 namespace ilias {
@@ -55,7 +56,7 @@ public:
 	inline elem(const elem&) noexcept;
 	inline elem(elem&&) noexcept;
 	inline ~elem() noexcept;
-	inline bool is_linked();
+	inline bool is_linked() const noexcept;
 	inline bool is_unused() const noexcept;
 	inline void wait_unused() const noexcept;
 
@@ -81,8 +82,8 @@ public:
 	    elem*, elem_ptr);
 
 private:
-	std::atomic<refcount_t> m_refcnt_;
-	elem_llptr m_pred_, m_succ_;
+	mutable std::atomic<refcount_t> m_refcnt_;
+	mutable elem_llptr m_pred_, m_succ_;
 
 	/* Multi element insertion (used via elem_range insertion). */
 	inline static link_result link_between(
