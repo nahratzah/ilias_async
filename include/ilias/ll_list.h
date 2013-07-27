@@ -91,6 +91,13 @@ public:
 	inline bool link_at(basic_list*, elem_ptr);
 	inline bool unlink() noexcept;
 
+	ILIAS_ASYNC_EXPORT friend bool forw_equal(const basic_iter&,
+	    const basic_iter&) noexcept;
+	ILIAS_ASYNC_EXPORT friend bool back_equal(const basic_iter&,
+	    const basic_iter&) noexcept;
+
+	bool operator==(const basic_iter&) const = delete;
+
 private:
 	ILIAS_ASYNC_EXPORT bool link_at_(basic_list*, elem_ptr) noexcept;
 

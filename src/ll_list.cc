@@ -78,5 +78,61 @@ basic_iter::link_at_(basic_list* list, elem_ptr pos) noexcept
 	    rv_back == link_result::SUCCESS);
 }
 
+bool
+forw_equal(const basic_iter& a, const basic_iter& b) noexcept
+{
+	if (a.list != b.list)
+		return false;
+	if (!a.list)
+		return true;
+
+	assert(a.forw_.is_linked());
+	assert(b.forw_.is_linked());
+
+	for (const_elem_ptr a_i{ &a.forw_ };
+	    a_i->is_iter();
+	    a_i = a_i->succ()) {
+		if (a_i == &b.forw_)
+			return true;
+	}
+
+	for (const_elem_ptr b_i{ &b.forw_ };
+	    b_i->is_iter();
+	    b_i = b_i->succ()) {
+		if (b_i == &a.forw_)
+			return true;
+	}
+
+	return false;
+}
+
+bool
+back_equal(const basic_iter& a, const basic_iter& b) noexcept
+{
+	if (a.list != b.list)
+		return false;
+	if (!a.list)
+		return true;
+
+	assert(a.back_.is_linked());
+	assert(b.back_.is_linked());
+
+	for (const_elem_ptr a_i{ &a.back_ };
+	    a_i->is_iter();
+	    a_i = a_i->succ()) {
+		if (a_i == &b.back_)
+			return true;
+	}
+
+	for (const_elem_ptr b_i{ &b.back_ };
+	    b_i->is_iter();
+	    b_i = b_i->succ()) {
+		if (b_i == &a.back_)
+			return true;
+	}
+
+	return false;
+}
+
 
 }} /* namespace ilias::ll_list_detail */
