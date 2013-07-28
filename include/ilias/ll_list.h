@@ -79,14 +79,16 @@ public:
 	ILIAS_ASYNC_EXPORT elem_ptr pop_front() noexcept;
 	ILIAS_ASYNC_EXPORT elem_ptr pop_back() noexcept;
 
-	inline bool insert_after(elem*, elem_ptr);
-	inline bool insert_before(elem*, elem_ptr);
+	inline bool insert_after(elem*, const basic_iter&,
+	    basic_iter* = nullptr);
+	inline bool insert_before(elem*, const basic_iter&,
+	    basic_iter* = nullptr);
 
 private:
-	ILIAS_ASYNC_EXPORT bool insert_after_(elem*, elem_ptr,
-	    basic_iter* = nullptr) noexcept;
-	ILIAS_ASYNC_EXPORT bool insert_before_(elem*, elem_ptr,
-	    basic_iter* = nullptr) noexcept;
+	ILIAS_ASYNC_EXPORT bool insert_after_(elem*, const_elem_ptr,
+	    basic_iter*) noexcept;
+	ILIAS_ASYNC_EXPORT bool insert_before_(elem*, const_elem_ptr,
+	    basic_iter*) noexcept;
 
 	elem head_;
 };
@@ -94,6 +96,8 @@ private:
 
 class basic_iter
 {
+friend class basic_list;
+
 public:
 	enum class tag : int {
 		first,

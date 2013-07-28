@@ -150,6 +150,36 @@ basic_list::push_back(elem* e)
 	    });
 }
 
+inline bool
+basic_list::insert_after(elem* ins, const basic_iter& pos, basic_iter* out)
+{
+	if (ins == nullptr)
+		throw std::invalid_argument("null insertion");
+	if (pos.owner_ != this)
+		throw std::invalid_argument("invalid iterator");
+	if (out == &pos) {
+		throw std::invalid_argument("insert position and output "
+		    "iterator may not be the same (use a temporary!)");
+	}
+
+	return this->insert_after_(ins, &pos.forw_, out);
+}
+
+inline bool
+basic_list::insert_before(elem* ins, const basic_iter& pos, basic_iter* out)
+{
+	if (ins == nullptr)
+		throw std::invalid_argument("null insertion");
+	if (pos.owner_ != this)
+		throw std::invalid_argument("invalid iterator");
+	if (out == &pos) {
+		throw std::invalid_argument("insert position and output "
+		    "iterator may not be the same (use a temporary!)");
+	}
+
+	return this->insert_before_(ins, &pos.back_, out);
+}
+
 
 inline basic_iter::basic_iter() noexcept
 :	owner_{ nullptr },
@@ -473,9 +503,10 @@ noexcept
 	hazard_t hz{ *this };
 
 	/* Use offsetof magic to calculate hook address. */
-	constexpr std::size_t off = offsetof(hook_type, elem_);
+	const std::size_t off = hook_type::_elem_offset();
 	hook_type& hook = *reinterpret_cast<hook_type*>(
 	    reinterpret_cast<unsigned char*>(p.get()) - off);
+	assert(&hook.elem_ == p);
 
 	/* Cast to derived type. */
 	reference value = static_cast<reference>(hook);
@@ -503,9 +534,10 @@ ll_list_transformations<Type, Tag, no_acqrel>::as_type_(
 	hazard_t hz{ *this };
 
 	/* Use offsetof magic to calculate hook address. */
-	constexpr std::size_t off = offsetof(hook_type, elem_);
+	const std::size_t off = hook_type::_elem_offset();
 	const hook_type& hook = *reinterpret_cast<const hook_type*>(
 	    reinterpret_cast<const unsigned char*>(p.get()) - off);
+	assert(&hook.elem_ == p);
 
 	/* Cast to derived type. */
 	const_reference value = static_cast<const_reference>(hook);
@@ -530,9 +562,10 @@ ll_list_transformations<Type, Tag, no_acqrel>::as_type_unlinked_(
 		return nullptr;
 
 	/* Use offsetof magic to calculate hook address. */
-	constexpr std::size_t off = offsetof(hook_type, elem_);
+	const std::size_t off = hook_type::_elem_offset();
 	hook_type& hook = *reinterpret_cast<hook_type*>(
 	    reinterpret_cast<unsigned char*>(p.get()) - off);
+	assert(&hook.elem_ == p);
 
 	/* Cast to derived type. */
 	reference value = static_cast<reference>(hook);
@@ -551,9 +584,10 @@ ll_list_transformations<Type, Tag, no_acqrel>::as_type_unlinked_(
 	const_pointer rv = nullptr;
 
 	/* Use offsetof magic to calculate hook address. */
-	constexpr std::size_t off = offsetof(hook_type, elem_);
+	const std::size_t off = hook_type::_elem_offset();
 	const hook_type& hook = *reinterpret_cast<const hook_type*>(
 	    reinterpret_cast<const unsigned char*>(p.get()) - off);
+	assert(&hook.elem_ == p);
 
 	/* Cast to derived type. */
 	const_reference value = static_cast<const_reference>(hook);
@@ -637,8 +671,10 @@ ll_smartptr_list<Type, Tag, AcqRel>::push_back(
     typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
 {
 	auto p_ = as_elem_(p).get();
-	this->impl_.push_back(p_);
-	parent_t::release_pointer(p);
+	auto rv = this->impl_.push_back(p_);
+	if (rv)
+		parent_t::release_pointer(p);
+	return rv;
 }
 
 template<typename Type, typename Tag, typename AcqRel>
@@ -647,8 +683,10 @@ ll_smartptr_list<Type, Tag, AcqRel>::push_front(
     typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
 {
 	auto p_ = as_elem_(p).get();
-	this->impl_.push_front(p_);
-	parent_t::release_pointer(p);
+	auto rv = this->impl_.push_front(p_);
+	if (rv)
+		parent_t::release_pointer(p);
+	return rv;
 }
 
 template<typename Type, typename Tag, typename AcqRel>
@@ -662,7 +700,7 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_after(
 
 	std::pair<iterator, bool> result;
 	if ((result.second = this->impl_.insert_after(
-	    this->as_elem_(p), &pos.forw_, &result.impl_)))
+	    this->as_elem_(p), &pos.impl_, &result.first.impl_)))
 		result.first.val_ = std::move(p);
 	else
 		result.first = pos;
@@ -680,7 +718,7 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_after(
 
 	std::pair<iterator, bool> result;
 	if ((result.second = this->impl_.insert_after(
-	    this->as_elem_(p), &pos.forw_, &result.impl_)))
+	    this->as_elem_(p), &pos.impl_, &result.first.impl_)))
 		result.first.val_ = std::move(p);
 	else
 		result.first = pos;
@@ -698,7 +736,7 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_before(
 
 	std::pair<iterator, bool> result;
 	if ((result.second = this->impl_.insert_before(
-	    this->as_elem_(p), &pos.forw_, &result.impl_)))
+	    this->as_elem_(p), &pos.impl_, &result.first.impl_)))
 		result.first.val_ = std::move(p);
 	else
 		result.first = pos;
@@ -716,7 +754,7 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_before(
 
 	std::pair<iterator, bool> result;
 	if ((result.second = this->impl_.insert_before(
-	    this->as_elem_(p), &pos.forw_, &result.impl_)))
+	    this->as_elem_(p), &pos.impl_, &result.first.impl_)))
 		result.first.val_ = std::move(p);
 	else
 		result.first = pos;
@@ -1057,7 +1095,7 @@ ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
 			this->val_.reset();
 			done = true;
 		} else {
-			if ((this->val_ = as_type_(std::move(link))) !=
+			if ((this->val_ = list->as_type_(std::move(link))) !=
 			    nullptr)
 				done = true;
 		}

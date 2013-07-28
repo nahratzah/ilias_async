@@ -63,7 +63,7 @@ basic_list::pop_back() noexcept
 }
 
 bool
-basic_list::insert_after_(elem* ins, elem_ptr pos, basic_iter* out_iter)
+basic_list::insert_after_(elem* ins, const_elem_ptr pos, basic_iter* out_iter)
 noexcept
 {
 	assert(ins != nullptr && ins->is_elem());
@@ -71,7 +71,10 @@ noexcept
 	assert(out_iter == nullptr ||
 	    (pos != &out_iter->forw_ && pos != &out_iter->back_));
 
-	std::tuple<elem_ptr, elem_ptr> pos_tpl{ std::move(pos), nullptr };
+	std::tuple<elem_ptr, elem_ptr> pos_tpl{
+		const_pointer_cast<elem>(pos),
+		nullptr
+	    };
 	ll_simple_list::link_result lr;
 	if (out_iter)
 		out_iter->unlink();
@@ -93,18 +96,18 @@ noexcept
 	} while (lr == ll_simple_list::link_result::INVALID_POS);
 
 	/* Return failure. */
-	if (lr != ll_simple_list::SUCCESS)
+	if (lr != ll_simple_list::link_result::SUCCESS)
 		return false;
 
 	/* Update out_iter. */
 	if (out_iter)
-		out_iter->link_post_insert_(this, std::move(pos_tuple));
+		out_iter->link_post_insert_(this, std::move(pos_tpl));
 
 	return true;
 }
 
 bool
-basic_list::insert_before_(elem* ins, elem_ptr pos, basic_iter* out_iter)
+basic_list::insert_before_(elem* ins, const_elem_ptr pos, basic_iter* out_iter)
 noexcept
 {
 	assert(ins != nullptr && ins->is_elem());
@@ -112,7 +115,10 @@ noexcept
 	assert(out_iter == nullptr ||
 	    (pos != &out_iter->forw_ && pos != &out_iter->back_));
 
-	std::tuple<elem_ptr, elem_ptr> pos_tpl{ nullptr, std::move(pos) };
+	std::tuple<elem_ptr, elem_ptr> pos_tpl{
+		nullptr,
+		const_pointer_cast<elem>(pos),
+	    };
 	ll_simple_list::link_result lr;
 	if (out_iter)
 		out_iter->unlink();
@@ -134,12 +140,12 @@ noexcept
 	} while (lr == ll_simple_list::link_result::INVALID_POS);
 
 	/* Return failure. */
-	if (lr != ll_simple_list::SUCCESS)
+	if (lr != ll_simple_list::link_result::SUCCESS)
 		return false;
 
 	/* Update out_iter. */
 	if (out_iter)
-		out_iter->link_post_insert_(this, std::move(pos_tuple));
+		out_iter->link_post_insert_(this, std::move(pos_tpl));
 
 	return true;
 }
