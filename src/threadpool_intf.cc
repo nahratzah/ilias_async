@@ -312,13 +312,13 @@ tp_service_multiplexer::threadpool_client::do_work() noexcept
 {
 	threadpool_client_lock lck{ *this };
 	this->m_self.m_active.remove_and_dispose_if(
-	    [](threadpool_service& s) -> bool {
-		return !s.invoke_work();
+	    [](const threadpool_service& s) -> bool {
+		return !const_cast<threadpool_service&>(s).invoke_work();
 	    },
-	    [this](threadpool_service& s) -> void {
-		s.post_deactivate();
+	    [this](active_t::pointer s) -> void {
+		s->post_deactivate();
 
-		if (s.m_work_avail.load(std::memory_order_acquire) ==
+		if (s->m_work_avail.load(std::memory_order_acquire) ==
 		    threadpool_service::work_avail::DETACHED) {
 			this->m_self.m_data.erase(
 			    this->m_self.m_data.iterator_to(s));
