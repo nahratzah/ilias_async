@@ -195,7 +195,11 @@ protected:
 	static inline const_elem_ptr as_elem_(const const_pointer&) noexcept;
 	inline pointer as_type_(const elem_ptr&) noexcept;
 	inline const_pointer as_type_(const const_elem_ptr&) noexcept;
+	inline pointer as_type_unlinked_(const elem_ptr&) noexcept;
+	inline const_pointer as_type_unlinked_(const const_elem_ptr&) noexcept;
 	inline void post_unlink_(const_reference, std::size_t) const noexcept;
+	static inline void release_pointer(pointer&) noexcept;
+	static inline void release_pointer(const_pointer&) noexcept;
 
 private:
 	using hook_type = ll_list_hook<Tag>;
@@ -228,7 +232,11 @@ protected:
 	static inline const_elem_ptr as_elem_(const_pointer) noexcept;
 	inline pointer as_type_(const elem_ptr&) noexcept;
 	inline const_pointer as_type_(const const_elem_ptr&) noexcept;
+	inline pointer as_type_unlinked_(const elem_ptr&) noexcept;
+	inline const_pointer as_type_unlinked_(const const_elem_ptr&) noexcept;
 	inline void post_unlink_(const_reference, std::size_t) const noexcept;
+	static inline void release_pointer(pointer&) noexcept;
+	static inline void release_pointer(const_pointer&) noexcept;
 
 private:
 	using hook_type = ll_list_hook<Tag>;

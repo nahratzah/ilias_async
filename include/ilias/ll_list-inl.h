@@ -269,7 +269,7 @@ noexcept
 	if (p == nullptr)
 		return nullptr;
 	hook_type& hook = *p;
-	return ll_list_detail::elem_ptr{ &hook.elem_ };
+	return elem_ptr{ &hook.elem_ };
 }
 
 template<typename Type, typename Tag, typename AcqRel>
@@ -282,7 +282,7 @@ noexcept
 	if (p == nullptr)
 		return nullptr;
 	const hook_type& hook = *p;
-	return ll_list_detail::const_elem_ptr{ &hook.elem_ };
+	return const_elem_ptr{ &hook.elem_ };
 }
 
 template<typename Type, typename Tag, typename AcqRel>
@@ -337,12 +337,50 @@ ll_list_transformations<Type, Tag, AcqRel>::as_type_(
 	hz.do_hazard(value,
 	    [&]() {
 		if (p->is_linked())
-			rv = pointer{ &value };
+			rv = const_pointer{ &value };
 	    },
 	    [&]() {
-		rv = pointer{ &value, false };
+		rv = const_pointer{ &value, false };
 	    });
 	return rv;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+inline typename ll_list_transformations<Type, Tag, AcqRel>::pointer
+ll_list_transformations<Type, Tag, AcqRel>::as_type_unlinked_(
+    const elem_ptr& p) noexcept
+{
+	if (p == nullptr || !p->is_elem())
+		return nullptr;
+
+	/* Use offsetof magic to calculate hook address. */
+	constexpr std::size_t off = offsetof(hook_type, elem_);
+	hook_type& hook = *reinterpret_cast<hook_type*>(
+	    reinterpret_cast<unsigned char*>(p.get()) - off);
+
+	/* Cast to derived type. */
+	reference value = static_cast<reference>(hook);
+
+	return pointer{ &value };
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+inline typename ll_list_transformations<Type, Tag, AcqRel>::const_pointer
+ll_list_transformations<Type, Tag, AcqRel>::as_type_unlinked_(
+    const const_elem_ptr& p) noexcept
+{
+	if (p == nullptr || !p->is_elem())
+		return nullptr;
+
+	/* Use offsetof magic to calculate hook address. */
+	constexpr std::size_t off = offsetof(hook_type, elem_);
+	const hook_type& hook = *reinterpret_cast<const hook_type*>(
+	    reinterpret_cast<const unsigned char*>(p.get()) - off);
+
+	/* Cast to derived type. */
+	const_reference value = static_cast<const_reference>(hook);
+
+	return const_pointer{ &value };
 }
 
 template<typename Type, typename Tag, typename AcqRel>
@@ -361,6 +399,22 @@ ll_list_transformations<Type, Tag, AcqRel>::post_unlink_(
 	    *this, unlinked_value, uv_refs);
 }
 
+template<typename Type, typename Tag, typename AcqRel>
+inline void
+ll_list_transformations<Type, Tag, AcqRel>::release_pointer(
+    ll_list_transformations<Type, Tag, AcqRel>::pointer& p) noexcept
+{
+	p.release();
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+inline void
+ll_list_transformations<Type, Tag, AcqRel>::release_pointer(
+    ll_list_transformations<Type, Tag, AcqRel>::const_pointer& p) noexcept
+{
+	p.release();
+}
+
 
 template<typename Type, typename Tag>
 inline elem_ptr
@@ -371,7 +425,7 @@ noexcept
 	if (p == nullptr)
 		return nullptr;
 	hook_type& hook = *p;
-	return ll_list_detail::elem_ptr{ &hook.elem_ };
+	return elem_ptr{ &hook.elem_ };
 }
 
 template<typename Type, typename Tag>
@@ -383,7 +437,7 @@ noexcept
 	if (p == nullptr)
 		return nullptr;
 	const hook_type& hook = *p;
-	return ll_list_detail::const_elem_ptr{ &hook.elem_ };
+	return const_elem_ptr{ &hook.elem_ };
 }
 
 template<typename Type, typename Tag>
@@ -447,6 +501,46 @@ ll_list_transformations<Type, Tag, no_acqrel>::as_type_(
 }
 
 template<typename Type, typename Tag>
+inline typename ll_list_transformations<Type, Tag, no_acqrel>::pointer
+ll_list_transformations<Type, Tag, no_acqrel>::as_type_unlinked_(
+    const elem_ptr& p) noexcept
+{
+	if (p == nullptr || !p->is_elem())
+		return nullptr;
+
+	/* Use offsetof magic to calculate hook address. */
+	constexpr std::size_t off = offsetof(hook_type, elem_);
+	hook_type& hook = *reinterpret_cast<hook_type*>(
+	    reinterpret_cast<unsigned char*>(p.get()) - off);
+
+	/* Cast to derived type. */
+	reference value = static_cast<reference>(hook);
+
+	return &value;
+}
+
+template<typename Type, typename Tag>
+inline typename ll_list_transformations<Type, Tag, no_acqrel>::const_pointer
+ll_list_transformations<Type, Tag, no_acqrel>::as_type_unlinked_(
+    const const_elem_ptr& p) noexcept
+{
+	if (p == nullptr || !p->is_elem())
+		return nullptr;
+
+	const_pointer rv = nullptr;
+
+	/* Use offsetof magic to calculate hook address. */
+	constexpr std::size_t off = offsetof(hook_type, elem_);
+	const hook_type& hook = *reinterpret_cast<const hook_type*>(
+	    reinterpret_cast<const unsigned char*>(p.get()) - off);
+
+	/* Cast to derived type. */
+	const_reference value = static_cast<const_reference>(hook);
+
+	return &value;
+}
+
+template<typename Type, typename Tag>
 inline void
 ll_list_transformations<Type, Tag, no_acqrel>::post_unlink_(
     ll_list_transformations<Type, Tag, no_acqrel>::const_reference
@@ -454,6 +548,22 @@ ll_list_transformations<Type, Tag, no_acqrel>::post_unlink_(
     std::size_t uv_refs) const noexcept
 {
 	hazard_t::wait_unused(*this, unlinked_value);
+}
+
+template<typename Type, typename Tag>
+inline void
+ll_list_transformations<Type, Tag, no_acqrel>::release_pointer(
+    ll_list_transformations<Type, Tag, no_acqrel>::pointer& p) noexcept
+{
+	p = nullptr;
+}
+
+template<typename Type, typename Tag>
+inline void
+ll_list_transformations<Type, Tag, no_acqrel>::release_pointer(
+    ll_list_transformations<Type, Tag, no_acqrel>::const_pointer& p) noexcept
+{
+	p = nullptr;
 }
 
 
@@ -484,7 +594,7 @@ template<typename Type, typename Tag, typename AcqRel>
 inline typename ll_smartptr_list<Type, Tag, AcqRel>::pointer
 ll_smartptr_list<Type, Tag, AcqRel>::pop_front() noexcept
 {
-	pointer result = this->as_type_(this->impl_.pop_front());
+	pointer result = this->as_type_unlinked_(this->impl_.pop_front());
 	if (result)
 		this->post_unlink_(*result, 0U);
 	return result;
@@ -494,7 +604,7 @@ template<typename Type, typename Tag, typename AcqRel>
 inline typename ll_smartptr_list<Type, Tag, AcqRel>::pointer
 ll_smartptr_list<Type, Tag, AcqRel>::pop_back() noexcept
 {
-	pointer result = this->as_type_(this->impl_.pop_back());
+	pointer result = this->as_type_unlinked_(this->impl_.pop_back());
 	if (result)
 		this->post_unlink_(*result, 0U);
 	return result;
@@ -505,8 +615,9 @@ inline bool
 ll_smartptr_list<Type, Tag, AcqRel>::push_back(
     typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
 {
-	this->impl_.push_back(as_elem_(p));
-	p.release();
+	auto p_ = as_elem_(p).get();
+	this->impl_.push_back(p_);
+	parent_t::release_pointer(p);
 }
 
 template<typename Type, typename Tag, typename AcqRel>
@@ -514,8 +625,9 @@ inline bool
 ll_smartptr_list<Type, Tag, AcqRel>::push_front(
     typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
 {
-	this->impl_.push_front(as_elem_(p));
-	p.release();
+	auto p_ = as_elem_(p).get();
+	this->impl_.push_front(p_);
+	parent_t::release_pointer(p);
 }
 
 template<typename Type, typename Tag, typename AcqRel>
@@ -792,7 +904,7 @@ ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
 	bool done = false;
 	elem_ptr_t link{ nullptr };
 	do {
-		link = this->impl_.link_at_(&list->impl_, where);
+		link = this->impl_.link_at(&list->impl_, where);
 
 		if (link == nullptr) {
 			/* SKIP */
@@ -816,7 +928,7 @@ ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
 	for (auto elem = this->impl_.next(n);
 	    elem != nullptr && elem->is_elem();
 	    elem = this->impl_.next()) {
-		if ((this->val_ = list_t::as_type_(this->impl_.next())) !=
+		if ((this->val_ = list_t::as_type_(elem)) !=
 		    nullptr)
 			return;
 	}
@@ -828,10 +940,10 @@ ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
  IsConstIter>::prev(ll_list_detail::basic_list::size_type n) noexcept
 {
 	this->val_ = nullptr;
-	for (auto elem = this->impl_.next(n);
+	for (auto elem = this->impl_.prev(n);
 	    elem != nullptr && elem->is_elem();
-	    elem = this->impl_.next()) {
-		if ((this->val_ = list_t::as_type_(this->impl_.next())) !=
+	    elem = this->impl_.prev()) {
+		if ((this->val_ = list_t::as_type_(elem)) !=
 		    nullptr)
 			return;
 	}
