@@ -6,6 +6,23 @@
 #include <stdexcept>
 
 namespace ilias {
+
+
+template<typename Tag>
+inline std::size_t
+ll_list_hook<Tag>::_elem_offset() noexcept
+{
+	/*
+	 * Calculate offset of elem_ member
+	 * (since offsetof is technically undefined behaviour and
+	 * triggers compiler warnings). :(
+	 */
+	constexpr std::uintptr_t ADDR = 0x1000;
+	return reinterpret_cast<std::uintptr_t>(
+	    &reinterpret_cast<ll_list_hook*>(ADDR)->elem_) - ADDR;
+}
+
+
 namespace ll_list_detail {
 
 
@@ -297,9 +314,10 @@ noexcept
 	hazard_t hz{ *this };
 
 	/* Use offsetof magic to calculate hook address. */
-	constexpr std::size_t off = offsetof(hook_type, elem_);
+	const std::size_t off = hook_type::_elem_offset();
 	hook_type& hook = *reinterpret_cast<hook_type*>(
 	    reinterpret_cast<unsigned char*>(p.get()) - off);
+	assert(&hook.elem_ == p);
 
 	/* Cast to derived type. */
 	reference value = static_cast<reference>(hook);
@@ -327,9 +345,10 @@ ll_list_transformations<Type, Tag, AcqRel>::as_type_(
 	hazard_t hz{ *this };
 
 	/* Use offsetof magic to calculate hook address. */
-	constexpr std::size_t off = offsetof(hook_type, elem_);
+	const std::size_t off = hook_type::_elem_offset();
 	const hook_type& hook = *reinterpret_cast<const hook_type*>(
 	    reinterpret_cast<const unsigned char*>(p.get()) - off);
+	assert(&hook.elem_ == p);
 
 	/* Cast to derived type. */
 	const_reference value = static_cast<const_reference>(hook);
@@ -354,9 +373,10 @@ ll_list_transformations<Type, Tag, AcqRel>::as_type_unlinked_(
 		return nullptr;
 
 	/* Use offsetof magic to calculate hook address. */
-	constexpr std::size_t off = offsetof(hook_type, elem_);
+	const std::size_t off = hook_type::_elem_offset();
 	hook_type& hook = *reinterpret_cast<hook_type*>(
 	    reinterpret_cast<unsigned char*>(p.get()) - off);
+	assert(&hook.elem_ == p);
 
 	/* Cast to derived type. */
 	reference value = static_cast<reference>(hook);
@@ -373,9 +393,10 @@ ll_list_transformations<Type, Tag, AcqRel>::as_type_unlinked_(
 		return nullptr;
 
 	/* Use offsetof magic to calculate hook address. */
-	constexpr std::size_t off = offsetof(hook_type, elem_);
+	const std::size_t off = hook_type::_elem_offset();
 	const hook_type& hook = *reinterpret_cast<const hook_type*>(
 	    reinterpret_cast<const unsigned char*>(p.get()) - off);
+	assert(&hook.elem_ == p);
 
 	/* Cast to derived type. */
 	const_reference value = static_cast<const_reference>(hook);

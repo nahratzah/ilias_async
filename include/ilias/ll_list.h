@@ -174,6 +174,8 @@ public:
 
 private:
 	ll_list_detail::elem elem_{ ll_list_detail::elem_type::ELEM };
+
+	static inline std::size_t _elem_offset() noexcept;
 };
 
 
