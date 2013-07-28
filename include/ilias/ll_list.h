@@ -318,6 +318,8 @@ public:
 
 	inline iterator iterator_to(reference) noexcept;
 	inline const_iterator iterator_to(const_reference) const noexcept;
+	inline iterator iterator_to(const pointer&);
+	inline const_iterator iterator_to(const const_pointer&) const;
 	inline iterator begin() noexcept;
 	inline iterator end() noexcept;
 
@@ -340,17 +342,17 @@ public:
 	/* Erase routines. */
 
 	template<typename Disposer> inline void clear_and_dispose(Disposer)
-		noexcept(noexcept(std::declval<Disposer>()(
+		noexcept(noexcept(std::declval<Disposer&>()(
 		    std::declval<pointer&&>())));
 	inline void clear() noexcept;
 
 	template<typename Disposer> inline iterator erase_and_dispose(
 	    const const_iterator&, Disposer)
-		noexcept(noexcept(std::declval<Disposer>()(
+		noexcept(noexcept(std::declval<Disposer&>()(
 		    std::declval<pointer&&>())));
 	template<typename Disposer> inline iterator erase_and_dispose(
 	    const iterator&, Disposer)
-		noexcept(noexcept(std::declval<Disposer>()(
+		noexcept(noexcept(std::declval<Disposer&>()(
 		    std::declval<pointer&&>())));
 	inline iterator erase(const const_iterator&) noexcept;
 	inline iterator erase(const iterator&) noexcept;
@@ -362,19 +364,21 @@ public:
 	template<typename Predicate, typename Disposer>
 	 void remove_and_dispose_if(Predicate, Disposer)
 	    noexcept(
-		noexcept(std::declval<Predicate>()(
+		noexcept(std::declval<Predicate&>()(
 		    std::declval<const_reference>())) &&
-		noexcept(std::declval<Disposer>()(std::declval<pointer&&>())));
+		noexcept(std::declval<Disposer&>()(
+		    std::declval<pointer&&>())));
 	template<typename Disposer>
 	 void remove_and_dispose(const_reference, Disposer)
 	    noexcept(
 		noexcept(std::declval<const_reference>() ==
 		    std::declval<const_reference>()) &&
-		noexcept(std::declval<Disposer>()(std::declval<pointer&&>())));
-	template<typename Predicate, typename Disposer>
+		noexcept(std::declval<Disposer&>()(
+		    std::declval<pointer&&>())));
+	template<typename Predicate>
 	 void remove_if(Predicate)
 	    noexcept(
-		noexcept(std::declval<Predicate>()(
+		noexcept(std::declval<Predicate&>()(
 		    std::declval<const_reference>())));
 	void remove(const_reference)
 	    noexcept(

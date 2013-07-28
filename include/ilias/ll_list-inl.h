@@ -735,7 +735,7 @@ template<typename Disposer>
 inline void
 ll_smartptr_list<Type, Tag, AcqRel>::clear_and_dispose(
     Disposer disposer)
-noexcept(noexcept(disposer(std::declval<pointer&&>())))
+noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer&&>())))
 {
 	/* XXX try to see if this can be done using splicing logic? */
 	while (pointer p = this->pop_front())
@@ -755,7 +755,7 @@ inline typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
 ll_smartptr_list<Type, Tag, AcqRel>::erase_and_dispose(
     const typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator& iter,
     Disposer disposer)
-noexcept(noexcept(disposer(std::declval<pointer&&>())))
+noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer&&>())))
 {
 	return this->erase(iterator{ this, iter },
 	    std::move_if_noexcept(disposer));
@@ -767,7 +767,7 @@ inline typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
 ll_smartptr_list<Type, Tag, AcqRel>::erase_and_dispose(
     const typename ll_smartptr_list<Type, Tag, AcqRel>::iterator& iter,
     Disposer disposer)
-noexcept(noexcept(disposer(std::declval<pointer&&>())))
+noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer&&>())))
 {
 	iterator rv{ iter };
 	++rv;
@@ -802,8 +802,10 @@ inline void
 ll_smartptr_list<Type, Tag, AcqRel>::remove_and_dispose_if(Predicate predicate,
     Disposer disposer)
 noexcept(
-	noexcept(std::declval<Predicate>()(std::declval<const_reference>())) &&
-	noexcept(std::declval<Disposer>()(std::declval<pointer&&>())))
+	noexcept(std::declval<Predicate&>()(
+	    std::declval<const_reference>())) &&
+	noexcept(std::declval<Disposer&>()(
+	    std::declval<pointer&&>())))
 {
 	for (iterator i = this->begin();
 	    i.get();
@@ -822,7 +824,8 @@ ll_smartptr_list<Type, Tag, AcqRel>::remove_and_dispose(
 noexcept(
 	noexcept(std::declval<const_reference>() ==
 	    std::declval<const_reference>()) &&
-	noexcept(std::declval<Disposer>()(std::declval<pointer&&>())))
+	noexcept(std::declval<Disposer&>()(
+	    std::declval<pointer&&>())))
 {
 	this->remove_and_dispose_if(
 	    [&value](const_reference test) {
@@ -832,11 +835,12 @@ noexcept(
 }
 
 template<typename Type, typename Tag, typename AcqRel>
-template<typename Predicate, typename Disposer>
+template<typename Predicate>
 inline void
 ll_smartptr_list<Type, Tag, AcqRel>::remove_if(Predicate predicate)
 noexcept(
-	noexcept(std::declval<Predicate>()(std::declval<const_reference>())))
+	noexcept(std::declval<Predicate&>()(
+	    std::declval<const_reference>())))
 {
 	this->remove_and_dispose_if(std::move(predicate),
 	    [](const pointer&) {
@@ -902,6 +906,26 @@ ll_smartptr_list<Type, Tag, AcqRel>::iterator_to(
 	if (!result.link_at_(this, const_pointer{ &r }))
 		result.link_at_(this, ll_list_detail::basic_iter::tag::head);
 	return result;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
+ll_smartptr_list<Type, Tag, AcqRel>::iterator_to(
+    const ll_smartptr_list<Type, Tag, AcqRel>::pointer& p)
+{
+	if (p == nullptr)
+		throw std::invalid_argument("cannot iterate to null");
+	return this->iterator_to(*p);
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator
+ll_smartptr_list<Type, Tag, AcqRel>::iterator_to(
+    const ll_smartptr_list<Type, Tag, AcqRel>::const_pointer& p) const
+{
+	if (p == nullptr)
+		throw std::invalid_argument("cannot iterate to null");
+	return this->iterator_to(*p);
 }
 
 template<typename Type, typename Tag, typename AcqRel>
