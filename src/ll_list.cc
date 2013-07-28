@@ -222,7 +222,7 @@ basic_iter::link_post_insert_(basic_list* list,
 		if (lr == ll_simple_list::link_result::SUCCESS)
 			break;	/* GUARD */
 
-		assert(lr == ll_simple_list::link_result::POS_INVALID);
+		assert(lr == ll_simple_list::link_result::INVALID_POS);
 		/*
 		 * We don't own get<0>(back_pos), so the owner can freely
 		 * unlink it.  If that happens, acquire a new position.
@@ -247,7 +247,7 @@ basic_iter::link_post_insert_(basic_list* list,
 		if (lr == ll_simple_list::link_result::SUCCESS)
 			break;	/* GUARD */
 
-		assert(lr == ll_simple_list::link_result::POS_INVALID);
+		assert(lr == ll_simple_list::link_result::INVALID_POS);
 		/*
 		 * We don't own get<1>(forw_pos), so the owner can freely
 		 * unlink it.  If that happens, acquire a new position.
