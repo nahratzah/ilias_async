@@ -357,11 +357,23 @@ public:
 		return (this->get() == p);
 	}
 
+	friend bool
+	operator==(const pointer& a, const refpointer& b) noexcept
+	{
+		return b == a;
+	}
+
 	template<typename U>
 	bool
 	operator!=(const U& o) const noexcept
 	{
 		return !(*this == o);
+	}
+
+	friend bool
+	operator!=(const pointer& a, const refpointer& b) noexcept
+	{
+		return b != a;
 	}
 
 	explicit operator bool() const noexcept
