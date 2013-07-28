@@ -331,8 +331,8 @@ bool
 tp_service_multiplexer::threadpool_client::has_work() noexcept
 {
 	threadpool_client_lock lck{ *this };
-	this->m_self.m_active.remove_if([](threadpool_service& s) {
-		return !s.invoke_test();
+	this->m_self.m_active.remove_if([](const threadpool_service& s) {
+		return !const_cast<threadpool_service&>(s).invoke_test();
 	    });
 	return !this->m_self.m_active.empty();
 }
@@ -423,9 +423,11 @@ tp_client_multiplexer::threadpool_service::wakeup(unsigned int n) noexcept
 	unsigned int rv = 0;
 	threadpool_service_lock lck{ *this };
 	if (this->has_service()) {
-		this->m_self.m_data.remove_if([&rv, n](threadpool_client& c) {
-			rv += std::min(n - rv, c.wakeup(n));
-			return c.has_service();
+		this->m_self.m_data.remove_if(
+		    [&rv, n](const threadpool_client& c) {
+			rv += std::min(n - rv,
+			    const_cast<threadpool_client&>(c).wakeup(n));
+			return c.has_service();	/* XXX is this right? */
 		    });
 	}
 	return rv;
