@@ -79,7 +79,15 @@ public:
 	ILIAS_ASYNC_EXPORT elem_ptr pop_front() noexcept;
 	ILIAS_ASYNC_EXPORT elem_ptr pop_back() noexcept;
 
+	inline bool insert_after(elem*, elem_ptr);
+	inline bool insert_before(elem*, elem_ptr);
+
 private:
+	ILIAS_ASYNC_EXPORT bool insert_after_(elem*, elem_ptr,
+	    basic_iter* = nullptr) noexcept;
+	ILIAS_ASYNC_EXPORT bool insert_before_(elem*, elem_ptr,
+	    basic_iter* = nullptr) noexcept;
+
 	elem head_;
 };
 
@@ -114,6 +122,9 @@ public:
 	    const basic_iter&) noexcept;
 
 	bool operator==(const basic_iter&) const = delete;
+
+	ILIAS_ASYNC_LOCAL void link_post_insert_(basic_list*,
+	    std::tuple<elem_ptr, elem_ptr>) noexcept;
 
 private:
 	ILIAS_ASYNC_EXPORT bool link_at_(basic_list*, elem_ptr) noexcept;
@@ -314,21 +325,32 @@ public:
 
 	inline bool push_back(pointer p);
 	inline bool push_front(pointer p);
+	inline std::pair<iterator, bool> insert_after(const const_iterator&,
+	    pointer);
+	inline std::pair<iterator, bool> insert_after(const iterator&,
+	    pointer);
+	inline std::pair<iterator, bool> insert_before(const const_iterator&,
+	    pointer);
+	inline std::pair<iterator, bool> insert_before(const iterator&,
+	    pointer);
+
+	inline iterator insert(const const_iterator&, pointer);
+	inline iterator insert(const iterator&, pointer);
 
 	/* Erase routines. */
 
 	template<typename Disposer> inline void clear_and_dispose(Disposer)
-		noexcept(noexcept(std::declval<Disposer>(
+		noexcept(noexcept(std::declval<Disposer>()(
 		    std::declval<pointer&&>())));
 	inline void clear() noexcept;
 
 	template<typename Disposer> inline iterator erase_and_dispose(
 	    const const_iterator&, Disposer)
-		noexcept(noexcept(std::declval<Disposer>(
+		noexcept(noexcept(std::declval<Disposer>()(
 		    std::declval<pointer&&>())));
 	template<typename Disposer> inline iterator erase_and_dispose(
 	    const iterator&, Disposer)
-		noexcept(noexcept(std::declval<Disposer>(
+		noexcept(noexcept(std::declval<Disposer>()(
 		    std::declval<pointer&&>())));
 	inline iterator erase(const const_iterator&) noexcept;
 	inline iterator erase(const iterator&) noexcept;

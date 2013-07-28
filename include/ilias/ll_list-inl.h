@@ -631,6 +631,106 @@ ll_smartptr_list<Type, Tag, AcqRel>::push_front(
 }
 
 template<typename Type, typename Tag, typename AcqRel>
+inline std::pair<typename ll_smartptr_list<Type, Tag, AcqRel>::iterator, bool>
+ll_smartptr_list<Type, Tag, AcqRel>::insert_after(
+    const typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator& pos,
+    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
+{
+	if (p == nullptr)
+		throw std::invalid_argument("null element");
+
+	std::pair<iterator, bool> result;
+	if ((result.second = this->impl_.insert_after(
+	    this->as_elem_(p), &pos.forw_, &result.impl_)))
+		result.first.val_ = std::move(p);
+	else
+		result.first = pos;
+	return result;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+inline std::pair<typename ll_smartptr_list<Type, Tag, AcqRel>::iterator, bool>
+ll_smartptr_list<Type, Tag, AcqRel>::insert_after(
+    const typename ll_smartptr_list<Type, Tag, AcqRel>::iterator& pos,
+    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
+{
+	if (p == nullptr)
+		throw std::invalid_argument("null element");
+
+	std::pair<iterator, bool> result;
+	if ((result.second = this->impl_.insert_after(
+	    this->as_elem_(p), &pos.forw_, &result.impl_)))
+		result.first.val_ = std::move(p);
+	else
+		result.first = pos;
+	return result;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+inline std::pair<typename ll_smartptr_list<Type, Tag, AcqRel>::iterator, bool>
+ll_smartptr_list<Type, Tag, AcqRel>::insert_before(
+    const typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator& pos,
+    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
+{
+	if (p == nullptr)
+		throw std::invalid_argument("null element");
+
+	std::pair<iterator, bool> result;
+	if ((result.second = this->impl_.insert_before(
+	    this->as_elem_(p), &pos.forw_, &result.impl_)))
+		result.first.val_ = std::move(p);
+	else
+		result.first = pos;
+	return result;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+inline std::pair<typename ll_smartptr_list<Type, Tag, AcqRel>::iterator, bool>
+ll_smartptr_list<Type, Tag, AcqRel>::insert_before(
+    const typename ll_smartptr_list<Type, Tag, AcqRel>::iterator& pos,
+    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
+{
+	if (p == nullptr)
+		throw std::invalid_argument("null element");
+
+	std::pair<iterator, bool> result;
+	if ((result.second = this->impl_.insert_before(
+	    this->as_elem_(p), &pos.forw_, &result.impl_)))
+		result.first.val_ = std::move(p);
+	else
+		result.first = pos;
+	return result;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+inline typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
+ll_smartptr_list<Type, Tag, AcqRel>::insert(
+    const typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator& pos,
+    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
+{
+	iterator result;
+	bool success;
+	std::tie(result, success) = this->insert_before(pos, std::move(p));
+	if (success)
+		++result;
+	return result;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+inline typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
+ll_smartptr_list<Type, Tag, AcqRel>::insert(
+    const typename ll_smartptr_list<Type, Tag, AcqRel>::iterator& pos,
+    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
+{
+	iterator result;
+	bool success;
+	std::tie(result, success) = this->insert_before(pos, std::move(p));
+	if (success)
+		++result;
+	return result;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
 template<typename Disposer>
 inline void
 ll_smartptr_list<Type, Tag, AcqRel>::clear_and_dispose(

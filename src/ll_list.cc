@@ -62,6 +62,88 @@ basic_list::pop_back() noexcept
 	return nullptr;
 }
 
+bool
+basic_list::insert_after_(elem* ins, elem_ptr pos, basic_iter* out_iter)
+noexcept
+{
+	assert(ins != nullptr && ins->is_elem());
+	assert(pos != nullptr && pos->is_forw_iter());
+	assert(out_iter == nullptr ||
+	    (pos != &out_iter->forw_ && pos != &out_iter->back_));
+
+	std::tuple<elem_ptr, elem_ptr> pos_tpl{ std::move(pos), nullptr };
+	ll_simple_list::link_result lr;
+	if (out_iter)
+		out_iter->unlink();
+
+	/* Insert the element. */
+	do {
+		/* Fix pos_tpl to hold both ends of the insertion point. */
+		std::get<1>(pos_tpl) = std::get<0>(pos_tpl)->succ();
+		while (std::get<1>(pos_tpl)->is_forw_iter()) {
+			std::get<0>(pos_tpl) = std::move(std::get<1>(pos_tpl));
+			std::get<1>(pos_tpl) = std::get<0>(pos_tpl)->succ();
+		}
+
+		/* Validate pos_tpl. */
+		assert(!std::get<0>(pos_tpl)->is_back_iter());
+		assert(!std::get<1>(pos_tpl)->is_forw_iter());
+
+		lr = elem::link_between(ins, pos_tpl);
+	} while (lr == ll_simple_list::link_result::INVALID_POS);
+
+	/* Return failure. */
+	if (lr != ll_simple_list::SUCCESS)
+		return false;
+
+	/* Update out_iter. */
+	if (out_iter)
+		out_iter->link_post_insert_(this, std::move(pos_tuple));
+
+	return true;
+}
+
+bool
+basic_list::insert_before_(elem* ins, elem_ptr pos, basic_iter* out_iter)
+noexcept
+{
+	assert(ins != nullptr && ins->is_elem());
+	assert(pos != nullptr && pos->is_back_iter());
+	assert(out_iter == nullptr ||
+	    (pos != &out_iter->forw_ && pos != &out_iter->back_));
+
+	std::tuple<elem_ptr, elem_ptr> pos_tpl{ nullptr, std::move(pos) };
+	ll_simple_list::link_result lr;
+	if (out_iter)
+		out_iter->unlink();
+
+	/* Insert the element. */
+	do {
+		/* Fix pos_tpl to hold both ends of the insertion point. */
+		std::get<0>(pos_tpl) = std::get<1>(pos_tpl)->pred();
+		while (std::get<0>(pos_tpl)->is_back_iter()) {
+			std::get<1>(pos_tpl) = std::move(std::get<0>(pos_tpl));
+			std::get<0>(pos_tpl) = std::get<1>(pos_tpl)->pred();
+		}
+
+		/* Validate pos_tpl. */
+		assert(!std::get<0>(pos_tpl)->is_back_iter());
+		assert(!std::get<1>(pos_tpl)->is_forw_iter());
+
+		lr = elem::link_between(ins, pos_tpl);
+	} while (lr == ll_simple_list::link_result::INVALID_POS);
+
+	/* Return failure. */
+	if (lr != ll_simple_list::SUCCESS)
+		return false;
+
+	/* Update out_iter. */
+	if (out_iter)
+		out_iter->link_post_insert_(this, std::move(pos_tuple));
+
+	return true;
+}
+
 
 elem_ptr
 basic_iter::next(basic_list::size_type n) noexcept
@@ -113,6 +195,66 @@ basic_iter::prev(basic_list::size_type n) noexcept
 			i = i->pred(types);
 		return i;
 	    });
+}
+
+void
+basic_iter::link_post_insert_(basic_list* list,
+    std::tuple<elem_ptr, elem_ptr> between) noexcept
+{
+	assert(this->owner_ == nullptr);
+	assert(!this->forw_.is_linked() && !this->back_.is_linked());
+	assert(!std::get<0>(between)->is_back_iter());
+	assert(!std::get<1>(between)->is_forw_iter());
+
+	std::tuple<elem_ptr, elem_ptr> back_pos{
+		std::move(std::get<0>(between)),
+		nullptr
+	    };
+	for (;;) {
+		std::get<1>(back_pos) = std::get<0>(back_pos)->succ();
+		while (std::get<1>(back_pos)->is_forw_iter()) {
+			std::get<0>(back_pos) =
+			    std::move(std::get<1>(back_pos));
+			std::get<1>(back_pos) =
+			    std::get<0>(back_pos)->succ();
+		}
+		auto lr = elem::link_between(&this->back_, back_pos);
+		if (lr == ll_simple_list::link_result::SUCCESS)
+			break;	/* GUARD */
+
+		assert(lr == ll_simple_list::link_result::POS_INVALID);
+		/*
+		 * We don't own get<0>(back_pos), so the owner can freely
+		 * unlink it.  If that happens, acquire a new position.
+		 */
+		if (!std::get<0>(back_pos)->is_linked())
+			std::get<0>(back_pos) = std::get<0>(back_pos)->pred();
+	}
+
+	std::tuple<elem_ptr, elem_ptr> forw_pos{
+		nullptr,
+		std::move(std::get<1>(between))
+	    };
+	for (;;) {
+		std::get<0>(forw_pos) = std::get<1>(forw_pos)->pred();
+		while (std::get<0>(forw_pos)->is_back_iter()) {
+			std::get<1>(forw_pos) =
+			    std::move(std::get<0>(forw_pos));
+			std::get<0>(forw_pos) =
+			    std::get<1>(forw_pos)->pred();
+		}
+		auto lr = elem::link_between(&this->forw_, forw_pos);
+		if (lr == ll_simple_list::link_result::SUCCESS)
+			break;	/* GUARD */
+
+		assert(lr == ll_simple_list::link_result::POS_INVALID);
+		/*
+		 * We don't own get<1>(forw_pos), so the owner can freely
+		 * unlink it.  If that happens, acquire a new position.
+		 */
+		if (!std::get<1>(forw_pos)->is_linked())
+			std::get<1>(forw_pos) = std::get<1>(forw_pos)->succ();
+	}
 }
 
 bool
