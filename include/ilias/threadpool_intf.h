@@ -524,13 +524,13 @@ public:
 private:
 	/* All clients of the service set. */
 	using data_t = ll_smartptr_list<threadpool_service,
-	    threadpool_intf_detail::service_acqrel,
-	    data_all>;
+	    data_all,
+	    threadpool_intf_detail::service_acqrel>;
 
 	/* All active clients (i.e. the ones with work to do). */
 	using active_t = ll_smartptr_list<threadpool_service,
-	    threadpool_intf_detail::service_acqrel,
-	    data_active>;
+	    data_active,
+	    threadpool_intf_detail::service_acqrel>;
 
 	/* All clients. */
 	data_t m_data;
@@ -630,6 +630,7 @@ public:
 private:
 	/* All services. */
 	using data_t = ll_smartptr_list<threadpool_client,
+	    void,
 	    threadpool_intf_detail::client_acqrel>;
 
 	/* All services. */

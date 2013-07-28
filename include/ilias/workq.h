@@ -384,11 +384,11 @@ public:
 
 private:
 	using job_runq = ll_smartptr_list<workq_job,
-	    workq_detail::workq_intref_mgr<workq_job>,
-	    workq_detail::runq_tag>;
+	    workq_detail::runq_tag,
+	    workq_detail::workq_intref_mgr<workq_job>>;
 	using job_p_runq = ll_smartptr_list<workq_job,
-	    workq_detail::workq_intref_mgr<workq_job>,
-	    workq_detail::parallel_tag>;
+	    workq_detail::parallel_tag,
+	    workq_detail::workq_intref_mgr<workq_job>>;
 
 	job_runq m_runq;
 	job_p_runq m_p_runq;
@@ -720,11 +720,11 @@ public:
 
 private:
 	using wq_runq = ll_smartptr_list<workq,
-	    workq_detail::workq_intref_mgr<workq>,
-	    workq_detail::runq_tag>;
+	    workq_detail::runq_tag,
+	    workq_detail::workq_intref_mgr<workq>>;
 	using co_runq = ll_smartptr_list<workq_detail::co_runnable,
-	    workq_detail::workq_intref_mgr<workq_detail::co_runnable>,
-	    workq_detail::coroutine_tag>;
+	    workq_detail::coroutine_tag,
+	    workq_detail::workq_intref_mgr<workq_detail::co_runnable>>;
 
 	wq_runq m_wq_runq;
 	co_runq m_co_runq;
