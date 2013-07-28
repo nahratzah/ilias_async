@@ -5,6 +5,8 @@
 #include <ilias/refcnt.h>
 #include <ilias/detail/ll_simple_list.h>
 #include <array>
+#include <type_traits>
+#include <utility>
 
 
 namespace ilias {
@@ -68,11 +70,14 @@ public:
 	using difference_type = std::intptr_t;
 
 	inline basic_list() noexcept;
-	inline size_type size() const noexcept;
-	inline bool empty() const noexcept;
+	ILIAS_ASYNC_EXPORT size_type size() const noexcept;
+	ILIAS_ASYNC_EXPORT bool empty() const noexcept;
 
-	bool push_front(elem* e);
-	bool push_back(elem* e);
+	inline bool push_front(elem* e);
+	inline bool push_back(elem* e);
+
+	ILIAS_ASYNC_EXPORT elem_ptr pop_front() noexcept;
+	ILIAS_ASYNC_EXPORT elem_ptr pop_back() noexcept;
 
 private:
 	elem head_;
@@ -92,6 +97,9 @@ public:
 	inline basic_iter(const basic_iter&) noexcept;
 	inline basic_iter(basic_iter&&) noexcept;
 	~basic_iter() = default;
+
+	inline basic_iter& operator=(const basic_iter&) noexcept;
+	inline basic_iter& operator=(basic_iter&&) noexcept;
 
 	ILIAS_ASYNC_EXPORT elem_ptr next(basic_list::size_type n = 1) noexcept;
 	ILIAS_ASYNC_EXPORT elem_ptr prev(basic_list::size_type n = 1) noexcept;
@@ -113,6 +121,10 @@ private:
 	basic_list* owner_;
 	elem forw_, back_;
 };
+
+
+template<typename Type, typename Tag, typename AcqRel>
+    class ll_list_transformations;
 
 
 } /* namespace ilias::ll_list_detail */
@@ -137,16 +149,30 @@ template<typename Tag = void>
 class ll_list_hook
 {
 template<typename FType, typename FTag, typename FAcqRel> friend
-    class ll_smartptr_list;
+    class ll_list_detail::ll_list_transformations;
+template<typename T, bool>
+    friend class ll_list_iter_detail::ll_smartptr_list_iterator;
+
+public:
+	ll_list_hook() = default;
+	ll_list_hook(const ll_list_hook&) = default;
+	ll_list_hook(ll_list_hook&&) = default;
+	~ll_list_hook() = default;
+	ll_list_hook& operator=(const ll_list_hook&) = default;
+	ll_list_hook& operator=(ll_list_hook&&) = default;
 
 private:
-	ll_list_detail::ll_simple_list::elem elem_;
+	ll_list_detail::elem elem_{ ll_list_detail::elem_type::ELEM };
 };
 
 
-template<typename Type, typename Tag = void,
-    typename AcqRel = default_refcount_mgr<Type>>
-class ll_smartptr_list
+namespace ll_list_detail {
+
+
+struct no_acqrel {};
+
+template<typename Type, typename Tag, typename AcqRel>
+class alignas(2) ll_list_transformations
 {
 public:
 	using value_type = Type;
@@ -154,6 +180,88 @@ public:
 	using const_pointer = refpointer<const value_type, AcqRel>;
 	using reference = value_type&;
 	using const_reference = const value_type&;
+
+protected:
+	ll_list_transformations() = default;
+	ll_list_transformations(const ll_list_transformations&) = default;
+	ll_list_transformations(ll_list_transformations&&) = default;
+
+	ll_list_transformations& operator=(const ll_list_transformations&) =
+	    default;
+	ll_list_transformations& operator=(ll_list_transformations&&) =
+	    default;
+
+	static inline elem_ptr as_elem_(const pointer&) noexcept;
+	static inline const_elem_ptr as_elem_(const const_pointer&) noexcept;
+	inline pointer as_type_(const elem_ptr&) noexcept;
+	inline const_pointer as_type_(const const_elem_ptr&) noexcept;
+	inline void post_unlink_(const_reference, std::size_t) const noexcept;
+
+private:
+	using hook_type = ll_list_hook<Tag>;
+	using hazard_t = hazard<
+	    const ll_list_transformations<Type, Tag, AcqRel>,
+	    const value_type>;
+};
+
+template<typename Type, typename Tag>
+class alignas(2) ll_list_transformations<Type, Tag, no_acqrel>
+{
+public:
+	using value_type = Type;
+	using pointer = value_type*;
+	using const_pointer = const value_type*;
+	using reference = value_type&;
+	using const_reference = const value_type&;
+
+protected:
+	ll_list_transformations() = default;
+	ll_list_transformations(const ll_list_transformations&) = default;
+	ll_list_transformations(ll_list_transformations&&) = default;
+
+	ll_list_transformations& operator=(const ll_list_transformations&) =
+	    default;
+	ll_list_transformations& operator=(ll_list_transformations&&) =
+	    default;
+
+	static inline elem_ptr as_elem_(pointer) noexcept;
+	static inline const_elem_ptr as_elem_(const_pointer) noexcept;
+	inline pointer as_type_(const elem_ptr&) noexcept;
+	inline const_pointer as_type_(const const_elem_ptr&) noexcept;
+	inline void post_unlink_(const_reference, std::size_t) const noexcept;
+
+private:
+	using hook_type = ll_list_hook<Tag>;
+	using hazard_t = hazard<
+	    const ll_list_transformations<Type, Tag, no_acqrel>,
+	    const value_type>;
+};
+
+
+} /* namespace ilias::ll_list_detail */
+
+
+template<typename Type, typename Tag = void,
+    typename AcqRel = default_refcount_mgr<Type>>
+class ll_smartptr_list
+:	private ll_list_detail::ll_list_transformations<Type, Tag, AcqRel>
+{
+friend class ll_list_iter_detail::ll_smartptr_list_iterator<
+    ll_smartptr_list, true>;
+friend class ll_list_iter_detail::ll_smartptr_list_iterator<
+    ll_smartptr_list, false>;
+
+private:
+	using parent_t = ll_list_detail::ll_list_transformations<Type,
+	    Tag, AcqRel>;
+
+public:
+	using value_type = typename parent_t::value_type;
+	using pointer = typename parent_t::pointer;
+	using const_pointer = typename parent_t::const_pointer;
+	using reference = typename parent_t::reference;
+	using const_reference = typename parent_t::const_reference;
+
 	using size_type = ll_list_detail::basic_list::size_type;
 	using difference_type = ll_list_detail::basic_list::difference_type;
 
@@ -175,6 +283,17 @@ public:
 	    ll_list_iter_detail::reverse>;
 
 	ll_smartptr_list() = default;
+	inline ~ll_smartptr_list() noexcept;
+
+	/* Empty/size functions. */
+
+	inline bool empty() const noexcept;
+	inline size_type size() const noexcept;
+
+	/* Pop operations. */
+
+	inline pointer pop_front() noexcept;
+	inline pointer pop_back() noexcept;
 
 	/* Iterators. */
 
@@ -190,6 +309,11 @@ public:
 
 	/* Erase routines. */
 
+	template<typename Disposer> inline void clear_and_dispose(Disposer)
+		noexcept(noexcept(std::declval<Disposer>(
+		    std::declval<pointer&&>())));
+	inline void clear() noexcept;
+
 	template<typename Disposer> inline iterator erase_and_dispose(
 	    const const_iterator&, Disposer)
 		noexcept(noexcept(std::declval<Disposer>(
@@ -203,23 +327,43 @@ public:
 
 	/* XXX Figure out how to erase an iterator range properly. */
 
-private:
-	using hook_type = ll_list_hook<Tag>;
-	using hazard_t = hazard<const ll_list_detail::basic_list,
-	    const value_type>;
+	/* Remove routines. */
 
-	static inline ll_list_detail::elem_ptr as_elem_(
-	    const pointer&) noexcept;
-	static inline ll_list_detail::const_elem_ptr as_elem_(
-	    const const_pointer&) noexcept;
-	inline pointer as_type_(const ll_list_detail::elem_ptr&) noexcept;
-	inline const_pointer as_type_(const ll_list_detail::const_elem_ptr&)
-	    noexcept;
+	template<typename Predicate, typename Disposer>
+	 void remove_and_dispose_if(Predicate, Disposer)
+	    noexcept(
+		noexcept(std::declval<Predicate>()(
+		    std::declval<const_reference>())) &&
+		noexcept(std::declval<Disposer>()(std::declval<pointer&&>())));
+	template<typename Disposer>
+	 void remove_and_dispose(const_reference, Disposer)
+	    noexcept(
+		noexcept(std::declval<const_reference>() ==
+		    std::declval<const_reference>()) &&
+		noexcept(std::declval<Disposer>()(std::declval<pointer&&>())));
+	template<typename Predicate, typename Disposer>
+	 void remove_if(Predicate)
+	    noexcept(
+		noexcept(std::declval<Predicate>()(
+		    std::declval<const_reference>())));
+	void remove(const_reference)
+	    noexcept(
+		noexcept(std::declval<const_reference>() ==
+		    std::declval<const_reference>()));
+
+private:
 	inline bool unlink(const pointer&) noexcept;
 	inline bool unlink(const const_pointer&) noexcept;
 
+	using parent_t::as_elem_;
+	using parent_t::as_type_;
+	using parent_t::post_unlink_;
+
 	ll_list_detail::basic_list impl_;
 };
+
+template<typename Type, typename Tag = void> using ll_list =
+    ll_smartptr_list<Type, Tag, ll_list_detail::no_acqrel>;
 
 
 namespace ll_list_iter_detail {
@@ -298,6 +442,8 @@ public:
 	inline operator typename parent_t::pointer() const
 	    noexcept;
 
+	inline typename parent_t::pointer release() noexcept;
+
 protected:
 	inline void next(ll_list_detail::basic_list::size_type = 1) noexcept;
 	inline void prev(ll_list_detail::basic_list::size_type = 1) noexcept;
@@ -322,7 +468,17 @@ private:
 	using parent_t = Iter;
 
 public:
-	using parent_t::parent_t;
+	iter_direction() = default;
+	iter_direction(const iter_direction&) = default;
+	iter_direction(iter_direction&&) = default;
+
+	iter_direction(const parent_t&)
+	    noexcept(std::is_nothrow_copy_constructible<parent_t>::value);
+	iter_direction(parent_t&&)
+	    noexcept(std::is_nothrow_move_constructible<parent_t>::value);
+
+	iter_direction& operator=(const iter_direction&) = default;
+	iter_direction& operator=(iter_direction&&) = default;
 
 	derived_t& operator++() noexcept;
 	derived_t& operator--() noexcept;
@@ -346,7 +502,17 @@ private:
 	using parent_t = Iter;
 
 public:
-	using parent_t::parent_t;
+	iter_direction() = default;
+	iter_direction(const iter_direction&) = default;
+	iter_direction(iter_direction&&) = default;
+
+	inline iter_direction(const parent_t&)
+	    noexcept(std::is_nothrow_copy_constructible<parent_t>::value);
+	inline iter_direction(parent_t&&)
+	    noexcept(std::is_nothrow_move_constructible<parent_t>::value);
+
+	iter_direction& operator=(const iter_direction&) = default;
+	iter_direction& operator=(iter_direction&&) = default;
 
 	derived_t& operator++() noexcept;
 	derived_t& operator--() noexcept;

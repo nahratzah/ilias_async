@@ -5,6 +5,64 @@ namespace ilias {
 namespace ll_list_detail {
 
 
+basic_list::size_type
+basic_list::size() const noexcept
+{
+	size_type count = 0;
+	for (elem_ptr i = this->head_.succ();
+	    !i->is_head();
+	    i = i->succ()) {
+		if (i->is_elem())
+			++count;
+	}
+	return count;
+}
+
+bool
+basic_list::empty() const noexcept
+{
+	elem_ptr i;
+	for (i = this->head_.succ();
+	    !i->is_head() && !i->is_elem();
+	    i = i->succ());
+	return i->is_head();
+}
+
+elem_ptr
+basic_list::pop_front() noexcept
+{
+	constexpr std::array<elem_type, 2> types{{
+		elem_type::HEAD,
+		elem_type::ELEM
+	    }};
+
+	for (elem_ptr i = this->head_.succ(types);
+	    i->is_elem();
+	    i = i->succ(types)) {
+		if (i->unlink())
+			return i;
+	}
+	return nullptr;
+}
+
+elem_ptr
+basic_list::pop_back() noexcept
+{
+	constexpr std::array<elem_type, 2> types{{
+		elem_type::HEAD,
+		elem_type::ELEM
+	    }};
+
+	for (elem_ptr i = this->head_.pred(types);
+	    i->is_elem();
+	    i = i->pred(types)) {
+		if (i->unlink())
+			return i;
+	}
+	return nullptr;
+}
+
+
 elem_ptr
 basic_iter::next(basic_list::size_type n) noexcept
 {
