@@ -705,12 +705,12 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_after(
 		throw std::invalid_argument("null element");
 
 	std::pair<iterator, bool> result;
+	result.first.val_ = p;
 	auto p_ = this->as_elem_(p).get();
 	if ((result.second = this->impl_.insert_after(
-	    p_, pos.impl_, &result.first.impl_))) {
-		result.first.val_ = p;
+	    p_, pos.impl_, &result.first.impl_)))
 		parent_t::release_pointer(p);
-	} else
+	else
 		result.first = pos;
 	return result;
 }
@@ -725,12 +725,12 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_after(
 		throw std::invalid_argument("null element");
 
 	std::pair<iterator, bool> result;
+	result.first.val_ = p;
 	auto p_ = this->as_elem_(p).get();
 	if ((result.second = this->impl_.insert_after(
-	    p_, pos.impl_, &result.first.impl_))) {
-		result.first.val_ = p;
+	    p_, pos.impl_, &result.first.impl_)))
 		parent_t::release_pointer(p);
-	} else
+	else
 		result.first = pos;
 	return result;
 }
@@ -745,12 +745,12 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_before(
 		throw std::invalid_argument("null element");
 
 	std::pair<iterator, bool> result;
+	result.first.val_ = p;
 	auto p_ = this->as_elem_(p).get();
 	if ((result.second = this->impl_.insert_before(
-	    p_, pos.impl_, &result.first.impl_))) {
-		result.first.val_ = p;
+	    p_, pos.impl_, &result.first.impl_)))
 		parent_t::release_pointer(p);
-	} else
+	else
 		result.first = pos;
 	return result;
 }
@@ -765,12 +765,12 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_before(
 		throw std::invalid_argument("null element");
 
 	std::pair<iterator, bool> result;
+	result.first.val_ = p;
 	auto p_ = this->as_elem_(p).get();
 	if ((result.second = this->impl_.insert_before(
-	    p_, pos.impl_, &result.first.impl_))) {
-		result.first.val_ = p;
+	    p_, pos.impl_, &result.first.impl_)))
 		parent_t::release_pointer(p);
-	} else
+	else
 		result.first = pos;
 	return result;
 }
