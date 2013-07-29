@@ -25,6 +25,7 @@ if (APPLE)
 	set (CMAKE_XCODE_ATTRIBUTE_GCC_VERSION "com.apple.compilers.llvm.clang.1_0")
 	set (CMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD "c++0x")
 	set (CMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY "libc++")
+	set (CMAKE_OSX_ARCHITECTURES "i386;x86_64")
 endif ()
 
 # Setup compiler flags.
