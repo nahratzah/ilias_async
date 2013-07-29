@@ -93,14 +93,12 @@ test_obj::ensure_index(unsigned int v, bool* fail) const
 test_obj::test_obj() noexcept
 :	idx{ index_.fetch_add(1U, std::memory_order_relaxed) }
 {
-	std::cout << "Create test_obj." << std::endl;
 	count_.fetch_add(1U, std::memory_order_relaxed);
 }
 
 test_obj::~test_obj() noexcept
 {
 	count_.fetch_sub(1U, std::memory_order_relaxed);
-	std::cout << "Destroy test_obj." << std::endl;
 }
 
 void
