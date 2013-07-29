@@ -3,6 +3,7 @@
 #include <atomic>
 #include <exception>
 #include <iostream>
+#include <vector>
 
 class test_obj
 :	public ilias::ll_list_hook<>,
@@ -16,7 +17,7 @@ public:
 
 	static void ensure_count(unsigned int);
 	static unsigned int get_count() noexcept;
-	void ensure_index(unsigned int);
+	void ensure_index(unsigned int, bool* = nullptr) const;
 
 	test_obj(const test_obj&) = delete;
 	test_obj(test_obj&&) = delete;
@@ -36,6 +37,7 @@ new_test_obj()
 
 using list = ilias::ll_smartptr_list<test_obj>;
 
+void ensure_equal(const list&, const std::vector<unsigned int>&);
 
 void test();	/* forward declaration, filled in by each test */
 
@@ -76,12 +78,15 @@ test_obj::get_count() noexcept
 }
 
 void
-test_obj::ensure_index(unsigned int v)
+test_obj::ensure_index(unsigned int v, bool* fail) const
 {
 	if (this->idx != v) {
 		std::cerr << "Expected test object " << v << ", "
 		    "but found " << this->idx << "instead." <<std::endl;
-		std::terminate();
+		if (fail)
+			*fail = true;
+		else
+			std::terminate();
 	}
 }
 
@@ -96,4 +101,38 @@ test_obj::~test_obj() noexcept
 {
 	count_.fetch_sub(1U, std::memory_order_relaxed);
 	std::cout << "Destroy test_obj." << std::endl;
+}
+
+void
+ensure_equal(const list& l, const std::vector<unsigned int>& v)
+{
+	auto v_iter = v.begin();
+	auto l_iter = l.begin();
+
+	bool fail = false;
+	while (l_iter.get() && v_iter != v.end()) {
+		l_iter->ensure_index(*v_iter, &fail);
+
+		++l_iter;
+		++v_iter;
+	}
+
+	if (l_iter.get()) {
+		std::cerr << "list contains more element... " << l_iter->idx;
+		while ((++l_iter).get())
+			std::cerr << ", " << l_iter->idx;
+		std::cerr << std::endl;
+		fail = true;
+	}
+
+	if (v_iter != v.end()) {
+		std::cerr << "list misses elements... " << *v_iter;
+		while (++v_iter != v.end())
+			std::cerr << ", " << *v_iter;
+		std::cerr << std::endl;
+		fail = true;
+	}
+
+	if (fail)
+		std::terminate();
 }
