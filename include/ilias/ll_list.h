@@ -398,6 +398,15 @@ public:
 		noexcept(std::declval<const_reference>() ==
 		    std::declval<const_reference>()));
 
+	/* Algorithms. */
+
+	template<typename Functor>
+	Functor visit(Functor) noexcept(noexcept(std::declval<Functor>()(
+	    std::declval<reference>())));
+	template<typename Functor>
+	Functor visit(Functor) const noexcept(noexcept(std::declval<Functor>()(
+	    std::declval<const_reference>())));
+
 private:
 	inline bool unlink(const pointer&) noexcept;
 	inline bool unlink(const const_pointer&) noexcept;

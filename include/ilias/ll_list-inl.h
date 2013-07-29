@@ -1072,6 +1072,32 @@ ll_smartptr_list<Type, Tag, AcqRel>::cend() const noexcept
 	return result;
 }
 
+template<typename Type, typename Tag, typename AcqRel>
+template<typename Functor>
+Functor
+ll_smartptr_list<Type, Tag, AcqRel>::visit(Functor functor)
+noexcept(noexcept(std::declval<Functor>()(std::declval<reference>())))
+{
+	for (iterator i = this->begin();
+	    i.get();
+	    ++i)
+		functor(*i);
+	return functor;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+template<typename Functor>
+Functor
+ll_smartptr_list<Type, Tag, AcqRel>::visit(Functor functor) const
+noexcept(noexcept(std::declval<Functor>()(std::declval<const_reference>())))
+{
+	for (iterator i = this->begin();
+	    i.get();
+	    ++i)
+		functor(*i);
+	return functor;
+}
+
 
 namespace ll_list_iter_detail {
 

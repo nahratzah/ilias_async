@@ -19,7 +19,7 @@ main()
 	fl.push_back(ilias::make_refpointer<foo>());
 	fl.push_front(ilias::make_refpointer<foo>());
 
-	for_each(fl.cbegin(), fl.cend(), [](const foo& e) {
+	fl.visit([](const foo& e) {
 		std::cout << "Element at address " << &e << std::endl;
 	    });
 
