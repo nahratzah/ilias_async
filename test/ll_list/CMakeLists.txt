@@ -1,5 +1,5 @@
-add_executable (test_list_compile list_compile.cc)
+add_executable (test_list_create_destroy list_create_destroy.cc)
 
-target_link_libraries (test_list_compile ilias_async)
+target_link_libraries (test_list_create_destroy ilias_async)
 
-add_test (test_list_compile test_list_compile)
+add_test (test_list_create_destroy test_list_create_destroy)
