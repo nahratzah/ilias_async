@@ -48,7 +48,7 @@ main()
 
 	const unsigned int count = test_obj::count;
 	if (count != 0) {
-		std::cerr << count << "dangling test objects." << std::endl;
+		std::cerr << count << " dangling test objects." << std::endl;
 		return 1;
 	}
 
