@@ -16,6 +16,7 @@ public:
 
 	static void ensure_count(unsigned int);
 	static unsigned int get_count() noexcept;
+	void ensure_index(unsigned int);
 
 	test_obj(const test_obj&) = delete;
 	test_obj(test_obj&&) = delete;
@@ -74,13 +75,25 @@ test_obj::get_count() noexcept
 	return test_obj::count_;
 }
 
+void
+test_obj::ensure_index(unsigned int v)
+{
+	if (this->idx != v) {
+		std::cerr << "Expected test object " << v << ", "
+		    "but found " << this->idx << "instead." <<std::endl;
+		std::terminate();
+	}
+}
+
 test_obj::test_obj() noexcept
 :	idx{ index_.fetch_add(1U, std::memory_order_relaxed) }
 {
+	std::cout << "Create test_obj." << std::endl;
 	count_.fetch_add(1U, std::memory_order_relaxed);
 }
 
 test_obj::~test_obj() noexcept
 {
 	count_.fetch_sub(1U, std::memory_order_relaxed);
+	std::cout << "Destroy test_obj." << std::endl;
 }
