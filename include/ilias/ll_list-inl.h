@@ -707,9 +707,10 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_after(
 	std::pair<iterator, bool> result;
 	auto p_ = this->as_elem_(p).get();
 	if ((result.second = this->impl_.insert_after(
-	    p_, pos.impl_, &result.first.impl_)))
-		result.first.val_ = std::move(p);
-	else
+	    p_, pos.impl_, &result.first.impl_))) {
+		result.first.val_ = p;
+		parent_t::release_pointer(p);
+	} else
 		result.first = pos;
 	return result;
 }
@@ -726,9 +727,10 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_after(
 	std::pair<iterator, bool> result;
 	auto p_ = this->as_elem_(p).get();
 	if ((result.second = this->impl_.insert_after(
-	    p_, pos.impl_, &result.first.impl_)))
-		result.first.val_ = std::move(p);
-	else
+	    p_, pos.impl_, &result.first.impl_))) {
+		result.first.val_ = p;
+		parent_t::release_pointer(p);
+	} else
 		result.first = pos;
 	return result;
 }
@@ -745,9 +747,10 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_before(
 	std::pair<iterator, bool> result;
 	auto p_ = this->as_elem_(p).get();
 	if ((result.second = this->impl_.insert_before(
-	    p_, pos.impl_, &result.first.impl_)))
-		result.first.val_ = std::move(p);
-	else
+	    p_, pos.impl_, &result.first.impl_))) {
+		result.first.val_ = p;
+		parent_t::release_pointer(p);
+	} else
 		result.first = pos;
 	return result;
 }
@@ -764,9 +767,10 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_before(
 	std::pair<iterator, bool> result;
 	auto p_ = this->as_elem_(p).get();
 	if ((result.second = this->impl_.insert_before(
-	    p_, pos.impl_, &result.first.impl_)))
-		result.first.val_ = std::move(p);
-	else
+	    p_, pos.impl_, &result.first.impl_))) {
+		result.first.val_ = p;
+		parent_t::release_pointer(p);
+	} else
 		result.first = pos;
 	return result;
 }
