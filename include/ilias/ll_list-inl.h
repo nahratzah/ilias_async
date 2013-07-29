@@ -417,7 +417,7 @@ ll_list_transformations<Type, Tag, AcqRel>::as_type_unlinked_(
 	/* Cast to derived type. */
 	reference value = static_cast<reference>(hook);
 
-	return pointer{ &value };
+	return pointer{ &value, false };
 }
 
 template<typename Type, typename Tag, typename AcqRel>
@@ -437,7 +437,7 @@ ll_list_transformations<Type, Tag, AcqRel>::as_type_unlinked_(
 	/* Cast to derived type. */
 	const_reference value = static_cast<const_reference>(hook);
 
-	return const_pointer{ &value };
+	return const_pointer{ &value, false };
 }
 
 template<typename Type, typename Tag, typename AcqRel>
