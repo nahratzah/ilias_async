@@ -130,6 +130,8 @@ public:
 	ILIAS_ASYNC_LOCAL void link_post_insert_(basic_list*,
 	    std::tuple<elem_ptr, elem_ptr>) noexcept;
 
+	inline basic_list* get_owner() const noexcept;
+
 private:
 	ILIAS_ASYNC_EXPORT bool link_at_(basic_list*, elem_ptr) noexcept;
 
@@ -394,6 +396,8 @@ public:
 private:
 	inline bool unlink(const pointer&) noexcept;
 	inline bool unlink(const const_pointer&) noexcept;
+	static inline ll_smartptr_list* _cast_to_self_(
+	    ll_list_detail::basic_list*) noexcept;
 
 	using parent_t::as_elem_;
 	using parent_t::as_type_;

@@ -306,6 +306,12 @@ basic_iter::unlink() noexcept
 		return false;
 }
 
+inline basic_list*
+basic_iter::get_owner() const noexcept
+{
+	return this->owner_;
+}
+
 
 template<typename Type, typename Tag, typename AcqRel>
 inline elem_ptr
@@ -699,8 +705,9 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_after(
 		throw std::invalid_argument("null element");
 
 	std::pair<iterator, bool> result;
+	auto p_ = this->as_elem_(p).get();
 	if ((result.second = this->impl_.insert_after(
-	    this->as_elem_(p), &pos.impl_, &result.first.impl_)))
+	    p_, pos.impl_, &result.first.impl_)))
 		result.first.val_ = std::move(p);
 	else
 		result.first = pos;
@@ -717,8 +724,9 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_after(
 		throw std::invalid_argument("null element");
 
 	std::pair<iterator, bool> result;
+	auto p_ = this->as_elem_(p).get();
 	if ((result.second = this->impl_.insert_after(
-	    this->as_elem_(p), &pos.impl_, &result.first.impl_)))
+	    p_, pos.impl_, &result.first.impl_)))
 		result.first.val_ = std::move(p);
 	else
 		result.first = pos;
@@ -735,8 +743,9 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_before(
 		throw std::invalid_argument("null element");
 
 	std::pair<iterator, bool> result;
+	auto p_ = this->as_elem_(p).get();
 	if ((result.second = this->impl_.insert_before(
-	    this->as_elem_(p), &pos.impl_, &result.first.impl_)))
+	    p_, pos.impl_, &result.first.impl_)))
 		result.first.val_ = std::move(p);
 	else
 		result.first = pos;
@@ -753,8 +762,9 @@ ll_smartptr_list<Type, Tag, AcqRel>::insert_before(
 		throw std::invalid_argument("null element");
 
 	std::pair<iterator, bool> result;
+	auto p_ = this->as_elem_(p).get();
 	if ((result.second = this->impl_.insert_before(
-	    this->as_elem_(p), &pos.impl_, &result.first.impl_)))
+	    p_, pos.impl_, &result.first.impl_)))
 		result.first.val_ = std::move(p);
 	else
 		result.first = pos;
@@ -946,6 +956,23 @@ ll_smartptr_list<Type, Tag, AcqRel>::unlink(const const_pointer& p) noexcept
 }
 
 template<typename Type, typename Tag, typename AcqRel>
+inline ll_smartptr_list<Type, Tag, AcqRel>*
+ll_smartptr_list<Type, Tag, AcqRel>::_cast_to_self_(
+    ll_list_detail::basic_list* self) noexcept
+{
+	const std::uintptr_t ADDR = 0x1000;
+	const std::size_t off = reinterpret_cast<std::uintptr_t>(
+	    &reinterpret_cast<ll_smartptr_list*>(ADDR)->impl_) - ADDR;
+
+	if (self == nullptr)
+		return nullptr;
+	ll_smartptr_list* rv = reinterpret_cast<ll_smartptr_list*>(
+	    reinterpret_cast<unsigned char*>(self) - off);
+	assert(&rv->impl_ == self);
+	return rv;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
 typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
 ll_smartptr_list<Type, Tag, AcqRel>::iterator_to(
     ll_smartptr_list<Type, Tag, AcqRel>::reference r) noexcept
@@ -1092,7 +1119,7 @@ ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
 		if (link == nullptr) {
 			/* SKIP */
 		} else if (link->is_head()) {
-			this->val_.reset();
+			this->val_ = nullptr;
 			done = true;
 		} else {
 			if ((this->val_ = list->as_type_(std::move(link))) !=
@@ -1107,11 +1134,13 @@ void
 ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
  IsConstIter>::next(ll_list_detail::basic_list::size_type n) noexcept
 {
+	list_t* self = list_t::_cast_to_self_(this->impl_.get_owner());
+
 	this->val_ = nullptr;
 	for (auto elem = this->impl_.next(n);
 	    elem != nullptr && elem->is_elem();
 	    elem = this->impl_.next()) {
-		if ((this->val_ = list_t::as_type_(elem)) !=
+		if ((this->val_ = self->as_type_(elem)) !=
 		    nullptr)
 			return;
 	}
@@ -1122,11 +1151,13 @@ void
 ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
  IsConstIter>::prev(ll_list_detail::basic_list::size_type n) noexcept
 {
+	list_t* self = list_t::_cast_to_self_(this->impl_.get_owner());
+
 	this->val_ = nullptr;
 	for (auto elem = this->impl_.prev(n);
 	    elem != nullptr && elem->is_elem();
 	    elem = this->impl_.prev()) {
-		if ((this->val_ = list_t::as_type_(elem)) !=
+		if ((this->val_ = self->as_type_(elem)) !=
 		    nullptr)
 			return;
 	}
