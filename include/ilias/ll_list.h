@@ -328,8 +328,13 @@ public:
 	inline const_iterator iterator_to(const_reference) const noexcept;
 	inline iterator iterator_to(const pointer&);
 	inline const_iterator iterator_to(const const_pointer&) const;
+
 	inline iterator begin() noexcept;
 	inline iterator end() noexcept;
+	inline const_iterator begin() const noexcept;
+	inline const_iterator end() const noexcept;
+	inline const_iterator cbegin() const noexcept;
+	inline const_iterator cend() const noexcept;
 
 	/* Insertion routines. */
 

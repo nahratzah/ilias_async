@@ -826,8 +826,8 @@ ll_smartptr_list<Type, Tag, AcqRel>::erase_and_dispose(
     Disposer disposer)
 noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer&&>())))
 {
-	return this->erase(iterator{ this, iter },
-	    std::move_if_noexcept(disposer));
+	return this->erase_and_dispose(iterator{ this, iter },
+	    std::move(disposer));
 }
 
 template<typename Type, typename Tag, typename AcqRel>
@@ -1027,10 +1027,48 @@ template<typename Type, typename Tag, typename AcqRel>
 typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
 ll_smartptr_list<Type, Tag, AcqRel>::end() noexcept
 {
-	bool success;
 	iterator result;
-	success = result.link_at_(this, ll_list_detail::basic_iter::tag::head);
-	assert(success);
+	result.link_at_(this, ll_list_detail::basic_iter::tag::head);
+	return result;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator
+ll_smartptr_list<Type, Tag, AcqRel>::begin() const noexcept
+{
+	const_iterator result;
+	result.link_at_(const_cast<ll_smartptr_list*>(this),
+	    ll_list_detail::basic_iter::tag::first);
+	return result;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator
+ll_smartptr_list<Type, Tag, AcqRel>::end() const noexcept
+{
+	const_iterator result;
+	result.link_at_(const_cast<ll_smartptr_list*>(this),
+	    ll_list_detail::basic_iter::tag::head);
+	return result;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator
+ll_smartptr_list<Type, Tag, AcqRel>::cbegin() const noexcept
+{
+	const_iterator result;
+	result.link_at_(const_cast<ll_smartptr_list*>(this),
+	    ll_list_detail::basic_iter::tag::first);
+	return result;
+}
+
+template<typename Type, typename Tag, typename AcqRel>
+typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator
+ll_smartptr_list<Type, Tag, AcqRel>::cend() const noexcept
+{
+	const_iterator result;
+	result.link_at_(const_cast<ll_smartptr_list*>(this),
+	    ll_list_detail::basic_iter::tag::head);
 	return result;
 }
 
