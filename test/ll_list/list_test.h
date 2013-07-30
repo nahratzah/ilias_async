@@ -67,7 +67,7 @@ test_obj::ensure_count(unsigned int expected)
 	if (count != expected) {
 		std::cerr << "Expected " << expected << " test objects, "
 		    "but found " << count << " instead." << std::endl;
-		std::terminate();
+		std::abort();
 	}
 }
 
@@ -86,7 +86,7 @@ test_obj::ensure_index(unsigned int v, bool* fail) const
 		if (fail)
 			*fail = true;
 		else
-			std::terminate();
+			std::abort();
 	}
 }
 
@@ -132,5 +132,5 @@ ensure_equal(const list& l, const std::vector<unsigned int>& v)
 	}
 
 	if (fail)
-		std::terminate();
+		std::abort();
 }
