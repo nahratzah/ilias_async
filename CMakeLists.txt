@@ -56,6 +56,22 @@ elseif (WIN32)
 	set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} /LARGEADDRESSAWARE /NXCOMPAT /INCREMENTAL:NO")
 endif ()
 
+#
+# Enable gprof profiling.
+#
+option (PROFILE "Enable profiling." OFF)
+if (PROFILE)
+	check_cxx_compiler_flag("-pg" PROFILE_PG)
+	if (PROFILE_PG)
+		set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
+		set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
+		set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER} -pg")
+		set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -pg")
+	else (PROFILE_PG)
+		message(ERROR "Cannot profile.")
+	endif (PROFILE_PG)
+endif (PROFILE)
+
 # Check if the compiler can needs/handles c++11 flags.
 check_cxx_compiler_flag("-std=c++11" STD_CXX11)
 check_cxx_compiler_flag("-std=c++0x" STD_CXX0X)
