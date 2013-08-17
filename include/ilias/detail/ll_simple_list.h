@@ -64,8 +64,6 @@ public:
 	/* Predecessor/successor lookup. */
 	inline elem_llptr::pointer succ() const noexcept;
 	inline elem_llptr::pointer pred() const noexcept;
-	ILIAS_ASYNC_EXPORT data_t succ_fl() const noexcept;
-	ILIAS_ASYNC_EXPORT data_t pred_fl() const noexcept;
 
 	/* Unlink operation. */
 	ILIAS_ASYNC_EXPORT bool unlink() noexcept;
@@ -95,6 +93,10 @@ private:
 	    std::tuple<elem*, elem*>, elem_ptr);
 	inline static link_result link_after(
 	    std::tuple<elem*, elem*>, elem_ptr);
+
+	/* Internal representation of predecessor/successor pointers. */
+	ILIAS_ASYNC_EXPORT data_t succ_fl() const noexcept;
+	ILIAS_ASYNC_EXPORT data_t pred_fl() const noexcept;
 
 	/* Internal implementation of link operations. */
 	ILIAS_ASYNC_EXPORT static link_result link_between_(
