@@ -164,6 +164,7 @@ basic_iter::next(basic_list::size_type n) noexcept
 		elem_type::ELEM
 	    }};
 
+	basic_list*const owner = this->owner_;
 	return do_noexcept([&]() {
 		/* Step n items. */
 		elem_ptr i = this->forw_.succ(types);
@@ -171,7 +172,7 @@ basic_iter::next(basic_list::size_type n) noexcept
 			i = i->succ(types);
 
 		/* Try to link. */
-		while (!link_at(this->owner_, i))
+		while (!this->link_at(owner, i))
 			i = i->succ(types);
 		return i;
 	    });
@@ -190,6 +191,7 @@ basic_iter::prev(basic_list::size_type n) noexcept
 		elem_type::ELEM
 	    }};
 
+	basic_list*const owner = this->owner_;
 	return do_noexcept([&]() {
 		/* Step n items. */
 		elem_ptr i = this->back_.pred(types);
@@ -197,7 +199,7 @@ basic_iter::prev(basic_list::size_type n) noexcept
 			i = i->pred(types);
 
 		/* Try to link. */
-		while (!link_at(this->owner_, i))
+		while (!this->link_at(owner, i))
 			i = i->pred(types);
 		return i;
 	    });
@@ -267,6 +269,7 @@ bool
 basic_iter::link_at_(basic_list* list, elem_ptr pos) noexcept
 {
 	assert(list != nullptr && pos != nullptr);
+	assert(pos->is_head() || pos->is_elem());
 
 	this->forw_.unlink();
 	this->back_.unlink();
