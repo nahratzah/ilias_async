@@ -199,7 +199,8 @@ friend class publish_wqs;
 	get_wq() const noexcept
 	{
 		static const workq_detail::workq_intref<workq> stack_empty;
-		return (this->stack ? stack_empty : this->stack->get_wq());
+		return (this->stack == nullptr ?
+		    stack_empty : this->stack->get_wq());
 	}
 
 	wq_stack*
