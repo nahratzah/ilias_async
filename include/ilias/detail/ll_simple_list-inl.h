@@ -105,6 +105,35 @@ elem::is_linked() const noexcept
 }
 
 inline bool
+elem::wait_unlinked() const noexcept
+{
+	std::atomic_thread_fence(std::memory_order_release);
+
+	for (;;) {
+		elem* p_ptr;
+		elem* s_ptr;
+		flags_t p_fl, s_fl;
+
+		std::tie(p_ptr, p_fl) = this->m_pred_.load_no_acquire(
+		    std::memory_order_relaxed);
+		std::tie(s_ptr, s_fl) = this->m_succ_.load_no_acquire(
+		    std::memory_order_relaxed);
+
+		/* GUARD: neither pointer points at anything. */
+		if (std::tie(p_ptr, p_fl) == add_present(this) &&
+		    std::tie(s_ptr, s_fl) == add_present(this))
+			return true;
+
+		if (p_fl == PRESENT && p_ptr != this)
+			return false;
+		if (s_fl == PRESENT && s_ptr != this)
+			return false;
+	}
+
+	std::atomic_thread_fence(std::memory_order_acquire);
+}
+
+inline bool
 elem::is_unused() const noexcept
 {
 	return
@@ -163,18 +192,21 @@ elem::link_after(std::tuple<elem*, elem*> ins,
 inline link_result
 elem::link_between(elem* e, std::tuple<elem_ptr, elem_ptr> pos)
 {
+	e->wait_unlinked();
 	return link_between(std::make_tuple(e, e), std::move(pos));
 }
 
 inline link_result
 elem::link_before(elem* e, elem_ptr pos)
 {
+	e->wait_unlinked();
 	return link_before(std::make_tuple(e, e), std::move(pos));
 }
 
 inline link_result
 elem::link_after(elem* e, elem_ptr pos)
 {
+	e->wait_unlinked();
 	return link_after(std::make_tuple(e, e), std::move(pos));
 }
 
@@ -252,7 +284,7 @@ elem_range::push_front(elem* e)
 {
 	if (e == nullptr)
 		throw std::invalid_argument("elem_range: null element");
-	if (e->is_linked())
+	if (!e->wait_unlinked())
 		throw std::invalid_argument("elem_range: linked element");
 
 	auto rv = elem::link_after(std::make_tuple(e, e),
@@ -275,7 +307,7 @@ elem_range::push_back(elem* e)
 {
 	if (e == nullptr)
 		throw std::invalid_argument("elem_range: null element");
-	if (e->is_linked())
+	if (!e->wait_unlinked())
 		throw std::invalid_argument("elem_range: linked element");
 
 	auto rv = elem::link_before(std::make_tuple(e, e),

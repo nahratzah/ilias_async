@@ -57,6 +57,7 @@ public:
 	inline elem(elem&&) noexcept;
 	inline ~elem() noexcept;
 	inline bool is_linked() const noexcept;
+	inline bool wait_unlinked() const noexcept;
 	inline bool is_unused() const noexcept;
 	inline void wait_unused() const noexcept;
 
