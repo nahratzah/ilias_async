@@ -40,15 +40,13 @@ inline elem::~elem() noexcept
 inline elem_ptr
 elem::succ() const noexcept
 {
-	return static_pointer_cast<elem>(std::get<0>(
-	    this->ll_simple_list::elem::succ()));
+	return static_pointer_cast<elem>(this->ll_simple_list::elem::succ());
 }
 
 inline elem_ptr
 elem::pred() const noexcept
 {
-	return static_pointer_cast<elem>(std::get<0>(
-	    this->ll_simple_list::elem::pred()));
+	return static_pointer_cast<elem>(this->ll_simple_list::elem::pred());
 }
 
 template<std::size_t N>

@@ -43,7 +43,7 @@ elem::wait_unused() const noexcept
 }
 
 inline data_t
-elem::succ() const noexcept
+elem::succ_fl() const noexcept
 {
 	data_t succ = this->m_succ_.load(std::memory_order_consume);
 	for (;;) {
@@ -67,7 +67,7 @@ elem::succ() const noexcept
 }
 
 inline data_t
-elem::pred() const noexcept
+elem::pred_fl() const noexcept
 {
 	data_t pred = this->m_pred_.load(std::memory_order_consume);
 	for (;;) {
@@ -77,7 +77,7 @@ elem::pred() const noexcept
 
 		/* We are deleted, may not search forward. */
 		if (std::get<1>(pred) == DELETED) {
-			data_t pred_pred = std::get<0>(pred)->pred();
+			data_t pred_pred = std::get<0>(pred)->pred_fl();
 			if (this->m_pred_.compare_exchange_weak(
 			    pred,
 			    add_deleted(std::get<0>(pred_pred)),
@@ -91,7 +91,7 @@ elem::pred() const noexcept
 		 * If pred has this as successor, pred is a direct
 		 * predecessor.
 		 */
-		data_t pred_succ = std::get<0>(pred)->succ();
+		data_t pred_succ = std::get<0>(pred)->succ_fl();
 		if (pred_succ == add_present(this))
 			return pred;
 
@@ -125,7 +125,7 @@ elem::unlink() noexcept
 	const elem_ptr self{ this };
 
 	/* Mark predecessor link as broken. */
-	data_t pred = this->pred();
+	data_t pred = this->pred_fl();
 	while (std::get<0>(pred) != this &&
 	    std::get<1>(pred) == PRESENT) {
 		if (this->m_pred_.compare_exchange_weak(
@@ -139,7 +139,7 @@ elem::unlink() noexcept
 	}
 
 	/* Mark successor link as broken. */
-	data_t succ = this->succ();
+	data_t succ = this->succ_fl();
 	while (std::get<0>(succ) != this &&
 	    std::get<1>(succ) == PRESENT) {
 		if (this->m_succ_.compare_exchange_weak(
@@ -165,7 +165,7 @@ elem::unlink() noexcept
 	    std::memory_order_relaxed)) {
 		/* Do nothing. */
 	} else
-		std::get<0>(pred)->succ();
+		std::get<0>(pred)->succ_fl();
 
 	/* Make succ skip this. */
 	if (std::get<0>(succ)->m_pred_.compare_exchange_strong(
@@ -181,7 +181,7 @@ elem::unlink() noexcept
 	    std::memory_order_relaxed)) {
 		/* Do nothing. */
 	} else
-		std::get<0>(succ)->pred();
+		std::get<0>(succ)->pred_fl();
 
 	return result;
 }
@@ -299,7 +299,7 @@ elem::link_between_(std::tuple<elem*, elem*> ins,
 	    add_present(std::get<1>(ins)),
 	    std::memory_order_release,
 	    std::memory_order_relaxed))
-		std::get<1>(pos)->pred();
+		std::get<1>(pos)->pred_fl();
 	return link_result::SUCCESS;
 }
 
@@ -313,7 +313,7 @@ elem::link_before_(std::tuple<elem*, elem*> ins,
 	for (;;) {
 		elem_ptr pos_pred;
 		flags_t fl;
-		std::tie(pos_pred, fl) = pos->pred();
+		std::tie(pos_pred, fl) = pos->pred_fl();
 		if (fl == DELETED)
 			return link_result::INVALID_POS;
 
@@ -339,7 +339,7 @@ elem::link_after_(std::tuple<elem*, elem*> ins,
 	for (;;) {
 		elem_ptr pos_succ;
 		flags_t fl;
-		std::tie(pos_succ, fl) = pos->succ();
+		std::tie(pos_succ, fl) = pos->succ_fl();
 		if (fl == DELETED)
 			return link_result::INVALID_POS;
 

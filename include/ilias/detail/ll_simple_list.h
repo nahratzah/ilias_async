@@ -62,8 +62,10 @@ public:
 	ILIAS_ASYNC_EXPORT void wait_unused() const noexcept;
 
 	/* Predecessor/successor lookup. */
-	ILIAS_ASYNC_EXPORT data_t succ() const noexcept;
-	ILIAS_ASYNC_EXPORT data_t pred() const noexcept;
+	inline elem_llptr::pointer succ() const noexcept;
+	inline elem_llptr::pointer pred() const noexcept;
+	ILIAS_ASYNC_EXPORT data_t succ_fl() const noexcept;
+	ILIAS_ASYNC_EXPORT data_t pred_fl() const noexcept;
 
 	/* Unlink operation. */
 	ILIAS_ASYNC_EXPORT bool unlink() noexcept;

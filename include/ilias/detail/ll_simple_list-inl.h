@@ -115,6 +115,22 @@ elem::is_unused() const noexcept
 	    (this->m_refcnt_.load(std::memory_order_acquire) == 2U);
 }
 
+inline elem_llptr::pointer
+elem::succ() const noexcept
+{
+	elem_llptr::pointer result;
+	std::tie(result, std::ignore) = this->succ_fl();
+	return result;
+}
+
+inline elem_llptr::pointer
+elem::pred() const noexcept
+{
+	elem_llptr::pointer result;
+	std::tie(result, std::ignore) = this->pred_fl();
+	return result;
+}
+
 inline link_result
 elem::link_between(std::tuple<elem*, elem*> ins,
     std::tuple<elem_ptr, elem_ptr> pos)
@@ -231,9 +247,9 @@ inline elem_range::elem_range(Iter b, Iter e)
 
 inline elem_range::~elem_range() noexcept
 {
-	for (elem_ptr e = std::get<0>(this->m_self_.succ());
+	for (elem_ptr e = this->m_self_.succ();
 	    e != &this->m_self_;
-	    e = std::get<0>(e->succ()))
+	    e = e->succ())
 		e->unlink();
 	assert(this->empty());
 }
@@ -287,7 +303,7 @@ elem_range::push_back(elem* e)
 inline bool
 elem_range::empty() const noexcept
 {
-	return (std::get<0>(this->m_self_.succ()) == &this->m_self_);
+	return (this->m_self_.succ() == &this->m_self_);
 }
 
 
