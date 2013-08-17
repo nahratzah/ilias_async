@@ -25,9 +25,8 @@ elem::wait_unlinked() const noexcept
 		    std::tie(s_ptr, s_fl) == add_present(this))
 			return true;
 
-		if (p_fl == PRESENT && p_ptr != this)
-			return false;
-		if (s_fl == PRESENT && s_ptr != this)
+		if ((p_fl == PRESENT && p_ptr != this) ||
+		    (s_fl == PRESENT && s_ptr != this))
 			return false;
 	}
 }
