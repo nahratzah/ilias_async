@@ -57,9 +57,9 @@ public:
 	inline elem(elem&&) noexcept;
 	inline ~elem() noexcept;
 	inline bool is_linked() const noexcept;
-	inline bool wait_unlinked() const noexcept;
+	ILIAS_ASYNC_EXPORT bool wait_unlinked() const noexcept;
 	inline bool is_unused() const noexcept;
-	inline void wait_unused() const noexcept;
+	ILIAS_ASYNC_EXPORT void wait_unused() const noexcept;
 
 	/* Predecessor/successor lookup. */
 	ILIAS_ASYNC_EXPORT data_t succ() const noexcept;

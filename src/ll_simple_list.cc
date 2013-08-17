@@ -5,6 +5,44 @@ namespace ll_list_detail {
 namespace ll_simple_list {
 
 
+bool
+elem::wait_unlinked() const noexcept
+{
+	std::atomic_thread_fence(std::memory_order_release);
+
+	for (;;) {
+		elem* p_ptr;
+		elem* s_ptr;
+		flags_t p_fl, s_fl;
+
+		std::tie(p_ptr, p_fl) = this->m_pred_.load_no_acquire(
+		    std::memory_order_acquire);
+		std::tie(s_ptr, s_fl) = this->m_succ_.load_no_acquire(
+		    std::memory_order_acquire);
+
+		/* GUARD: neither pointer points at anything. */
+		if (std::tie(p_ptr, p_fl) == add_present(this) &&
+		    std::tie(s_ptr, s_fl) == add_present(this))
+			return true;
+
+		if (p_fl == PRESENT && p_ptr != this)
+			return false;
+		if (s_fl == PRESENT && s_ptr != this)
+			return false;
+	}
+}
+
+void
+elem::wait_unused() const noexcept
+{
+	std::atomic_thread_fence(std::memory_order_release);
+	while (this->m_pred_.load_no_acquire(std::memory_order_acquire) !=
+	    add_present(this));
+	while (this->m_succ_.load_no_acquire(std::memory_order_acquire) !=
+	    add_present(this));
+	while (this->m_refcnt_.load(std::memory_order_acquire) != 2U);
+}
+
 inline data_t
 elem::succ() const noexcept
 {
