@@ -62,7 +62,7 @@ public:
 	ILIAS_ASYNC_EXPORT void wait_unused() const noexcept;
 
 	/* Predecessor/successor lookup. */
-	inline elem_llptr::pointer succ() const noexcept;
+	ILIAS_ASYNC_EXPORT elem_llptr::pointer succ() const noexcept;
 	inline elem_llptr::pointer pred() const noexcept;
 
 	/* Unlink operation. */
@@ -95,7 +95,9 @@ private:
 	    std::tuple<elem*, elem*>, elem_ptr);
 
 	/* Internal representation of predecessor/successor pointers. */
-	ILIAS_ASYNC_EXPORT data_t succ_fl() const noexcept;
+	inline bool is_deleted(std::memory_order = std::memory_order_seq_cst)
+	    const noexcept;
+	ILIAS_ASYNC_LOCAL bool succ_propagate_fl(const data_t&) const noexcept;
 	ILIAS_ASYNC_EXPORT data_t pred_fl() const noexcept;
 
 	/* Internal implementation of link operations. */

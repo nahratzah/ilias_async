@@ -11,22 +11,11 @@ elem::wait_unlinked() const noexcept
 	std::atomic_thread_fence(std::memory_order_release);
 
 	for (;;) {
-		elem* p_ptr;
-		elem* s_ptr;
-		flags_t p_fl, s_fl;
+		while (this->is_deleted(std::memory_order_acquire));
 
-		std::tie(p_ptr, p_fl) = this->m_pred_.load_no_acquire(
-		    std::memory_order_acquire);
-		std::tie(s_ptr, s_fl) = this->m_succ_.load_no_acquire(
-		    std::memory_order_acquire);
-
-		/* GUARD: neither pointer points at anything. */
-		if (std::tie(p_ptr, p_fl) == add_present(this) &&
-		    std::tie(s_ptr, s_fl) == add_present(this))
+		if (this->pred() == this && this->succ() == this)
 			return true;
-
-		if ((p_fl == PRESENT && p_ptr != this) ||
-		    (s_fl == PRESENT && s_ptr != this))
+		else if (!this->is_deleted())
 			return false;
 	}
 }
@@ -42,76 +31,105 @@ elem::wait_unused() const noexcept
 	while (this->m_refcnt_.load(std::memory_order_acquire) != 2U);
 }
 
-inline data_t
-elem::succ_fl() const noexcept
+/*
+ * Propagate the deleted flag on the successor pointer to the successor.
+ *
+ * If m_succ is marked deleted, propagate the deleted bit to the successor
+ * and clear the deleted bit.
+ */
+bool
+elem::succ_propagate_fl(const data_t& s) const noexcept
 {
-	data_t succ = this->m_succ_.load(std::memory_order_consume);
-	for (;;) {
-		assert(std::get<0>(succ));
+	assert(std::get<0>(s) != nullptr);
 
-		/* Test if successor is not being unlinked. */
-		data_t succ_succ = std::get<0>(succ)->m_succ_.load(
-		    std::memory_order_consume);
-		if (std::get<1>(succ_succ) == PRESENT)
-			return succ;
+	bool deleted;
+	if (std::get<1>(s) == DELETED) {
+		deleted = true;
+		auto expect = add_present(const_cast<elem*>(this));
+		bool cas = std::get<0>(s)->m_pred_.compare_exchange_strong(
+		    expect,
+		    add_deleted(elem_ptr{ const_cast<elem*>(this) }),
+		    std::memory_order_release,
+		    std::memory_order_relaxed);
+		assert(cas || std::get<1>(expect) == DELETED);
+	} else
+		deleted = std::get<0>(s)->is_deleted();
 
-		/* Replace direct successor, skipping unlinked successor. */
-		data_t succ_assign{
-			std::get<0>(succ_succ),
-			std::get<1>(succ)
-		    };
-		if (this->m_succ_.compare_exchange_weak(succ, succ_assign,
-		    std::memory_order_consume, std::memory_order_release))
-			succ = std::move(succ_assign);
-	}
+	return deleted;
 }
 
-inline data_t
+elem_ptr
+elem::succ() const noexcept
+{
+	data_t s = this->m_succ_.load(std::memory_order_consume);
+	bool deleted = this->succ_propagate_fl(s);
+
+	/* Skip all deleted successors. */
+	while (deleted) {
+		data_t ss = std::get<0>(s)->m_succ_.load(
+		    std::memory_order_consume);
+		deleted = std::get<0>(s)->succ_propagate_fl(ss);
+
+		std::get<1>(ss) = PRESENT;
+		if (this->m_succ_.compare_exchange_strong(
+		    s,
+		    ss,
+		    std::memory_order_release,
+		    std::memory_order_consume))
+			s = std::move(ss);
+		else
+			deleted = this->succ_propagate_fl(s);
+	}
+
+	assert(std::get<0>(s) != nullptr);
+	return std::get<0>(s);
+}
+
+data_t
 elem::pred_fl() const noexcept
 {
-	data_t pred = this->m_pred_.load(std::memory_order_consume);
-	for (;;) {
-		assert(std::get<0>(pred));
-		if (std::get<0>(pred) == this)
-			return pred;
+	data_t p = this->m_pred_.load(std::memory_order_consume);
 
-		/* We are deleted, may not search forward. */
-		if (std::get<1>(pred) == DELETED) {
-			data_t pred_pred = std::get<0>(pred)->pred_fl();
-			if (this->m_pred_.compare_exchange_weak(
-			    pred,
-			    add_deleted(std::get<0>(pred_pred)),
+	/*
+	 * Search forward to change p from 'any' predecessor
+	 * to the direct predecessor of this.
+	 */
+	if (std::get<1>(p) == PRESENT) {
+		for (elem_ptr ps = std::get<0>(p)->succ();
+		    std::get<1>(p) == PRESENT && ps != this;
+		    ps = std::get<0>(p)->succ()) {
+			if (this->m_pred_.compare_exchange_strong(
+			    p,
+			    add_present(ps),
 			    std::memory_order_release,
 			    std::memory_order_consume))
-				std::get<0>(pred) = std::get<0>(pred_pred);
-			continue;
+				p = add_present(std::move(ps));
 		}
-
-		/*
-		 * If pred has this as successor, pred is a direct
-		 * predecessor.
-		 */
-		data_t pred_succ = std::get<0>(pred)->succ_fl();
-		if (pred_succ == add_present(this))
-			return pred;
-
-		/*
-		 * Pred is not a direct predecessor.
-		 *
-		 * If pred->succ() exists, try that;
-		 * otherwise try pred->pred().
-		 */
-		data_t pred_assign = (std::get<1>(pred_succ) == PRESENT ?
-		    pred_succ :
-		    std::get<0>(pred)->m_pred_.load(
-		     std::memory_order_consume));
-		std::get<1>(pred_assign) = PRESENT;
-
-		assert(std::get<0>(pred_assign) != nullptr);
-		if (this->m_pred_.compare_exchange_weak(pred, pred_assign,
-		    std::memory_order_consume, std::memory_order_release))
-			pred = std::move(pred_assign);
 	}
+
+	/*
+	 * Two cases at the moment:
+	 * [1] p is the direct predecessor of this,
+	 * [2] this is deleted and p is the direct predecessor
+	 *     from the moment of deletion.
+	 * In both cases, p may be a deleted element (meaning that our
+	 * predecessor pointer is stale).  The way to fix this is the same
+	 * for both cases (because [1] was made true by the loop above).
+	 */
+	while (std::get<0>(p)->is_deleted()) {
+		data_t pp = std::get<0>(p)->m_pred_.load(
+		    std::memory_order_consume);
+		std::get<1>(pp) = std::get<1>(p);
+		if (this->m_pred_.compare_exchange_strong(
+		    p,
+		    pp,
+		    std::memory_order_release,
+		    std::memory_order_consume))
+			p = std::move(pp);
+	}
+
+	assert(std::get<0>(p) != nullptr);
+	return p;
 }
 
 bool
@@ -120,69 +138,63 @@ elem::unlink() noexcept
 	bool result = false;
 
 	/*
-	 * Prevent relinking from happening while we are attempting to delete.
+	 * Prevent relinking from happening while we are attempting to delete:
+	 * the lazy part of the deletion will not complete until the last
+	 * reference to this goes away.
 	 */
 	const elem_ptr self{ this };
 
-	/* Mark predecessor link as broken. */
+	/* Inform predecessor that we are going away. */
 	data_t pred = this->pred_fl();
-	while (std::get<0>(pred) != this &&
-	    std::get<1>(pred) == PRESENT) {
-		if (this->m_pred_.compare_exchange_weak(
-		    pred,
-		    add_deleted(std::get<0>(pred)),
+	while (!result &&
+	    std::get<1>(pred) != DELETED &&
+	    std::get<0>(pred) != this) {
+		result = std::get<0>(pred)->m_succ_.compare_exchange_strong(
+		    add_present(this),
+		    add_deleted(self),
 		    std::memory_order_acq_rel,
-		    std::memory_order_relaxed)) {
-			result = true;
-			std::get<1>(pred) = DELETED;
-		}
+		    std::memory_order_relaxed);
+		if (!result)
+			pred = this->pred_fl();
 	}
+	/* Cannot unlink unlinked element. */
+	if (std::get<0>(pred) == this)
+		return false;
 
-	/* Mark successor link as broken. */
-	data_t succ = this->succ_fl();
-	while (std::get<0>(succ) != this &&
-	    std::get<1>(succ) == PRESENT) {
-		if (this->m_succ_.compare_exchange_weak(
-		    succ,
-		    add_deleted(std::get<0>(succ)),
-		    std::memory_order_acq_rel,
-		    std::memory_order_relaxed)) {
-			std::get<1>(succ) = DELETED;
-		}
-	}
+	/*
+	 * Mark ourselves as deleted.
+	 *
+	 * We try a cas operation:
+	 * if it fails some other thread must have updated our state,
+	 * since the predecessor is clearly marking us as deleted.
+	 */
+	std::get<1>(pred) = DELETED;
+	auto expect = add_present(std::get<0>(pred).get());
+	bool cas = this->m_pred_.compare_exchange_strong(
+	    expect,
+	    std::move(pred),
+	    std::memory_order_release,
+	    std::memory_order_relaxed);
+	assert(cas || std::get<1>(expect) == DELETED);
 
-	/* Make pred skip this. */
-	if (std::get<0>(pred)->m_succ_.compare_exchange_strong(
-	    add_present(this),
-	    add_present(std::get<0>(succ)),
-	    std::memory_order_release,
-	    std::memory_order_relaxed)) {
-		/* Do nothing. */
-	} else if (std::get<0>(pred)->m_succ_.compare_exchange_strong(
-	    add_deleted(this),
-	    add_deleted(std::get<0>(succ)),
-	    std::memory_order_release,
-	    std::memory_order_relaxed)) {
-		/* Do nothing. */
-	} else
-		std::get<0>(pred)->succ_fl();
+	/*
+	 * Our predecessor is now no longer referring to us,
+	 * time to get our successor to forget about this as well.
+	 *
+	 * Note that if the successor got deleted while we were
+	 * busy getting deleted ourselves, the real successor may
+	 * require an update too.
+	 */
+	data_t s = this->m_succ_.load(std::memory_order_consume);
+	bool deleted = this->succ_propagate_fl(s);
+	std::get<0>(s)->pred();
+	if (deleted)
+		this->succ()->pred();
 
-	/* Make succ skip this. */
-	if (std::get<0>(succ)->m_pred_.compare_exchange_strong(
-	    add_present(this),
-	    add_present(std::get<0>(pred)),
-	    std::memory_order_release,
-	    std::memory_order_relaxed)) {
-		/* Do nothing. */
-	} else if (std::get<0>(succ)->m_pred_.compare_exchange_strong(
-	    add_deleted(this),
-	    add_deleted(std::get<0>(pred)),
-	    std::memory_order_release,
-	    std::memory_order_relaxed)) {
-		/* Do nothing. */
-	} else
-		std::get<0>(succ)->pred_fl();
-
+	/*
+	 * Done (the rest of the deletion happens lazily when the last elem_ptr
+	 * linked to us goes away, at least one of which we own above.
+	 */
 	return result;
 }
 
@@ -262,7 +274,11 @@ elem::link_between_(std::tuple<elem*, elem*> ins,
 	assert(std::get<0>(ins) != nullptr && std::get<1>(ins) != nullptr &&
 	    std::get<0>(pos) != nullptr && std::get<1>(pos) != nullptr);
 
-	/* Change ins, so it has appropriate links to pos. */
+	/*
+	 * Change ins, so it has appropriate links to pos.
+	 *
+	 * Note that cond_assign will hold a reference to ins.
+	 */
 	cond_assign ins0_linked{
 		std::get<0>(ins)->m_pred_,
 		std::get<0>(ins),
@@ -299,7 +315,7 @@ elem::link_between_(std::tuple<elem*, elem*> ins,
 	    add_present(std::get<1>(ins)),
 	    std::memory_order_release,
 	    std::memory_order_relaxed))
-		std::get<1>(pos)->pred_fl();
+		std::get<1>(pos)->pred();
 	return link_result::SUCCESS;
 }
 
@@ -310,15 +326,9 @@ elem::link_before_(std::tuple<elem*, elem*> ins,
 	assert(std::get<0>(ins) != nullptr && std::get<1>(ins) != nullptr &&
 	    pos != nullptr);
 
-	for (;;) {
-		elem_ptr pos_pred;
-		flags_t fl;
-		std::tie(pos_pred, fl) = pos->pred_fl();
-		if (fl == DELETED)
-			return link_result::INVALID_POS;
-
-		auto rv = link_between_(std::move(ins),
-		    std::make_tuple(std::move(pos_pred), pos));
+	while (!pos->is_deleted()) {
+		auto rv = link_between_(ins,
+		    std::make_tuple(pos->pred(), pos));
 		switch (rv) {
 		default:
 			return rv;
@@ -327,6 +337,7 @@ elem::link_before_(std::tuple<elem*, elem*> ins,
 			break;
 		}
 	}
+	return link_result::INVALID_POS;
 }
 
 link_result
@@ -336,15 +347,9 @@ elem::link_after_(std::tuple<elem*, elem*> ins,
 	assert(std::get<0>(ins) != nullptr && std::get<1>(ins) != nullptr &&
 	    pos != nullptr);
 
-	for (;;) {
-		elem_ptr pos_succ;
-		flags_t fl;
-		std::tie(pos_succ, fl) = pos->succ_fl();
-		if (fl == DELETED)
-			return link_result::INVALID_POS;
-
-		auto rv = link_between_(std::move(ins),
-		    std::make_tuple(pos, std::move(pos_succ)));
+	while (!pos->is_deleted()) {
+		auto rv = link_between_(ins,
+		    std::make_tuple(pos, pos->succ()));
 		switch (rv) {
 		default:
 			return rv;
@@ -353,6 +358,7 @@ elem::link_after_(std::tuple<elem*, elem*> ins,
 			break;
 		}
 	}
+	return link_result::INVALID_POS;
 }
 
 

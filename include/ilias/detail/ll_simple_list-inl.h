@@ -116,14 +116,6 @@ elem::is_unused() const noexcept
 }
 
 inline elem_llptr::pointer
-elem::succ() const noexcept
-{
-	elem_llptr::pointer result;
-	std::tie(result, std::ignore) = this->succ_fl();
-	return result;
-}
-
-inline elem_llptr::pointer
 elem::pred() const noexcept
 {
 	elem_llptr::pointer result;
@@ -227,6 +219,12 @@ elem::link_after(elem_range&& r,
 	return rv;
 }
 
+inline bool
+elem::is_deleted(std::memory_order mo) const noexcept
+{
+	return (this->m_pred_.load_flags(mo) == DELETED);
+}
+
 
 inline elem_range::elem_range(elem_range&& other) noexcept
 :	elem_range{}
@@ -305,7 +303,6 @@ elem_range::empty() const noexcept
 {
 	return (this->m_self_.succ() == &this->m_self_);
 }
-
 
 inline elem_range::release_::release_(elem_range& r) noexcept
 :	self_{ r },
