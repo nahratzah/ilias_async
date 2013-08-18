@@ -165,17 +165,15 @@ basic_iter::next(basic_list::size_type n) noexcept
 	    }};
 
 	basic_list*const owner = this->owner_;
-	return do_noexcept([&]() {
-		/* Step n items. */
-		elem_ptr i = this->forw_.succ(types);
-		for (basic_list::size_type n_ = 1; n_ < n; ++n)
-			i = i->succ(types);
+	/* Step n items. */
+	elem_ptr i = this->forw_.succ(types);
+	for (basic_list::size_type n_ = 1; n_ < n; ++n)
+		i = i->succ(types);
 
-		/* Try to link. */
-		while (!this->link_at(owner, i))
-			i = i->succ(types);
-		return i;
-	    });
+	/* Try to link. */
+	while (!this->link_at(owner, i))
+		i = i->succ(types);
+	return i;
 }
 
 elem_ptr
@@ -192,17 +190,15 @@ basic_iter::prev(basic_list::size_type n) noexcept
 	    }};
 
 	basic_list*const owner = this->owner_;
-	return do_noexcept([&]() {
-		/* Step n items. */
-		elem_ptr i = this->back_.pred(types);
-		for (basic_list::size_type n_ = 1; n_ < n; ++n)
-			i = i->pred(types);
+	/* Step n items. */
+	elem_ptr i = this->back_.pred(types);
+	for (basic_list::size_type n_ = 1; n_ < n; ++n)
+		i = i->pred(types);
 
-		/* Try to link. */
-		while (!this->link_at(owner, i))
-			i = i->pred(types);
-		return i;
-	    });
+	/* Try to link. */
+	while (!this->link_at(owner, i))
+		i = i->pred(types);
+	return i;
 }
 
 void
