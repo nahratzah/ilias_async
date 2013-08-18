@@ -159,19 +159,11 @@ elem::unlink() noexcept
 
 	/*
 	 * Mark ourselves as deleted.
-	 *
-	 * We try a cas operation:
-	 * if it fails some other thread must have updated our state,
-	 * since the predecessor is clearly marking us as deleted.
+	 * We use the predecessor mark propagation, since it also
+	 * fixes the predecessor pointer.
 	 */
-	std::get<1>(pred) = DELETED;
-	auto expect = add_present(std::get<0>(pred).get());
-	bool cas = this->m_pred_.compare_exchange_strong(
-	    expect,
-	    std::move(pred),
-	    std::memory_order_release,
-	    std::memory_order_relaxed);
-	assert(cas || std::get<1>(expect) == DELETED);
+	std::get<0>(pred)->succ();
+	assert(this->m_pred_.load_flags(std::memory_order_relaxed) == DELETED);
 
 	/*
 	 * Our predecessor is now no longer referring to us,
