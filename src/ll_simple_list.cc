@@ -10,14 +10,10 @@ elem::wait_unlinked() const noexcept
 {
 	std::atomic_thread_fence(std::memory_order_release);
 
-	for (;;) {
-		while (this->is_deleted(std::memory_order_acquire));
+	/* Wait for situation to stabalize. */
+	while (this->is_deleted(std::memory_order_acquire));
 
-		if (this->pred() == this && this->succ() == this)
-			return true;
-		else if (!this->is_deleted())
-			return false;
-	}
+	return (this->pred() == this && this->succ() == this);
 }
 
 void
