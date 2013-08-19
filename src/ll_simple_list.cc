@@ -58,27 +58,24 @@ elem_ptr
 elem::succ() const noexcept
 {
 	data_t s = this->m_succ_.load(std::memory_order_consume);
-	bool deleted = this->succ_propagate_fl(s);
 
-	/* Skip all deleted successors. */
-	while (deleted) {
-		data_t ss = std::get<0>(s)->m_succ_.load(
-		    std::memory_order_consume);
-		deleted = std::get<0>(s)->succ_propagate_fl(ss);
+	while (this->succ_propagate_fl(s)) {
+		elem_ptr s_ptr = std::get<0>(s);
+		data_t ss;
+		for (;;) {
+			ss = s_ptr->m_succ_.load(std::memory_order_consume);
+			if (s_ptr->succ_propagate_fl(ss))
+				s_ptr = std::move(std::get<0>(ss));
+			else
+				break;  /* GUARD */
+		}
 
-		std::get<1>(ss) = PRESENT;
-		if (this->m_succ_.compare_exchange_strong(
-		    s,
-		    ss,
-		    std::memory_order_release,
-		    std::memory_order_consume))
+		if (this->m_succ_.compare_exchange_weak(s, ss,
+		    std::memory_order_release, std::memory_order_consume))
 			s = std::move(ss);
-		else
-			deleted = this->succ_propagate_fl(s);
 	}
 
-	assert(std::get<0>(s) != nullptr);
-	return std::get<0>(s);
+	return std::move(std::get<0>(s));
 }
 
 data_t
@@ -86,45 +83,40 @@ elem::pred_fl() const noexcept
 {
 	data_t p = this->m_pred_.load(std::memory_order_consume);
 
-	/*
-	 * Search forward to change p from 'any' predecessor
-	 * to the direct predecessor of this.
-	 */
-	if (std::get<1>(p) == PRESENT) {
-		for (elem_ptr ps = std::get<0>(p)->succ();
-		    std::get<1>(p) == PRESENT && ps != this;
-		    ps = std::get<0>(p)->succ()) {
-			if (this->m_pred_.compare_exchange_strong(
+	do {
+		/*
+		 * Walk backwards until p is a non-deleted predecessor.
+		 */
+		while (std::get<0>(p)->is_deleted()) {
+			data_t pp = std::get<0>(p)->m_pred_.load(
+			    std::memory_order_consume);
+			std::get<1>(pp) = std::get<1>(p);
+			if (this->m_pred_.compare_exchange_weak(
 			    p,
-			    add_present(ps),
+			    pp,
 			    std::memory_order_release,
 			    std::memory_order_consume))
-				p = add_present(std::move(ps));
+				p = std::move(pp);
 		}
-	}
 
-	/*
-	 * Two cases at the moment:
-	 * [1] p is the direct predecessor of this,
-	 * [2] this is deleted and p is the direct predecessor
-	 *     from the moment of deletion.
-	 * In both cases, p may be a deleted element (meaning that our
-	 * predecessor pointer is stale).  The way to fix this is the same
-	 * for both cases (because [1] was made true by the loop above).
-	 */
-	while (std::get<0>(p)->is_deleted()) {
-		data_t pp = std::get<0>(p)->m_pred_.load(
-		    std::memory_order_consume);
-		std::get<1>(pp) = std::get<1>(p);
-		if (this->m_pred_.compare_exchange_strong(
-		    p,
-		    pp,
-		    std::memory_order_release,
-		    std::memory_order_consume))
-			p = std::move(pp);
-	}
+		/*
+		 * Search forward to change p from 'any' predecessor
+		 * to the direct predecessor of this.
+		 */
+		if (std::get<1>(p) == PRESENT) {
+			for (elem_ptr ps = std::get<0>(p)->succ();
+			    std::get<1>(p) == PRESENT && ps != this;
+			    ps = std::get<0>(p)->succ()) {
+				if (this->m_pred_.compare_exchange_weak(
+				    p,
+				    add_present(ps),
+				    std::memory_order_release,
+				    std::memory_order_consume))
+					p = add_present(std::move(ps));
+			}
+		}
+	} while (std::get<0>(p)->is_deleted());
 
-	assert(std::get<0>(p) != nullptr);
 	return p;
 }
 
