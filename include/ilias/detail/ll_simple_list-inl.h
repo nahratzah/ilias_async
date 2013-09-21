@@ -5,6 +5,8 @@
 #include <functional>
 #include <cassert>
 
+ILIAS_ASYNC_EXPORT extern "C" int do_print;
+
 namespace ilias {
 namespace ll_list_detail {
 namespace ll_simple_list {
@@ -79,12 +81,6 @@ inline elem::elem(elem&&) noexcept
 inline elem::~elem() noexcept
 {
 	this->wait_unused();
-
-	/*
-	 * Increment refcounter,
-	 * to block reset operation in elem_refcnt_mgr.
-	 */
-	this->m_refcnt_.fetch_add(1U, std::memory_order_acquire);
 }
 
 inline bool
@@ -130,24 +126,26 @@ elem::link_between(std::tuple<elem*, elem*> ins,
 
 inline link_result
 elem::link_before(std::tuple<elem*, elem*> ins,
-    elem_ptr pos)
+    elem_ptr pos, bool check_pos_validity)
 {
 	if (std::get<0>(ins) == nullptr || std::get<1>(ins) == nullptr ||
 	    pos == nullptr)
 		throw std::invalid_argument("link_before: null argument");
 
-	return link_before_(std::move(ins), std::move(pos));
+	return link_before_(std::move(ins), std::move(pos),
+	    check_pos_validity);
 }
 
 inline link_result
 elem::link_after(std::tuple<elem*, elem*> ins,
-    elem_ptr pos)
+    elem_ptr pos, bool check_pos_validity)
 {
 	if (std::get<0>(ins) == nullptr || std::get<1>(ins) == nullptr ||
 	    pos == nullptr)
 		throw std::invalid_argument("link_after: null argument");
 
-	return link_after_(std::move(ins), std::move(pos));
+	return link_after_(std::move(ins), std::move(pos),
+	    check_pos_validity);
 }
 
 inline link_result
@@ -157,15 +155,17 @@ elem::link_between(elem* e, std::tuple<elem_ptr, elem_ptr> pos)
 }
 
 inline link_result
-elem::link_before(elem* e, elem_ptr pos)
+elem::link_before(elem* e, elem_ptr pos, bool check_pos_validity)
 {
-	return link_before(std::make_tuple(e, e), std::move(pos));
+	return link_before(std::make_tuple(e, e), std::move(pos),
+	    check_pos_validity);
 }
 
 inline link_result
-elem::link_after(elem* e, elem_ptr pos)
+elem::link_after(elem* e, elem_ptr pos, bool check_pos_validity)
 {
-	return link_after(std::make_tuple(e, e), std::move(pos));
+	return link_after(std::make_tuple(e, e), std::move(pos),
+	    check_pos_validity);
 }
 
 inline link_result
@@ -184,13 +184,14 @@ elem::link_between(elem_range&& r,
 
 inline link_result
 elem::link_before(elem_range&& r,
-    elem_ptr pos)
+    elem_ptr pos, bool check_pos_validity)
 {
 	if (r.empty())
 		return link_result::SUCCESS;
 
 	elem_range::release_ rel{ r };
-	link_result rv = link_between(rel.get(), std::move(pos));
+	link_result rv = link_before(rel.get(), std::move(pos),
+	    check_pos_validity);
 	if (rv == link_result::SUCCESS)
 		rel.commit();
 	return rv;
@@ -198,13 +199,14 @@ elem::link_before(elem_range&& r,
 
 inline link_result
 elem::link_after(elem_range&& r,
-    elem_ptr pos)
+    elem_ptr pos, bool check_pos_validity)
 {
 	if (r.empty())
 		return link_result::SUCCESS;
 
 	elem_range::release_ rel{ r };
-	link_result rv = link_after(rel.get(), std::move(pos));
+	link_result rv = link_after(rel.get(), std::move(pos),
+	    check_pos_validity);
 	if (rv == link_result::SUCCESS)
 		rel.commit();
 	return rv;
@@ -255,7 +257,7 @@ elem_range::push_front(elem* e)
 		throw std::invalid_argument("elem_range: linked element");
 
 	auto rv = elem::link_after(std::make_tuple(e, e),
-	    elem_ptr{ &this->m_self_ });
+	    elem_ptr{ &this->m_self_ }, false);
 	switch (rv) {
 	case link_result::SUCCESS:
 		return;
@@ -278,7 +280,7 @@ elem_range::push_back(elem* e)
 		throw std::invalid_argument("elem_range: linked element");
 
 	auto rv = elem::link_before(std::make_tuple(e, e),
-	    elem_ptr{ &this->m_self_ });
+	    elem_ptr{ &this->m_self_ }, false);
 	switch (rv) {
 	case link_result::SUCCESS:
 		return;
@@ -333,7 +335,7 @@ inline elem_range::release_::~release_() noexcept
 	if (!this->commited_ &&
 	    this->data_ != std::make_tuple(nullptr, nullptr)) {
 		auto rv = elem::link_after(this->get(),
-		    elem_ptr{ &this->self_.m_self_ });
+		    elem_ptr{ &this->self_.m_self_ }, false);
 		assert(rv == link_result::SUCCESS);
 	}
 }

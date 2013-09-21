@@ -26,6 +26,15 @@ ll_list_hook<Tag>::_elem_offset() noexcept
 namespace ll_list_detail {
 
 
+inline bool
+unlink(const elem_ptr& p) noexcept
+{
+	ll_simple_list::elem_ptr p_{ p.get(), false };	// Share ownership.
+	const auto rv = ll_simple_list::unlink(p_);
+	p_.release();  // Unshare ownership.
+	return rv;
+}
+
 inline elem::elem(elem_type et) noexcept
 :	type_{ et }
 {
@@ -123,7 +132,7 @@ basic_list::push_front(elem* e)
 
 	return do_noexcept([&]() {
 		auto rv = elem::link_after(e,
-		    elem_ptr{ &this->head_ });
+		    elem_ptr{ &this->head_ }, false);
 		assert(rv != ll_simple_list::link_result::INVALID_POS);
 		return (rv == ll_simple_list::link_result::SUCCESS);
 	    });
@@ -137,7 +146,7 @@ basic_list::push_back(elem* e)
 
 	return do_noexcept([&]() {
 		auto rv = elem::link_before(e,
-		    elem_ptr{ &this->head_ });
+		    elem_ptr{ &this->head_ }, false);
 		assert(rv != ll_simple_list::link_result::INVALID_POS);
 		return (rv == ll_simple_list::link_result::SUCCESS);
 	    });
@@ -186,10 +195,12 @@ inline basic_iter::basic_iter(const basic_iter& other) noexcept
 :	basic_iter{}
 {
 	if ((this->owner_ = other.owner_) != nullptr) {
-		ll_simple_list::elem::link_after(&this->forw_,
-		    elem_ptr{ const_cast<elem*>(&other.forw_) });
-		ll_simple_list::elem::link_before(&this->back_,
-		    elem_ptr{ const_cast<elem*>(&other.back_) });
+		auto forw_rv = ll_simple_list::elem::link_after(&this->forw_,
+		    elem_ptr{ const_cast<elem*>(&other.forw_) }, true);
+		auto back_rv = ll_simple_list::elem::link_before(&this->back_,
+		    elem_ptr{ const_cast<elem*>(&other.back_) }, true);
+		assert(forw_rv == ll_simple_list::link_result::SUCCESS &&
+		    back_rv == ll_simple_list::link_result::SUCCESS);
 	}
 }
 
@@ -197,10 +208,12 @@ inline basic_iter::basic_iter(basic_iter&& other) noexcept
 :	basic_iter{}
 {
 	if ((this->owner_ = other.owner_) != nullptr) {
-		ll_simple_list::elem::link_after(&this->forw_,
-		    elem_ptr{ &other.forw_ });
-		ll_simple_list::elem::link_before(&this->back_,
-		    elem_ptr{ &other.back_ });
+		auto forw_rv = ll_simple_list::elem::link_after(&this->forw_,
+		    elem_ptr{ &other.forw_ }, true);
+		auto back_rv = ll_simple_list::elem::link_before(&this->back_,
+		    elem_ptr{ &other.back_ }, true);
+		assert(forw_rv == ll_simple_list::link_result::SUCCESS &&
+		    back_rv == ll_simple_list::link_result::SUCCESS);
 		other.unlink();
 	}
 }
@@ -213,14 +226,16 @@ inline basic_iter::~basic_iter() noexcept
 inline basic_iter&
 basic_iter::operator=(const basic_iter& other) noexcept
 {
-	ll_simple_list::unlink(&this->forw_);
-	ll_simple_list::unlink(&this->back_);
+	ll_list_detail::unlink(&this->forw_);
+	ll_list_detail::unlink(&this->back_);
 
 	if ((this->owner_ = other.owner_) != nullptr) {
-		ll_simple_list::elem::link_after(&this->forw_,
-		    elem_ptr{ const_cast<elem*>(&other.forw_) });
-		ll_simple_list::elem::link_before(&this->back_,
-		    elem_ptr{ const_cast<elem*>(&other.back_) });
+		auto forw_rv = ll_simple_list::elem::link_after(&this->forw_,
+		    elem_ptr{ const_cast<elem*>(&other.forw_) }, true);
+		auto back_rv = ll_simple_list::elem::link_before(&this->back_,
+		    elem_ptr{ const_cast<elem*>(&other.back_) }, true);
+		assert(forw_rv == ll_simple_list::link_result::SUCCESS &&
+		    back_rv == ll_simple_list::link_result::SUCCESS);
 	}
 
 	return *this;
@@ -229,14 +244,16 @@ basic_iter::operator=(const basic_iter& other) noexcept
 inline basic_iter&
 basic_iter::operator=(basic_iter&& other) noexcept
 {
-	ll_simple_list::unlink(&this->forw_);
-	ll_simple_list::unlink(&this->back_);
+	ll_list_detail::unlink(&this->forw_);
+	ll_list_detail::unlink(&this->back_);
 
 	if ((this->owner_ = other.owner_) != nullptr) {
-		ll_simple_list::elem::link_after(&this->forw_,
-		    elem_ptr{ const_cast<elem*>(&other.forw_) });
-		ll_simple_list::elem::link_before(&this->back_,
-		    elem_ptr{ const_cast<elem*>(&other.back_) });
+		auto forw_rv = ll_simple_list::elem::link_after(&this->forw_,
+		    elem_ptr{ const_cast<elem*>(&other.forw_) }, true);
+		auto back_rv = ll_simple_list::elem::link_before(&this->back_,
+		    elem_ptr{ const_cast<elem*>(&other.back_) }, true);
+		assert(forw_rv == ll_simple_list::link_result::SUCCESS &&
+		    back_rv == ll_simple_list::link_result::SUCCESS);
 		other.unlink();
 	}
 
@@ -296,8 +313,8 @@ inline bool
 basic_iter::unlink() noexcept
 {
 	if (this->owner_) {
-		ll_simple_list::unlink(&this->forw_);
-		ll_simple_list::unlink(&this->back_);
+		ll_list_detail::unlink(&this->forw_);
+		ll_list_detail::unlink(&this->back_);
 		this->owner_ = nullptr;
 		return true;
 	} else
@@ -939,7 +956,7 @@ ll_smartptr_list<Type, Tag, AcqRel>::unlink(const pointer& p) noexcept
 {
 	assert(p != nullptr);
 
-	const bool rv = ll_list_detail::ll_simple_list::unlink(as_elem_(p));
+	const bool rv = ll_list_detail::unlink(as_elem_(p));
 	if (rv)
 		this->post_unlink_(*p, 1U);
 	return rv;
@@ -951,7 +968,7 @@ ll_smartptr_list<Type, Tag, AcqRel>::unlink(const const_pointer& p) noexcept
 {
 	assert(p != nullptr);
 
-	const bool rv = ll_list_detail::ll_simple_list::unlink(as_elem_(p));
+	const bool rv = ll_list_detail::unlink(as_elem_(p));
 	if (rv)
 		this->post_unlink_(*p, 1U);
 	return rv;

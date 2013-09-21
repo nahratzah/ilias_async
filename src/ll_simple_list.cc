@@ -134,7 +134,7 @@ elem::pred_fl() const noexcept
 					p = add_present(std::move(ps));
 			}
 		}
-	} while (std::get<0>(p)->is_deleted());
+	} while (std::get<0>(p) != this && std::get<0>(p)->is_deleted());
 
 	return p;
 }
@@ -160,10 +160,8 @@ unlink(const elem_ptr& self) noexcept
 			pred = self->pred_fl();
 	}
 	/* Cannot unlink unlinked element. */
-	if (std::get<0>(pred) == self) {
-		assert(std::get<0>(pred) == self);
+	if (std::get<0>(pred) == self)
 		return false;
-	}
 
 	/*
 	 * Mark ourselves as deleted.
@@ -182,6 +180,7 @@ unlink(const elem_ptr& self) noexcept
 	 * require an update too.
 	 */
 	data_t s = self->m_succ_.load(std::memory_order_consume);
+	assert(std::get<0>(s) != self);
 	bool deleted = self->succ_propagate_fl(s);
 	std::get<0>(s)->pred();
 	if (deleted)
@@ -321,12 +320,12 @@ elem::link_between_(std::tuple<elem*, elem*> ins,
 
 link_result
 elem::link_before_(std::tuple<elem*, elem*> ins,
-    elem_ptr pos) noexcept
+    elem_ptr pos, bool check_pos_validity) noexcept
 {
 	assert(std::get<0>(ins) != nullptr && std::get<1>(ins) != nullptr &&
 	    pos != nullptr);
 
-	while (!pos->is_deleted()) {
+	while (!check_pos_validity || !pos->is_deleted()) {
 		auto rv = link_between_(ins,
 		    std::make_tuple(pos->pred(), pos));
 		switch (rv) {
@@ -342,12 +341,12 @@ elem::link_before_(std::tuple<elem*, elem*> ins,
 
 link_result
 elem::link_after_(std::tuple<elem*, elem*> ins,
-    elem_ptr pos) noexcept
+    elem_ptr pos, bool check_pos_validity) noexcept
 {
 	assert(std::get<0>(ins) != nullptr && std::get<1>(ins) != nullptr &&
 	    pos != nullptr);
 
-	while (!pos->is_deleted()) {
+	while (!check_pos_validity || !pos->is_deleted()) {
 		auto rv = link_between_(ins,
 		    std::make_tuple(pos, pos->succ()));
 		switch (rv) {

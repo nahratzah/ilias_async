@@ -72,16 +72,16 @@ public:
 	/* Multi element insertion. */
 	inline static link_result link_between(elem_range&&,
 	    std::tuple<elem_ptr, elem_ptr>);
-	inline static link_result link_before(elem_range&&, elem_ptr);
-	inline static link_result link_after(elem_range&&, elem_ptr);
+	inline static link_result link_before(elem_range&&, elem_ptr, bool);
+	inline static link_result link_after(elem_range&&, elem_ptr, bool);
 
 	/* Single element insertion. */
 	inline static link_result link_between(
 	    elem*, std::tuple<elem_ptr, elem_ptr>);
 	inline static link_result link_before(
-	    elem*, elem_ptr);
+	    elem*, elem_ptr, bool);
 	inline static link_result link_after(
-	    elem*, elem_ptr);
+	    elem*, elem_ptr, bool);
 
 private:
 	mutable std::atomic<refcount_t> m_refcnt_;
@@ -91,9 +91,9 @@ private:
 	inline static link_result link_between(
 	    std::tuple<elem*, elem*>, std::tuple<elem_ptr, elem_ptr>);
 	inline static link_result link_before(
-	    std::tuple<elem*, elem*>, elem_ptr);
+	    std::tuple<elem*, elem*>, elem_ptr, bool);
 	inline static link_result link_after(
-	    std::tuple<elem*, elem*>, elem_ptr);
+	    std::tuple<elem*, elem*>, elem_ptr, bool);
 
 	/* Internal representation of predecessor/successor pointers. */
 	inline bool is_deleted(std::memory_order = std::memory_order_seq_cst)
@@ -105,9 +105,9 @@ private:
 	ILIAS_ASYNC_EXPORT static link_result link_between_(
 	    std::tuple<elem*, elem*>, std::tuple<elem_ptr, elem_ptr>) noexcept;
 	ILIAS_ASYNC_EXPORT static link_result link_before_(
-	    std::tuple<elem*, elem*>, elem_ptr) noexcept;
+	    std::tuple<elem*, elem*>, elem_ptr, bool) noexcept;
 	ILIAS_ASYNC_EXPORT static link_result link_after_(
-	    std::tuple<elem*, elem*>, elem_ptr) noexcept;
+	    std::tuple<elem*, elem*>, elem_ptr, bool) noexcept;
 };
 
 class elem_range

@@ -39,9 +39,9 @@ basic_list::pop_front() noexcept
 	elem_ptr i_next;
 	for (elem_ptr i = this->head_.succ(types);
 	    i->is_elem();
-	    i = i_next) {
+	    i = std::move(i_next)) {
 		i_next = i->succ(types);
-		if (ll_simple_list::unlink(i))
+		if (unlink(i))
 			return i;
 	}
 	return nullptr;
@@ -58,9 +58,9 @@ basic_list::pop_back() noexcept
 	elem_ptr i_next;
 	for (elem_ptr i = this->head_.pred(types);
 	    i->is_elem();
-	    i = i_next) {
-		i_next = i->succ(types);
-		if (ll_simple_list::unlink(i))
+	    i = std::move(i_next)) {
+		i_next = i->pred(types);
+		if (unlink(i))
 			return i;
 	}
 	return nullptr;
@@ -271,16 +271,16 @@ basic_iter::link_at_(basic_list* list, elem_ptr pos) noexcept
 	assert(list != nullptr && pos != nullptr);
 	assert(pos->is_head() || pos->is_elem());
 
-	ll_simple_list::unlink(&this->forw_);
-	ll_simple_list::unlink(&this->back_);
+	ll_list_detail::unlink(&this->forw_);
+	ll_list_detail::unlink(&this->back_);
 
 	const auto rv_forw = ll_simple_list::elem::link_after(
-	    &this->forw_, pos);
+	    &this->forw_, pos, true);
 	assert(rv_forw != ll_simple_list::link_result::INS0_LINKED &&
 	    rv_forw != ll_simple_list::link_result::INS1_LINKED);
 
 	const auto rv_back = ll_simple_list::elem::link_before(
-	    &this->back_, pos);
+	    &this->back_, pos, true);
 	assert(rv_back != ll_simple_list::link_result::INS0_LINKED &&
 	    rv_back != ll_simple_list::link_result::INS1_LINKED);
 
@@ -291,8 +291,8 @@ basic_iter::link_at_(basic_list* list, elem_ptr pos) noexcept
 	}
 
 	this->owner_ = nullptr;
-	ll_simple_list::unlink(&this->forw_);
-	ll_simple_list::unlink(&this->back_);
+	ll_list_detail::unlink(&this->forw_);
+	ll_list_detail::unlink(&this->back_);
 	return false;
 }
 

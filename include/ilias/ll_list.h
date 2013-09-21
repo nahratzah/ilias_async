@@ -32,6 +32,7 @@ class basic_iter;
 using elem_ptr = refpointer<elem, ll_simple_list::elem_refcnt_mgr>;
 using const_elem_ptr = refpointer<const elem, ll_simple_list::elem_refcnt_mgr>;
 
+inline bool unlink(const elem_ptr&) noexcept;
 
 class elem
 :	public ll_simple_list::elem
