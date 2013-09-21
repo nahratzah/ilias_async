@@ -6,10 +6,11 @@ constexpr unsigned int COUNT = 100000;
 
 
 void
-thrfun(list* lst)
+thrfun(list* lst, int thrnum)
 {
 	unsigned int count = 0;
 	lst->visit([&count](const test_obj&) { ++count; });
+	fprintf(stderr, "%d", thrnum);
 
 	if (count != COUNT) {
 		std::cerr << "Expected " << COUNT << " elements, "
@@ -28,10 +29,10 @@ test()
 
 	test_obj::ensure_count(COUNT);
 
-	std::thread t0{ &thrfun, &lst };
-	std::thread t1{ &thrfun, &lst };
-	std::thread t2{ &thrfun, &lst };
-	std::thread t3{ &thrfun, &lst };
+	std::thread t0{ &thrfun, &lst, 0 };
+	std::thread t1{ &thrfun, &lst, 1 };
+	std::thread t2{ &thrfun, &lst, 2 };
+	std::thread t3{ &thrfun, &lst, 3 };
 
 	t0.join();
 	t1.join();

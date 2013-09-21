@@ -38,7 +38,7 @@ class elem
 {
 public:
 	inline elem(elem_type) noexcept;
-	inline ~elem() noexcept;
+	~elem() = default;
 
 	inline elem_ptr succ() const noexcept;
 	inline elem_ptr pred() const noexcept;
@@ -108,7 +108,7 @@ public:
 	inline basic_iter() noexcept;
 	inline basic_iter(const basic_iter&) noexcept;
 	inline basic_iter(basic_iter&&) noexcept;
-	~basic_iter() = default;
+	inline ~basic_iter() noexcept;
 
 	inline basic_iter& operator=(const basic_iter&) noexcept;
 	inline basic_iter& operator=(basic_iter&&) noexcept;

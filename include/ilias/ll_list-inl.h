@@ -32,11 +32,6 @@ inline elem::elem(elem_type et) noexcept
 	/* Empty body. */
 }
 
-inline elem::~elem() noexcept
-{
-	this->unlink();
-}
-
 inline elem_ptr
 elem::succ() const noexcept
 {
@@ -210,11 +205,16 @@ inline basic_iter::basic_iter(basic_iter&& other) noexcept
 	}
 }
 
+inline basic_iter::~basic_iter() noexcept
+{
+	this->unlink();
+}
+
 inline basic_iter&
 basic_iter::operator=(const basic_iter& other) noexcept
 {
-	this->forw_.unlink();
-	this->back_.unlink();
+	ll_simple_list::unlink(&this->forw_);
+	ll_simple_list::unlink(&this->back_);
 
 	if ((this->owner_ = other.owner_) != nullptr) {
 		ll_simple_list::elem::link_after(&this->forw_,
@@ -229,8 +229,8 @@ basic_iter::operator=(const basic_iter& other) noexcept
 inline basic_iter&
 basic_iter::operator=(basic_iter&& other) noexcept
 {
-	this->forw_.unlink();
-	this->back_.unlink();
+	ll_simple_list::unlink(&this->forw_);
+	ll_simple_list::unlink(&this->back_);
 
 	if ((this->owner_ = other.owner_) != nullptr) {
 		ll_simple_list::elem::link_after(&this->forw_,
@@ -296,8 +296,8 @@ inline bool
 basic_iter::unlink() noexcept
 {
 	if (this->owner_) {
-		this->forw_.unlink();
-		this->back_.unlink();
+		ll_simple_list::unlink(&this->forw_);
+		ll_simple_list::unlink(&this->back_);
 		this->owner_ = nullptr;
 		return true;
 	} else
@@ -939,7 +939,7 @@ ll_smartptr_list<Type, Tag, AcqRel>::unlink(const pointer& p) noexcept
 {
 	assert(p != nullptr);
 
-	const bool rv = as_elem_(p)->unlink();
+	const bool rv = ll_list_detail::ll_simple_list::unlink(as_elem_(p));
 	if (rv)
 		this->post_unlink_(*p, 1U);
 	return rv;
@@ -951,7 +951,7 @@ ll_smartptr_list<Type, Tag, AcqRel>::unlink(const const_pointer& p) noexcept
 {
 	assert(p != nullptr);
 
-	const bool rv = as_elem_(p)->unlink();
+	const bool rv = ll_list_detail::ll_simple_list::unlink(as_elem_(p));
 	if (rv)
 		this->post_unlink_(*p, 1U);
 	return rv;

@@ -46,10 +46,14 @@ using data_t = elem_llptr::element_type;
 constexpr flags_t PRESENT{ 0UL };
 constexpr flags_t DELETED{ 1UL };
 
+/* Unlink operation. */
+ILIAS_ASYNC_EXPORT bool unlink(const elem_ptr&) noexcept;
+
 class elem
 {
 friend struct elem_refcnt_mgr;
 friend class elem_range;
+friend bool unlink(const elem_ptr&) noexcept;
 
 public:
 	inline elem() noexcept;
@@ -57,16 +61,13 @@ public:
 	inline elem(elem&&) noexcept;
 	inline ~elem() noexcept;
 	inline bool is_linked() const noexcept;
-	ILIAS_ASYNC_EXPORT bool wait_unlinked() const noexcept;
+	ILIAS_ASYNC_EXPORT bool wait_unlinked(refcount_t) const noexcept;
 	inline bool is_unused() const noexcept;
 	ILIAS_ASYNC_EXPORT void wait_unused() const noexcept;
 
 	/* Predecessor/successor lookup. */
 	ILIAS_ASYNC_EXPORT elem_llptr::pointer succ() const noexcept;
 	inline elem_llptr::pointer pred() const noexcept;
-
-	/* Unlink operation. */
-	ILIAS_ASYNC_EXPORT bool unlink() noexcept;
 
 	/* Multi element insertion. */
 	inline static link_result link_between(elem_range&&,

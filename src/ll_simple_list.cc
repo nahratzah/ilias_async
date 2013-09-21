@@ -6,24 +6,40 @@ namespace ll_simple_list {
 
 
 bool
-elem::wait_unlinked() const noexcept
+elem::wait_unlinked(refcount_t n) const noexcept
 {
 	std::atomic_thread_fence(std::memory_order_release);
 
-	/* Wait for situation to stabalize. */
-	while (this->is_deleted(std::memory_order_acquire));
+	/* Wait for references from other threads to go away. */
+	do {
+		if (!this->is_deleted(std::memory_order_acquire))
+			return false;
+	} while (this->m_refcnt_.load(std::memory_order_acquire) != n);
 
-	return (this->pred() == this && this->succ() == this);
+	/* Clear pointers. */
+	this->m_pred_.store(add_present(elem_ptr{ const_cast<elem*>(this) }),
+	    std::memory_order_relaxed);
+	this->m_succ_.store(add_present(elem_ptr{ const_cast<elem*>(this) }),
+	    std::memory_order_relaxed);
+
+	/*
+	 * Prevent future instructions from moving back,
+	 * while blocking above stores from moving forward.
+	 */
+	std::atomic_thread_fence(std::memory_order_acq_rel);
+	return true;
 }
 
 void
 elem::wait_unused() const noexcept
 {
 	std::atomic_thread_fence(std::memory_order_release);
-	while (this->m_pred_.load_no_acquire(std::memory_order_acquire) !=
+
+	assert(this->m_pred_.load_no_acquire(std::memory_order_acquire) ==
 	    add_present(this));
-	while (this->m_succ_.load_no_acquire(std::memory_order_acquire) !=
+	assert(this->m_succ_.load_no_acquire(std::memory_order_acquire) ==
 	    add_present(this));
+
 	while (this->m_refcnt_.load(std::memory_order_acquire) != 2U);
 }
 
@@ -121,33 +137,30 @@ elem::pred_fl() const noexcept
 }
 
 bool
-elem::unlink() noexcept
+unlink(const elem_ptr& self) noexcept
 {
+	if (self == nullptr)
+		return false;
 	bool result = false;
 
-	/*
-	 * Prevent relinking from happening while we are attempting to delete:
-	 * the lazy part of the deletion will not complete until the last
-	 * reference to this goes away.
-	 */
-	const elem_ptr self{ this };
-
 	/* Inform predecessor that we are going away. */
-	data_t pred = this->pred_fl();
+	data_t pred = self->pred_fl();
 	while (!result &&
 	    std::get<1>(pred) != DELETED &&
-	    std::get<0>(pred) != this) {
+	    std::get<0>(pred) != self) {
 		result = std::get<0>(pred)->m_succ_.compare_exchange_strong(
-		    add_present(this),
+		    add_present(self.get()),
 		    add_deleted(self),
 		    std::memory_order_acq_rel,
 		    std::memory_order_relaxed);
 		if (!result)
-			pred = this->pred_fl();
+			pred = self->pred_fl();
 	}
 	/* Cannot unlink unlinked element. */
-	if (std::get<0>(pred) == this)
+	if (std::get<0>(pred) == self) {
+		assert(std::get<0>(pred) == self);
 		return false;
+	}
 
 	/*
 	 * Mark ourselves as deleted.
@@ -155,7 +168,7 @@ elem::unlink() noexcept
 	 * fixes the predecessor pointer.
 	 */
 	std::get<0>(pred)->succ();
-	assert(this->m_pred_.load_flags(std::memory_order_relaxed) == DELETED);
+	assert(self->m_pred_.load_flags(std::memory_order_relaxed) == DELETED);
 
 	/*
 	 * Our predecessor is now no longer referring to us,
@@ -165,16 +178,20 @@ elem::unlink() noexcept
 	 * busy getting deleted ourselves, the real successor may
 	 * require an update too.
 	 */
-	data_t s = this->m_succ_.load(std::memory_order_consume);
-	bool deleted = this->succ_propagate_fl(s);
+	data_t s = self->m_succ_.load(std::memory_order_consume);
+	bool deleted = self->succ_propagate_fl(s);
 	std::get<0>(s)->pred();
 	if (deleted)
-		this->succ()->pred();
+		self->succ()->pred();
 
 	/*
-	 * Done (the rest of the deletion happens lazily when the last elem_ptr
-	 * linked to us goes away, at least one of which we own above.
+	 * Done, just wait until the last reference clears.
 	 */
+	if (result) {
+		bool unlinked = self->wait_unlinked(1);
+		assert(unlinked);
+	}
+
 	return result;
 }
 

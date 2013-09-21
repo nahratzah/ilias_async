@@ -53,12 +53,6 @@ elem_refcnt_mgr::release(const elem& e,
 {
 	refcount_t r = e.m_refcnt_.fetch_sub(nrefs, std::memory_order_release);
 	assert(r >= nrefs);
-
-	if (r == nrefs) {
-		auto assign = add_present(elem_ptr{ const_cast<elem*>(&e) });
-		e.m_pred_.store(assign, std::memory_order_release);
-		e.m_succ_.store(std::move(assign), std::memory_order_release);
-	}
 }
 
 
@@ -159,21 +153,18 @@ elem::link_after(std::tuple<elem*, elem*> ins,
 inline link_result
 elem::link_between(elem* e, std::tuple<elem_ptr, elem_ptr> pos)
 {
-	e->wait_unlinked();
 	return link_between(std::make_tuple(e, e), std::move(pos));
 }
 
 inline link_result
 elem::link_before(elem* e, elem_ptr pos)
 {
-	e->wait_unlinked();
 	return link_before(std::make_tuple(e, e), std::move(pos));
 }
 
 inline link_result
 elem::link_after(elem* e, elem_ptr pos)
 {
-	e->wait_unlinked();
 	return link_after(std::make_tuple(e, e), std::move(pos));
 }
 
@@ -222,7 +213,10 @@ elem::link_after(elem_range&& r,
 inline bool
 elem::is_deleted(std::memory_order mo) const noexcept
 {
-	return (this->m_pred_.load_flags(mo) == DELETED);
+	elem* p;
+	flags_t fl;
+	std::tie(p, fl) = this->m_pred_.load_no_acquire(mo);
+	return (p == this || fl == DELETED);
 }
 
 
@@ -230,7 +224,7 @@ inline elem_range::elem_range(elem_range&& other) noexcept
 :	elem_range{}
 {
 	other.push_front(&this->m_self_);
-	other.m_self_.unlink();
+	unlink(&other.m_self_);
 }
 
 template<typename Iter>
@@ -248,7 +242,7 @@ inline elem_range::~elem_range() noexcept
 	for (elem_ptr e = this->m_self_.succ();
 	    e != &this->m_self_;
 	    e = e->succ())
-		e->unlink();
+		unlink(e);
 	assert(this->empty());
 }
 
@@ -257,7 +251,7 @@ elem_range::push_front(elem* e)
 {
 	if (e == nullptr)
 		throw std::invalid_argument("elem_range: null element");
-	if (!e->wait_unlinked())
+	if (e->is_linked())
 		throw std::invalid_argument("elem_range: linked element");
 
 	auto rv = elem::link_after(std::make_tuple(e, e),
@@ -280,7 +274,7 @@ elem_range::push_back(elem* e)
 {
 	if (e == nullptr)
 		throw std::invalid_argument("elem_range: null element");
-	if (!e->wait_unlinked())
+	if (e->is_linked())
 		throw std::invalid_argument("elem_range: linked element");
 
 	auto rv = elem::link_before(std::make_tuple(e, e),
