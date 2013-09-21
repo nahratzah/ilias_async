@@ -226,6 +226,9 @@ inline basic_iter::~basic_iter() noexcept
 inline basic_iter&
 basic_iter::operator=(const basic_iter& other) noexcept
 {
+	if (&other == this)
+		return *this;
+
 	this->unlink();
 
 	if ((this->owner_ = other.owner_) != nullptr) {
@@ -243,6 +246,9 @@ basic_iter::operator=(const basic_iter& other) noexcept
 inline basic_iter&
 basic_iter::operator=(basic_iter&& other) noexcept
 {
+	if (&other == this)
+		return *this;
+
 	this->unlink();
 
 	if ((this->owner_ = other.owner_) != nullptr) {
