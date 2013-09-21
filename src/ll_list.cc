@@ -214,6 +214,8 @@ basic_iter::link_post_insert_(basic_list* list,
 	assert(!std::get<0>(between)->is_back_iter());
 	assert(!std::get<1>(between)->is_forw_iter());
 
+	this->owner_ = list;
+
 	std::tuple<elem_ptr, elem_ptr> back_pos{
 		std::move(std::get<0>(between)),
 		nullptr
