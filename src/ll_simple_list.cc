@@ -68,8 +68,10 @@ elem::succ_propagate_fl(const data_t& s) const noexcept
 		    std::memory_order_release,
 		    std::memory_order_relaxed);
 		assert(cas || std::get<1>(expect) == DELETED);
-	} else
-		deleted = std::get<0>(s)->is_deleted();
+	} else {
+		deleted = std::get<0>(s) != this &&
+		    std::get<0>(s)->is_deleted();
+	}
 
 	return deleted;
 }
@@ -79,7 +81,7 @@ elem::succ() const noexcept
 {
 	data_t s = this->m_succ_.load(std::memory_order_consume);
 
-	while (this->succ_propagate_fl(s) && std::get<0>(s) != this) {
+	while (this->succ_propagate_fl(s)) {
 		elem_ptr& s_ptr = std::get<0>(s);
 		data_t ss = s_ptr->m_succ_.load(std::memory_order_consume);
 		bool ss_deleted = s_ptr->succ_propagate_fl(ss);
