@@ -226,8 +226,7 @@ inline basic_iter::~basic_iter() noexcept
 inline basic_iter&
 basic_iter::operator=(const basic_iter& other) noexcept
 {
-	ll_list_detail::unlink(&this->forw_);
-	ll_list_detail::unlink(&this->back_);
+	this->unlink();
 
 	if ((this->owner_ = other.owner_) != nullptr) {
 		auto forw_rv = ll_simple_list::elem::link_after(&this->forw_,
@@ -244,8 +243,7 @@ basic_iter::operator=(const basic_iter& other) noexcept
 inline basic_iter&
 basic_iter::operator=(basic_iter&& other) noexcept
 {
-	ll_list_detail::unlink(&this->forw_);
-	ll_list_detail::unlink(&this->back_);
+	this->unlink();
 
 	if ((this->owner_ = other.owner_) != nullptr) {
 		auto forw_rv = ll_simple_list::elem::link_after(&this->forw_,
@@ -312,7 +310,7 @@ basic_iter::link_at(basic_list* list, elem_ptr pos)
 inline bool
 basic_iter::unlink() noexcept
 {
-	if (this->owner_) {
+	if (this->owner_ != nullptr) {
 		ll_list_detail::unlink(&this->forw_);
 		ll_list_detail::unlink(&this->back_);
 		this->owner_ = nullptr;

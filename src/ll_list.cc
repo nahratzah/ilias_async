@@ -270,29 +270,26 @@ basic_iter::link_at_(basic_list* list, elem_ptr pos) noexcept
 {
 	assert(list != nullptr && pos != nullptr);
 	assert(pos->is_head() || pos->is_elem());
+	const bool check_pos_validity = pos->is_elem();
 
-	ll_list_detail::unlink(&this->forw_);
-	ll_list_detail::unlink(&this->back_);
+	this->unlink();
+	this->owner_ = list;
 
 	const auto rv_forw = ll_simple_list::elem::link_after(
-	    &this->forw_, pos, true);
+	    &this->forw_, pos, check_pos_validity);
 	assert(rv_forw != ll_simple_list::link_result::INS0_LINKED &&
 	    rv_forw != ll_simple_list::link_result::INS1_LINKED);
 
 	const auto rv_back = ll_simple_list::elem::link_before(
-	    &this->back_, pos, true);
+	    &this->back_, pos, check_pos_validity);
 	assert(rv_back != ll_simple_list::link_result::INS0_LINKED &&
 	    rv_back != ll_simple_list::link_result::INS1_LINKED);
 
 	if (rv_forw == ll_simple_list::link_result::SUCCESS &&
-	    rv_back == ll_simple_list::link_result::SUCCESS) {
-		this->owner_ = list;
+	    rv_back == ll_simple_list::link_result::SUCCESS)
 		return true;
-	}
 
-	this->owner_ = nullptr;
-	ll_list_detail::unlink(&this->forw_);
-	ll_list_detail::unlink(&this->back_);
+	this->unlink();
 	return false;
 }
 
