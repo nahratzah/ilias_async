@@ -61,7 +61,7 @@ public:
 	inline elem(elem&&) noexcept;
 	inline ~elem() noexcept;
 	inline bool is_linked() const noexcept;
-	ILIAS_ASYNC_EXPORT bool wait_unlinked(refcount_t) const noexcept;
+	ILIAS_ASYNC_EXPORT bool wait_unlinked(refcount_t, bool) const noexcept;
 	inline bool is_unused() const noexcept;
 	ILIAS_ASYNC_EXPORT void wait_unused() const noexcept;
 

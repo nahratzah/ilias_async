@@ -6,7 +6,7 @@ namespace ll_simple_list {
 
 
 bool
-elem::wait_unlinked(refcount_t n) const noexcept
+elem::wait_unlinked(refcount_t n, bool release) const noexcept
 {
 	std::atomic_thread_fence(std::memory_order_release);
 
@@ -17,10 +17,14 @@ elem::wait_unlinked(refcount_t n) const noexcept
 	} while (this->m_refcnt_.load(std::memory_order_acquire) != n);
 
 	/* Clear pointers. */
-	this->m_pred_.store(add_present(elem_ptr{ const_cast<elem*>(this) }),
-	    std::memory_order_relaxed);
-	this->m_succ_.store(add_present(elem_ptr{ const_cast<elem*>(this) }),
-	    std::memory_order_relaxed);
+	if (release) {
+		this->m_pred_.store(add_present(
+		    elem_ptr{ const_cast<elem*>(this) }),
+		    std::memory_order_relaxed);
+		this->m_succ_.store(add_present(
+		    elem_ptr{ const_cast<elem*>(this) }),
+		    std::memory_order_relaxed);
+	}
 
 	/*
 	 * Prevent future instructions from moving back,
@@ -75,23 +79,19 @@ elem::succ() const noexcept
 {
 	data_t s = this->m_succ_.load(std::memory_order_consume);
 
-	while (this->succ_propagate_fl(s)) {
-		elem_ptr s_ptr = std::get<0>(s);
-		data_t ss;
-		for (;;) {
-			ss = s_ptr->m_succ_.load(std::memory_order_consume);
-			if (s_ptr->succ_propagate_fl(ss))
-				s_ptr = std::move(std::get<0>(ss));
-			else
-				break;  /* GUARD */
-		}
+	while (this->succ_propagate_fl(s) && std::get<0>(s) != this) {
+		elem_ptr& s_ptr = std::get<0>(s);
+		data_t ss = s_ptr->m_succ_.load(std::memory_order_consume);
+		bool ss_deleted = s_ptr->succ_propagate_fl(ss);
+		std::get<1>(ss) = PRESENT;
 
 		if (this->m_succ_.compare_exchange_weak(s, ss,
 		    std::memory_order_release, std::memory_order_consume))
 			s = std::move(ss);
 	}
 
-	return std::move(std::get<0>(s));
+	elem_ptr result = std::move(std::get<0>(s));
+	return result;
 }
 
 data_t
@@ -103,7 +103,8 @@ elem::pred_fl() const noexcept
 		/*
 		 * Walk backwards until p is a non-deleted predecessor.
 		 */
-		while (std::get<0>(p)->is_deleted()) {
+		while (std::get<0>(p) != this &&
+		    std::get<0>(p)->is_deleted()) {
 			data_t pp = std::get<0>(p)->m_pred_.load(
 			    std::memory_order_consume);
 			std::get<1>(pp) = std::get<1>(p);
@@ -188,7 +189,7 @@ unlink(const elem_ptr& self) noexcept
 	 * Done, just wait until the last reference clears.
 	 */
 	if (result) {
-		bool unlinked = self->wait_unlinked(1);
+		bool unlinked = self->wait_unlinked(1, true);
 		assert(unlinked);
 	}
 
