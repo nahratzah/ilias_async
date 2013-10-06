@@ -52,6 +52,8 @@ elem::wait_unused() const noexcept
  *
  * If m_succ is marked deleted, propagate the deleted bit to the successor
  * and clear the deleted bit.
+ *
+ * Returns true iff the successor is to be reloaded due to being deleted.
  */
 bool
 elem::succ_propagate_fl(const data_t& s) const noexcept
@@ -67,7 +69,7 @@ elem::succ_propagate_fl(const data_t& s) const noexcept
 		    add_deleted(elem_ptr{ const_cast<elem*>(this) }),
 		    std::memory_order_release,
 		    std::memory_order_relaxed);
-		assert(cas || std::get<1>(expect) == DELETED);
+		assert(cas || std::get<1>(expect) == DELETED);  /* XXX fails */
 	} else {
 		deleted = std::get<0>(s) != this &&
 		    std::get<0>(s)->is_deleted();
