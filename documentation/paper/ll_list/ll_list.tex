@@ -157,8 +157,11 @@ In this paper, I will be (ab)using flag derivations to proof transitions.
     {Introduce a predicate $\mathcal{S}$}
 	\skipsteps{2}{\vdots}{}
 	\step{}
-	    {\mathcal{S} \implies \mathcal{A}}
-	    {Some predicate $\mathcal{A}$}
+	    {\mathcal{S} \implies \mathcal{A}_1}
+	    {Derive predicate $\mathcal{A}_1$ from $\mathcal{S}$}
+	\step{}
+	    {\mathcal{S} \implies \mathcal{A}_2}
+	    {Derive predicate $\mathcal{A}_2$ from $\mathcal{S}$}
 	\transformation{abuse:transition}
 	    {\lambda \yields \mathcal{T}}
 	    {Introduce transformation $\lambda$ on $\mathcal{S}$}
@@ -166,52 +169,158 @@ In this paper, I will be (ab)using flag derivations to proof transitions.
 		\step{}
 		    {\mathcal{T} \implies \mathcal{B}}
 		    {Derive some predicate $\mathcal{B}$ from $\mathcal{T}$}
-		\step{}
-		    {\mathcal{A} \land \mathcal{T} \rimplies \mathcal{A}}
-		    {Only way to pull in $\mathcal{A}$
-		      is to filter through $\mathcal{T}$}
+		\assume{abuse:assume-A1}
+		    {\mathcal{A}_1}
+		    {Suppose $\mathcal{A}_1$ still holds
+		      after the transition...}
+			\step{}
+			    {\mathcal{A}_1 \land \mathcal{T}}
+			    {$\land$-intro on \ref{abuse:assume-A1} and \ref{abuse:transition}}
+			\skipsteps{2}{\vdots}{}
+			\step{abuse:assume-A1-false}
+			    {\mathcal{A}_1 \land \mathcal{T} \implies \false}
+			    {Only way to pull in $\mathcal{A}_1$
+			      is to filter through $\mathcal{T}$}
+		\conclude{}
+		    {\neg \mathcal{A}_1}
+		    {Contradiction on \ref{abuse:assume-A1} and
+		      \ref{abuse:assume-A1-false}}
+		\assume{abuse:assume-not-A2}
+		    {\neg \mathcal{A}_2}
+		    {Suppse $\mathcal{A}_2$ no longer holds
+		      after the transition...}
+			\step{}
+			    {\neg \mathcal{A}_2 \land \mathcal{T}}
+			    {$\land$-intro on \ref{abuse:assume-A1} and \ref{abuse:transition}}
+			\skipsteps{2}{\vdots}{}
+			\step{abuse:assume-not-A2-false}
+			    {\neg \mathcal{A}_2 \land \mathcal{T} \implies \false}
+			    {Only way to pull in $\mathcal{A}_2$
+			      is proof by contradiction with $\mathcal{T}$}
+		\conclude{}
+		    {\mathcal{A}_2}
+		    {Contradiction on \ref{abuse:assume-not-A2} and
+		      \ref{abuse:assume-not-A2-false}}
 		\step{abuse:conclusion}
 		    {
-			\mathcal{B} \land
-			\left(
-				\mathcal{A} \land \mathcal{T}
-				\rimplies \mathcal{A}
-			\right)
+			\mathcal{B}
+			\land
+			\neg \mathcal{A}_1
+			\land
+			\mathcal{A}_2
 		    }
 		    {Final conclusion on
 		      $\mathcal{S} \yields \lambda \yields \mathcal{T}$}
 \conclude[2]{}
     {
 	\hoaretrip
-	    {\mathcal{S}}
+	    {
+		\mathcal{A}_1
+		\land
+		\mathcal{A}_2
+	    }
 	    {\lambda}
 	    {
-		\mathcal{B} \land
-		\left(
-			\mathcal{A} \land \mathcal{T}
-			\rimplies \mathcal{A}
-		\right)
+		\mathcal{B}
+		\land
+		\neg \mathcal{A}_1
+		\land
+		\mathcal{A}_2
 	    }
     }
     {Create Hoare triple using
       \ref{abuse:intro}, \ref{abuse:transition}, \ref{abuse:conclusion}}
 \end{flagderiv}
-Every predicate $\mathcal{P}$ during the transformation flag
-\ref{abuse:transition} is only valid if:
-$
-\left(
-	\mathcal{T} \implies \mathcal{P}
-\right)
-\lor
-\left(
-	\left( \mathcal{S} \implies \mathcal{P} \right)
-	\land
-	\left( \mathcal{P} \land \mathcal{T} \equiv \true \right)
-\right)
-$.
-In other words, predicate $\mathcal{T}$ acts as a filter on $\mathcal{S}$.
+Any predicate crossing into the transition boundary has to be re-evaluated
+using proof by contradiction.
+Thus $\mathcal{T}$ acts as a filter on each predicate prior to the transition.
+
 Because of this, extra care is required to ensure that $\mathcal{T}$
 is complete in describing all modifications introduced by $\lambda$.
+
+
+\subsubsection*{An example}
+As example, let us use the square root operation,
+limited to the input set $\mathbb{R}$.
+It's definition in a hoare triple would look like this:
+\begin{equation*}
+\hoaretrip
+    {r \in \mathbb{R}}
+    {s \becomes \sqrt{r}}
+    {s = \sqrt{r}}
+\end{equation*}
+Which translates to:\\
+define a transition: $s \becomes \sqrt{r}$\\
+given a pre condition: $r \in \mathbb{R}$\\
+with post condition: $s = \sqrt{r}$.
+
+To use this hoare triple, we have to start out with a state $\mathcal{S}$.
+Let's try to proof that a precondition $a = 1 \land b = 2$
+yields a postcondition $a \neq 1$
+after the transition $a \becomes \sqrt{b}$.
+
+\begin{flagderiv}
+\introduce{abuseExample:intro}
+    {
+	a = 1 \land b = 2
+    }
+    {Current state}
+	\transformation{abuseExample:transition}
+	    {a \becomes \sqrt{b} \yields a = \sqrt{b}}
+	    {
+		Introduce transformation on $\mathcal{S}$
+		(substituting $a$ for $s$ and $b$ for $r$)
+	    }
+		\assume{abuseExample:pull}
+		    {
+			\neg \left( a = 1 \land b = 2 \right)
+		    }
+		    {
+			Test if $b = 2$ still holds after the transition
+			from \ref{abuseExample:intro}
+		    }
+			\step{abuseExample:pullBpost}
+			    {
+				\neg \left( a = 1 \land b = 2 \right)
+				\land
+				a = \sqrt{b}
+			    }
+			    {
+				$\land$-intro on \ref{abuseExample:pullB} and
+				\ref{abuseExample:transition}
+			    }
+		\conclude{}{}{...}
+		\assume{abuseExample:pullA}
+		    {a = 1}
+		    {Test if $a = 1$ still holds after the transition
+		      from \ref{abuseExample:intro}}
+			\step{abuseExample:tPost}
+			    {a = \sqrt{b}}
+			    {Use postcondition from
+			      \ref{abuseExample:transition}}
+			\step{abuseExample:introAndOnPullAAndTPost}
+			    {a = \sqrt{b} \land a = 1}
+			    {$\land$-intro on \ref{abuseExample:pullA}
+			      and \ref{abuseExample:tPost}}
+			\step{abuseExample:substB}
+			    {}
+			    {Substitute $b = 2$ on
+			      \ref{abuseExample:introAndOnPullAAndTPost}}
+\conclude[2]{}
+    {
+	\hoaretrip
+	    {
+		a = 1 \land b = 2
+	    }
+	    {
+		a \becomes \sqrt{b}
+	    }
+	    {
+		a = \sqrt{2} \land b = 2
+	    }
+    }
+    {Hoare triple using \ref{abuseExample:intro}, \ref{abuseExample:transition}, ...}
+\end{flagderiv}
 
 
 
