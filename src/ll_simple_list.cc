@@ -8,7 +8,7 @@ namespace ll_simple_list {
 bool
 elem::wait_unlinked(refcount_t n, bool release) const noexcept
 {
-	std::atomic_thread_fence(std::memory_order_release);
+	std::atomic_thread_fence(std::memory_order_acq_rel);
 
 	/* Wait for references from other threads to go away. */
 	do {
