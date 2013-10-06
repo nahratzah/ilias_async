@@ -1,0 +1,19 @@
+\let\tab@stopfield\@stopfield
+\let\tab@contfield\@contfield
+\let\tab@startfield\@startfield
+%
+%
+\def\m@thfieldson{\@stopfield
+                  \gdef\@stopfield{\end{math}\tab@stopfield}%
+                  \gdef\@contfield{\tab@contfield\begin{math}}%
+                  \gdef\@startfield{\tab@startfield\begin{math}}%
+                  \@contfield}
+\def\m@thfieldsoff{\@stopfield
+                   \gdef\@stopfield{\tab@stopfield}%
+                   \gdef\@contfield{\tab@contfield}%
+                   \gdef\@startfield{\tab@startfield}%
+                   \@contfield}
+%
+%
+\def\mathtabbing{\tabbing\m@thfieldson}
+\def\endmathtabbing{\m@thfieldsoff\endtabbing}

@@ -1,0 +1,83 @@
+\input mathtabbing.sty
+%
+%
+\def\becomes{\,\colon\!=}%
+\let\become\becomes
+%
+%
+\def\gcl{\def\if@margin{\@stopfield\@addfield\@startfield
+                        \ifdim \wd\@curline = \z@}%
+\def\PROGskip{\hskip 0.3em}%
+\def\DOskip{\PROGskip}%
+\def\IFskip{\PROGskip}%
+\def\BARskip{\PROGskip}%
+\def\SEMICOLONskip{\PROGskip}%
+\def\ARROWskip{\PROGskip}%
+\def\SCOPENskip{\PROGskip}%
+\def\COMMENTskip{\PROGskip}%
+\def\KWskip{\PROGskip}%
+\def\PREDOskip{}%
+\def\NAMEskip{\PROGskip}%
+\def\BLOCKskip{\PROGskip\PROGskip\PROGskip\PROGskip}%
+%
+%
+\def\keyword##1{{\bf ##1}}%
+%
+%
+\def\SKIP{{\rm skip}}%
+\def\ABORT{{\rm abort}}%
+%
+%
+\def\SCOPEN{|\hskip -0.1em[\SCOPENskip\=\+}%
+\def\SCLOSE{\if@margin \< \else \SCOPENskip \fi ]\hskip -0.1em|\-}%
+%\def\MID{\if@margin \<\,|\> \else \SCOPENskip |\SCOPENskip \fi}%
+\def\MID{\if@margin \<\triangleright\> \else \SCOPENskip \triangleright\SCOPENskip \fi}%
+\def\DO{\if@margin \relax
+        \else \PREDOskip \fi
+        \gdef\PREDOskip{}%
+        \keyword{do}\DOskip\=\+}%
+\def\FORALL{\keyword{for\KWskip all}\KWskip\gdef\PREDOskip{\PROGskip}}%
+\def\OD{\if@margin \< \else \DOskip \fi
+        \keyword{od}\KWskip\-}%
+\def\FOR{\keyword{for}\KWskip\=\+}%
+\def\FORDO{\if@margin \else \KWskip \fi \keyword{do}\KWskip}%
+\def\ROF{\if@margin \< \else \DOskip \fi
+         \keyword{rof}\KWskip\-}%
+\def\REPEAT{\keyword{repeat}\KWskip\=\+}%
+\def\UNTIL{\if@margin \< \else \KWskip \fi
+           \keyword{until}\KWskip\-}%
+\def\IF{\keyword{if}\IFskip\=\+}%
+\def\FI{\if@margin \< \else \IFskip \fi
+        \keyword{f{}i}\KWskip\-}%
+\def\BAR{\if@margin \<\,[\!]\> \else
+         \BARskip[\!]\BARskip \fi}%
+\def\;{\if@margin \llap{;\hskip 0.2em} \else
+       ;\SEMICOLONskip \fi}%
+\def\ARROW{\if@margin \relax \else {}\fi
+           \rightarrow{}}%
+\def\BB{\if@margin \BLOCKskip \fi\=\+}%
+\def\EB##1{\-\if@margin \< \else ##1 \fi}%
+\def\BC{\{\COMMENTskip\=\+}%
+\def\EC{\if@margin \< \else \COMMENTskip \fi \}\COMMENTskip\-}%
+\def\LET{\keyword{let}\KWskip}%
+%
+%
+\def\CON{\keyword{con}\NAMEskip}%
+\def\VAR{\keyword{var}\NAMEskip}%
+\def\FUNC{\keyword{func}\NAMEskip}%
+\def\PROC{\keyword{proc}\NAMEskip}%
+\def\ARRAY{\keyword{array}\NAMEskip}%
+\def\OF{\NAMEskip\keyword{of}\NAMEskip}%
+\def\SET{\keyword{set}\NAMEskip}%
+\def\MIN{\mathbin{\downarrow}}%
+\def\MAX{\mathbin{\uparrow}}%
+\def\DIV{\mathbin{\keyword{div}}}%
+\def\MOD{\mathbin{\keyword{mod}\NAMEskip}}%
+%
+%
+\obeycr\mathtabbing}
+%
+%
+\def\endgcl{\endmathtabbing}
+%
+%

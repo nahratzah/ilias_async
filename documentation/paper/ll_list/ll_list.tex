@@ -1,0 +1,350 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{stmaryrd}
+\usepackage{gcl}
+\usepackage[inlcmnts]{flagderiv}
+\usepackage{pascal}
+\usepackage{varioref}
+\usepackage{ifthen}
+
+
+% Some logic operators.
+\newcommand{\eqval}{\ensuremath{\mathrel{\stackrel{val}{=}}}}
+\newcommand{\neqval}{\ensuremath{\mathrel{\stackrel{val}{\neq}}}}
+\newcommand{\modelsval}{\ensuremath{\mathrel{\stackrel{val}{\models}}}}
+\renewcommand{\implies}{\ensuremath{\mathrel{\Rightarrow}}}
+\newcommand{\biimplies}{\ensuremath{\mathrel{\Leftrightarrow}}}
+
+% Hoare triple: { state-predicate }  transition  { state-predicate }
+\newcommand{\hoaretrip}[3]{
+	\ensuremath{
+		\begin{array}{ccc}
+			\state{#1} & #2 & \state{#3}
+		\end{array}
+	}
+    }
+\newcommand{\hoaretripNL}[3]{
+	\ensuremath{
+		\begin{aligned}
+			&\state{#1} \\ &#2 \\ &\state{#3}
+		\end{aligned}
+	}
+    }
+
+% Declare a flag type that models the assignment stage in a Hoare triple
+\newcommand{\transformsymb}{\textbf{Transformation}:}
+\newcommand{\transformation}[3]{\assume{#1}{\textbf{\transformsymb}~#2}{#3}}
+
+
+\newcommand{\nil}{\textbf{nil}}
+\newcommand{\incref}[1]{\texttt{incref}(\deref{#1})}
+\newcommand{\decref}[1]{\texttt{decref}(\deref{#1})}
+\newcommand{\atomic}[1]{\textbf{atomic}\langle #1 \rangle}
+\newcommand{\AtomVar}[1]{\overline{#1}}
+\newcommand{\AtomRead}[2]{\atomic{#1 \become \AtomVar{#2}}}
+\newcommand{\AtomExchange}[3]{\atomic{#1, \AtomVar{#2} \become \AtomVar{#2}, #3}}
+\newcommand{\CAS}[3]{\atomic{\textrm{cas}: \AtomVar{#1}, #2, #3}}
+\newcommand{\reachable}[2]{\left[#2 \nnearrow #1\right]}
+\newcommand{\true}{\textrm{true}}
+\newcommand{\false}{\textrm{false}}
+\newcommand{\True}{\textrm{True}}
+\newcommand{\False}{\textrm{False}}
+\newcommand{\atomptr}{ll\_pointer}
+\newcommand{\deref}[1]{\overrightarrow{#1}}
+\newcommand{\allthreads}{T}
+\newcommand{\thread}{\tau}
+\newcommand{\otherthread}{\tau^+}
+\newcommand{\curthread}{\tau_0}
+\newcommand{\qthread}{\tau_q}
+\newcommand{\yields}{\rightarrow}	% state = transition \yields new_state
+\newcommand{\choice}{\sqcap}		% state = ts_1 or ts_2
+\newcommand{\state}[1]{\left\llbracket #1 \right\rrbracket}  % state with given predicate
+
+
+\begin{document}
+\title{Lock-free linked list implementation}
+\author{Ariane van der Steldt\\
+    \texttt{ariane@stack.nl}}
+\date{\today}
+\maketitle
+
+
+
+\begin{abstract}
+An algorithm for a doubly-linked list,
+allowing concurrent, wait-free insert/update/delete operations.
+\end{abstract}
+
+
+
+\section{Definitions}
+
+
+
+\subsection{Threading}
+\begin{subequations}
+$\allthreads$ denotes the set of threads in the universe.
+Elements of $\allthreads$ are denoted with $\thread$:
+\begin{equation}
+\thread \in \allthreads
+\end{equation}
+$\curthread$ denotes the current thread:
+\begin{equation}
+\curthread \in \allthreads
+\end{equation}
+$\otherthread$ denotes any thread excluding the current thread:
+\begin{equation}
+\otherthread \in \allthreads \land \otherthread \neq \curthread
+\end{equation}
+\end{subequations}
+
+
+
+\subsection{Transition notation}
+\begin{subequations}
+The notation
+\begin{equation}
+\hoaretrip{P_0}{\lambda}{P_1}
+\end{equation}
+denotes the transition
+from state $P_0$ to state $P_1$, using the transformation $\lambda$.
+
+The notation
+\begin{equation}
+P_0 = (\lambda_1 \yields P_1) \choice (\lambda_2 \yields P_2)
+\end{equation}
+denotes a state $P_0$, where either transition $\lambda_1$ yields state $P_1$,
+or transition $\lambda_2$ yields state $P_2$.
+
+The states may be noted as predicates inside double square brackets, thus:
+\begin{equation}
+\state{p = q} \models p = q
+\end{equation}
+denotes that state $\state{p = q}$ models a state
+where the predicate $p = q$ evaluates $\true$.
+Note that the state-predicate may be stronger than the predicate it models:
+\begin{equation}
+\state{p = 1 \land q = 1} \models p = q
+\end{equation}
+Note that the notation is distinct from the predicate it contains:
+\begin{equation}
+\left( \state{p = q} \equiv \left(p = q\right) \right) \implies \false
+\end{equation}
+since a state contains all predicates where the state-predicate holds.
+Formally:
+\begin{equation}
+S = \state{\mathcal{P}} \equiv
+    S \in \left\{ s \  | \ \textrm{predicate of $s$} \modelsval \mathcal{P}
+    \right\}
+\end{equation}
+
+Note also that states hold predicate logic:
+\begin{equation}
+\left( \state{\mathcal{P}} \models \state{\mathcal{Q}} \right) \biimplies
+\left( \mathcal{P} \modelsval \mathcal{Q} \right)
+\end{equation}
+\end{subequations}
+
+
+
+\subsection{Abusing flag derivations for transition proof}
+In this paper, I will be (ab)using flag derivations to proof transitions.
+\begin{flagderiv}
+\introduce{abuse:intro}
+    {\mathcal{S}: \mbox{state}}
+    {Introduce a predicate $\mathcal{S}$}
+	\skipsteps{2}{\vdots}{}
+	\step{}
+	    {\mathcal{S} \implies \mathcal{A}}
+	    {Some predicate $\mathcal{A}$}
+	\transformation{abuse:transition}
+	    {\lambda \yields \mathcal{T}}
+	    {Introduce transformation $\lambda$ on $\mathcal{S}$}
+		\skipsteps{2}{\vdots}{}
+		\step{}
+		    {\mathcal{T} \implies \mathcal{B}}
+		    {Some predicate $\mathcal{B}$}
+		\step{}
+		    {\mathcal{A} \land \mathcal{T} \implies \mathcal{A}}
+		    {Only way to pull in $\mathcal{A}$
+		      is to filter through $\mathcal{T}$}
+		\step{abuse:conclusion}
+		    {
+			\mathcal{B} \land
+			\left(
+				\mathcal{A} \land \mathcal{T}
+				\implies \mathcal{A}
+			\right)
+		    }
+		    {Final conclusion on
+		      $\mathcal{S} \yields \lambda \yields \mathcal{T}$}
+\conclude[2]{}
+    {
+	\hoaretrip
+	    {\mathcal{S}}
+	    {\lambda}
+	    {
+		\mathcal{B} \land
+		\left(
+			\mathcal{A} \land \mathcal{T}
+			\implies \mathcal{A}
+		\right)
+	    }
+    }
+    {Create Hoare triple using
+      \ref{abuse:intro}, \ref{abuse:transition}, \ref{abuse:conclusion}}
+\end{flagderiv}
+Every predicate $\mathcal{P}$ during the transformation flag
+\ref{abuse:transition} is only valid if:
+$
+\left(
+	\mathcal{T} \implies \mathcal{P}
+\right)
+\lor
+\left(
+	\mathcal{S} \land \mathcal{T} \implies \mathcal{P}
+\right)
+$.
+In other words, predicate $\mathcal{T}$ acts as a filter on $\mathcal{S}$.
+Because of this, extra care is required to ensure that $\mathcal{T}$
+is complete in describing all modifications introduced by $\lambda$.
+
+
+
+\subsection{Dereferencing}
+\begin{subequations}
+A pointer $p$ may refer to a value $V$, which is written as:
+\begin{equation}
+\deref{p} = V
+\end{equation}
+Dereferencing need not be an atomic operation.
+
+Dereferencing $\nil$ is malformed:
+\begin{equation}
+\left( \exists_v \deref{p} = v \right) \biimplies p \neq \nil
+\end{equation}
+
+The dereference operation is a bijection:
+\begin{equation}
+a \equiv b \biimplies \deref{a} \equiv \deref{b}
+\end{equation}
+\end{subequations}
+
+
+
+\subsection{Reachability}
+\begin{subequations}
+Reachability is defined as the property on $V$
+such that at least one variable $v$ exists, where $\deref{v} = V$
+for which $v$ has shared ownership on $V$.
+This relation is written as $\reachable{V}{v}$.
+\begin{equation}
+\label{reachability-deref}
+\reachable{V}{v} \implies \deref{v} = V
+\end{equation}
+%
+As a special case, thread-reachability is defined as
+a thread having at least a single variable ($\aleph$) that maintains
+reachability.
+\begin{equation}
+\reachable{V}{\thread} \implies
+    \left(\exists_{\aleph \in \thread} \deref{\aleph} = V\right)
+\end{equation}
+%
+Reachability is transferable:
+\begin{equation}
+p = q \implies \left(
+\reachable{\deref{p}}{p} = c_0 + 1 \land \reachable{\deref{q}}{q} = c_1
+\biimplies
+\reachable{\deref{p}}{p} = c_0 \land \reachable{\deref{q}}{q} = c_1 + 1
+\right)
+\end{equation}
+%
+Naturally, reachability may not fall below $0$:
+\begin{equation}
+\reachable{V}{v} \ge 0
+\end{equation}
+The notation $\neg \reachable{V}{v}$ denotes that
+$v$ holds no references to $V$:
+\begin{equation}
+\label{reachability-neg}
+\neg \reachable{V}{v} \equiv \reachable{V}{v} = 0
+\end{equation}
+Note that in this case, $\deref{v} \neq V \lor \deref{v} = V$.
+Similarly, the notation
+$\reachable{V}{v}$ (reachability as a predicate)
+is short-hand for $\reachable{V}{v} = 1$:
+\begin{equation}
+\label{reachability-one}
+\reachable{V}{v} \equiv \reachable{V}{v} = 1
+\end{equation}
+
+As a special notation, a group of variables can be sharing a given
+reachability:
+\begin{equation}
+\label{reachability-shared}
+\reachable{V}{a, b, c...} = N \equiv
+\reachable{V}{a} + \reachable{V}{b, c...} = N
+\end{equation}
+%
+Reachability on $\nil$ is malformed:
+\begin{equation}
+\label{reachability-nil}
+\reachable{P}{p} \neq 0 \implies p \neq \nil
+\end{equation}
+
+Reachability constraints can be
+weakened\footnote{See proof \vref{proof-reachability-weakening}.}:
+\begin{equation}
+\label{reachability-weakening}
+\neg\reachable{\mathcal{O}}{a} \land \reachable{\mathcal{O}}{b} \implies
+\reachable{\mathcal{O}}{a, b}
+\end{equation}
+\end{subequations}
+
+
+
+\section{Algorithm}
+
+
+
+\section{Proof derivations}
+
+
+\subsection{Proof: reachability weakening}
+\label{proof-reachability-weakening}
+Proof for formula \vref{reachability-weakening}.
+\begin{flagderiv}
+\introduce{intro-abO}
+    {a, b, \mathcal{O}:
+	\neg\reachable{\mathcal{O}}{a} \land
+	\reachable{\mathcal{O}}{b}}
+    {Introduce precondition.}
+	\step{abO-as-arithmatic}
+	    {\reachable{\mathcal{O}}{a} = 0 \land
+	      \reachable{\mathcal{O}}{b} = 1}
+	    {Definition of reachability on \ref{intro-abO}:
+	      formula \ref{reachability-neg} and \ref{reachability-one}}
+	\step{abO-eq-one}
+	    {\reachable{\mathcal{O}}{a} + \reachable{\mathcal{O}}{b} = 1}
+	    {Arithmatic on \ref{abO-as-arithmatic}}
+	\step{abO-shared}
+	    {\reachable{\mathcal{O}}{a, b} = 1}
+	    {Shared reachability equivalence on \ref{abO-eq-one}:
+	      formula \ref{reachability-shared}}
+\conclude{}
+    {
+	\forall_{a, b, \mathcal{O}}
+	    \left(
+		\neg\reachable{\mathcal{O}}{a} \land \reachable{\mathcal{O}}{b}
+		\implies
+		\reachable{\mathcal{O}}{a, b}
+	    \right)
+    }
+    {$\forall$-intro on \ref{intro-abO} and \ref{abO-shared}}
+\end{flagderiv}
+
+
+
+\end{document}

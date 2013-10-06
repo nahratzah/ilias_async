@@ -1,0 +1,14 @@
+\input mathtabbing.sty
+%
+\def\lhintdelim{\left\{}
+\def\rhintdelim{\right\}}
+\newskip\hintskip \hintskip=3pt plus 1pt
+\newskip\interformskip \interformskip=1pt plus .5pt
+\def\hint#1#2{\\[\hintskip] \> #1 \> \> \lhintdelim\vcenter{\hbox\bgroup\ #2\ \egroup}\rhintdelim \\[\hintskip]}
+\def\hintnl{\ \egroup\hbox\bgroup\ }
+\def\form{\>\>}
+\def\formnl{\\[\interformskip]\>\>}
+%
+%
+\def\derive{\mathtabbing\hspace{.5cm}\=\hspace{.5cm}\=\qquad\=\kill}
+\def\endderive{\endmathtabbing}

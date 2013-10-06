@@ -1,0 +1,1261 @@
+% \iffalse meta-comment
+%
+% Copyright (C) 2005 by Paul van Tilburg <paul@luon.net>
+% ------------------------------------------------------
+% 
+% This package is free software; you can redistribute it and/or modify
+% it under the terms of the GNU General Public License as published by
+% the Free Software Foundation; either version 2 of the License, or
+% (at your option) any later version.
+% 
+% This package is distributed in the hope that it will be useful,
+% but WITHOUT ANY WARRANTY; without even the implied warranty of
+% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+% GNU General Public License for more details.
+% 
+% You should have received a copy of the GNU General Public License
+% along with this package; if not, write to the Free Software
+% Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.%
+%
+% \fi
+%
+% \iffalse
+%<*driver>
+\ProvidesFile{flagderiv.dtx}
+%</driver>
+%<flagderiv>\NeedsTeXFormat{LaTeX2e}[1999/12/01]
+%<flagderiv>\ProvidesPackage{flagderiv}
+%<*flagderiv>
+    [2005/08/26 v0.10 Flag style derivation package]
+%</flagderiv>
+%
+%<*driver>
+\documentclass{ltxdoc}
+
+\usepackage{amsmath, amssymb}
+\usepackage{calc}
+\usepackage{flagderiv}
+\usepackage{fvrb-ex}
+\usepackage{theorem}
+\usepackage{url}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{\medskipamount}
+\setcounter{tocdepth}{2}
+
+\theoremstyle{plain}
+\newtheorem{lemma}{Lemma}
+\newcommand{\false}{\textit{False}}
+\newcommand{\flags}{\texttt{flagderiv}}
+\newcommand{\IHbase}{\underline{\textit{Base}}:~}
+\newcommand{\IHhyp}{\underline{\textit{Induction-hypothesis}}:~}
+\newcommand{\IHstep}{\underline{\textit{Step}}:~}
+\newcommand{\Nat}{\ensuremath{\mathbb{N}}}
+\newcommand{\All}{\ensuremath{\mathbb{Z}}}
+\newcommand{\Powerset}{\ensuremath{\mathcal{P}}}
+
+\renewcommand{\implies}{\Rightarrow}
+\newcommand{\biimplies}{\Leftrightarrow}
+\newcommand{\OHA}{\rightarrow}
+\newcommand{\THA}{\twoheadrightarrow}
+\newcommand{\NHA}[1]{\stackrel{#1}{\rightarrow}}
+\newcommand{\CRtext}{\ensuremath{\mathit{CR}}}
+\newcommand{\CR}{\ensuremath{(\forall a, b, c\in A: a\THA b\land a\THA c:%
+                             (\exists d\in A:: b\THA d\land c\THA d))}}
+\newcommand{\MCtext}{\ensuremath{\mathit{mixed~confluent}}}
+\newcommand{\MC}{\ensuremath{(\forall a, b, c\in A: a\OHA b\land a\THA c:%
+                             (\exists d\in A:: b\THA d\land c\THA d))}}
+
+\EnableCrossrefs         
+\CodelineIndex
+\RecordChanges
+
+\begin{document}
+  \DocInput{flagderiv.dtx}
+\end{document}
+%</driver>
+% \fi
+%
+% \CheckSum{0}
+%
+% \CharacterTable
+%  {Upper-case    \A\B\C\D\E\F\G\H\I\J\K\L\M\N\O\P\Q\R\S\T\U\V\W\X\Y\Z
+%   Lower-case    \a\b\c\d\e\f\g\h\i\j\k\l\m\n\o\p\q\r\s\t\u\v\w\x\y\z
+%   Digits        \0\1\2\3\4\5\6\7\8\9
+%   Exclamation   \!     Double quote  \"     Hash (number) \#
+%   Dollar        \$     Percent       \%     Ampersand     \&
+%   Acute accent  \'     Left paren    \(     Right paren   \)
+%   Asterisk      \*     Plus          \+     Comma         \,
+%   Minus         \-     Point         \.     Solidus       \/
+%   Colon         \:     Semicolon     \;     Less than     \<
+%   Equals        \=     Greater than  \>     Question mark \?
+%   Commercial at \@     Left bracket  \[     Backslash     \\
+%   Right bracket \]     Circumflex    \^     Underscore    \_
+%   Grave accent  \`     Left brace    \{     Vertical bar  \|
+%   Right brace   \}     Tilde         \~}
+%
+%
+% \changes{v0.9f}{2005/02/04}{Initial version.}
+% \changes{v0.9g}{2005/05/16}{Added example and usage documentation.}
+% \changes{v0.9h}{2005/06/06}{Added the flagderiv* environment.}
+% \changes{v0.9i}{2005/06/10}{Fixed minor issues in the documentation
+%                        and resolved a ref-format bug.}
+% \changes{v0.10}{2005/08/26}{Drop dependancy on farray, include fix.}
+%
+% \GetFileInfo{flagderiv.dtx}
+%
+% \DoNotIndex{\newcommand,\newenvironment}
+% 
+% \title{The \textsf{flagderiv} package\thanks{This document
+%   corresponds to \textsf{flagderiv}~\fileversion, dated \filedate.}}
+% \author{Paul van Tilburg \\ \url{paul@luon.net}}
+%
+% \maketitle
+%
+% \tableofcontents
+%
+% \section{Introduction}
+%
+%  This document describes how to use \flags~to make flag-style proofs in
+%  \LaTeX.
+%
+%  It can handle taking steps, making assumptions, introducing variables and
+%  conclusions.  The package allows the style to be configured.  For
+%  example, the variable introduction symbol can be redefined.  Other
+%  features include multiple page flag-style proofs.
+%
+%  The documentation and all examples are based upon version \fileversion\ 
+%  of \flags.
+%
+%  \begin{center}
+%   \scriptsize
+%     \renewcommand{\introsymb}{\text{Let}}
+%     \begin{flagderiv}
+%      \assume{i:assume:no-package}{\text{There is no nice package to do flag-style proofs}}{}
+%       \introduce{i:intro:feature}{x\text{, such that } x\text{ is a flag-style feature}}{}
+%        \skipsteps{5}{\vdots}{}
+%        \step{i:feature-met}{\flags~\text{can do it}}{}
+%       \conclude{i:conclusion}{\flags~\text{fulfils my every flag-style proof need}}
+%                              {$\forall$-introduction on \ref{i:intro:feature} and \ref{i:feature-met}}
+%       \step{i:false}{\false}{\false-introduction on \ref{i:assume:no-package} and \ref{i:conclusion}}
+%      \conclude{i:conclude:not-no-package}{\lnot (\text{There is no nice package to do flag-style proofs})}
+%                                          {$\lnot$-introduction on \ref{i:assume:no-package} and \ref{i:false}}
+%      \step{i:step:nice-package}{\text{So, there exists a nice package to do flag-style proofs}}
+%                                {$\lnot\lnot$-elimination on \ref{i:conclude:not-no-package}}
+%     \end{flagderiv}
+%  \end{center}
+%
+% \section{Acknowledgements}
+%
+% I want to thank Jan Zwanenburg and Erik Poll for the first versions of
+% this package, professor R.P.\ Nederpelt for his ever-persisting package
+% reviews, feedback and suggestions and last but not least Mark van Eijk,
+% who has written parts of section~\ref{sec:usage} and all examples in
+% section~\ref{sec:ex}.
+%
+% \section{Usage\label{sec:usage}}
+%
+%  This section explains how the \flags\ package works by means of examples 
+%  and how the commands should be used. I try to cover all possibilities and
+%  features of this package. For bigger examples, please refer to
+%  section~\ref{sec:ex}; for more detailed documentation on the commands
+%  and inner workings, refer to the \flags\ package itself.
+% 
+%   \subsection{Basic derivations}
+%    \DescribeEnv{flagderiv}
+%    Basic derivations are written using an intuitive command sequence
+%    placed in the |flagderiv| environment\index{usage}. The example below
+%    uses auto-numbering of the lines. Variable introductions, assumptions, 
+%    steps and conclusions can be done using the following commands 
+%    respectively:
+%
+%    \begin{itemize}
+%     \item \DescribeMacro{\introduce}\index{usage}
+%           |\introduce|\marg{label}\marg{formula}\marg{comment}, 
+%     \item \DescribeMacro{\assume}\index{usage}
+%           |\assume|\marg{label}\marg{formula}\marg{comment},
+%     \item \DescribeMacro{\step}\index{usage}
+%           |\step|\marg{label}\marg{formula}\marg{comment}, and 
+%     \item \DescribeMacro{\conclude}\index{usage}
+%           |\conclude|\oarg{number}\marg{label}\marg{formula}\marg{comment}.
+%    \end{itemize}
+% 
+%    Lines can be referred to using the {\em label} that is provided as the
+%    first argument to each of the commands. {\em Formulas} are placed in
+%    the second argument and a {\em comment} in the third. 
+%    See subsection~\ref{sec:usage:multi} for the explanation of the optional
+%    argument {\em number} of |\conclude|.
+% 
+%    \begin{Example}[gobble=7,frame=single,label=Auto-numbering]
+%      \begin{flagderiv}
+%        \introduce{in-x}{x: \Nat}{Introduction of $x$}
+%          \assume{as-x}{x > 5}{Assumption}
+%            \step{big-x}{x > 1}{Arithmetic on \ref{in-x} and \ref{as-x}}
+%          \conclude{conc}{x > 5 \implies x > 1}
+%                         {$\implies$-intro on \ref{as-x} and \ref{big-x}}
+%        \conclude{}{\forall x \in \Nat: x > 5 \implies x > 1}
+%                   {$\forall$-intro on \ref{in-x} and \ref{conc}}
+%      \end{flagderiv}
+%    \end{Example}
+% 
+%    The following example uses manual numbering. This is done by using the
+%    \DescribeMacro{\introduce*}
+%    starred versions of the previous given commands (|\introduce*|,
+%    \DescribeMacro{\assume*}
+%    \DescribeMacro{\step*}
+%    \DescribeMacro{\conclude*}
+%    |\assume*|, |\step*| and |\conclude*|) and using a
+%    {\em custom number} instead of a {\ em label} as the first argument. 
+%    Note that because of this, derivation line references are not possible
+%    and should be done manually as well.
+% 
+%    \begin{Example}[gobble=7,frame=single,label=Manual numbering]
+%      \begin{flagderiv}
+%        \introduce*{$(1)$}{x: \Nat}{Introduction of $x$}
+%          \assume*{$(2)$}{P(x)}{Assumption}
+%            \skipsteps*{\dots}{}
+%            \step*{$(n - 2)$}{Q(x)}{}
+%          \conclude*{$(n - 1)$}{P(x) \implies Q(x)}
+%                               {$\implies$-intro on $(2)$ and $(n - 2)$}
+%        \conclude*{$(n)$}{\forall x \in \Nat: P(x) \implies Q(x)}
+%                         {$\forall$-intro on $(1)$ and $(n - 1)$}
+%      \end{flagderiv}
+%    \end{Example}
+% 
+%    Note that the |\skipsteps*| used in the previous example is
+%    explained in section~\ref{sec:usage:skipsteps}.
+% 
+%   \subsection{Concluding multiple assumptions/introductions\label{sec:usage:multi}}
+%    Sometimes it is useful to make a conclusion from multiple open
+%    assumptions and/or introductions at once. This can be done by supplying
+%    an optional {\em number} to the |\conclude| command. Usage is
+%    illustrated in the example below.
+% 
+%    \begin{Example}[gobble=7,frame=single,label=Multiple conclusion]
+%      \begin{flagderiv} 
+%        \introduce{}{x: \Nat}{}
+%          \assume{}{P(x)}{}
+%            \step{}{Q(x)}{}
+%        \conclude[2]{}{\forall x \in \Nat: (P(x) \implies Q(x))}{}
+%      \end{flagderiv}
+%    \end{Example}
+% 
+%   \subsection{Skipping steps\label{sec:usage:skipsteps}}
+%    When writing example derivations or abbreviating those where
+%    obvious/trivial steps may be skipped, one can use the
+%    \DescribeMacro{\skipsteps}
+%    |\skipsteps|\marg{number}\marg{formula}\marg{comment} command for
+%    auto-numbered derivations.  This commands takes the {\em number} of
+%    steps to skip as the first argument, a {\em formula} as the second and
+%    a {\em comment} as the third, like a normal step.
+%    \vspace{3em}
+%    
+%    \begin{Example}[gobble=7,frame=single,label=Skipping 5 steps]
+%      \begin{flagderiv}
+%        \assume{as}{P \implies Q}{}
+%          \step{lem-p}{P \lor \neg P}{LEM}
+%          \skipsteps{5}{\dots}
+%                       {Prove $\neg P \lor Q$ for $P$ and $\neg P$}
+%          \step{or-elm}{\neg P \lor Q}{$\lor$-elim on \ref{lem-p}}
+%      \end{flagderiv}
+%    \end{Example}
+% 
+%    For skipping an unknown number of steps in a manual numbered
+%    \DescribeMacro{\skipsteps*}
+%    derivation, the command |\skipsteps*|\marg{formula}\marg{comment} can
+%    be used.  Here the number of steps to skip must be omitted, since there
+%    is no counting involved.  See for example the $\implies$-intro rule:
+% 
+%    \begin{Example}[gobble=7,frame=single,label=Skipping steps]
+%      \begin{flagderiv}
+%        \assume*{$(1)$}{P}{Assumption}
+%          \skipsteps*{\dots}{Derive $Q$}
+%          \step*{$(n - 1)$}{Q}{}
+%        \conclude*{$(n)$}{P \implies Q}
+%                         {$\implies$-intro on $(1)$ to $(n - 1)$}
+%      \end{flagderiv}
+%    \end{Example}
+% 
+%   \subsection{Closing assumptions/introductions}
+%    Assumptions and introductions (contexts) are not always closed by a
+%    conclusion, it is sometimes useful to keep proven propositions within
+%    \DescribeMacro{\done}
+%    its context.  The |\done| command (|\done|\oarg{number}) can be used to
+%    close a assumption and/or introduction without mentioning why.  It takes
+%    an optional argument {\em number} to close multiple open assumptions
+%    and/or introductions.  An example from the WTT (Weak Type Theory):
+% 
+%    \begin{Example}[gobble=7,frame=single,label=Closing assumptions/introductions]
+%      \begin{flagderiv}
+%        \introduce{}{n: \Nat}{}
+%          \introduce{}{d: \Nat}{}
+%            \step{}{\text{$d$ is a divisor of $n$} := 
+%                     \exists_{k: \Nat} (n = d \cdot k)}{}
+%          \done
+%          \introduce{}{m: \Nat}{}
+%            \step{}{\text{$m$ is a multiple of $n$} := 
+%                     \exists_{k: \Nat} (m = k \cdot n)}{}
+%        \done[2]
+%      \end{flagderiv}
+%    \end{Example}
+%
+%    \vspace{-1em}
+%    The last |\done[2]| can be omitted since closing the \flags\ environment
+%    implicitly closes all open introductions and assumptions.
+%
+% 
+%   \subsection{Spacing between lines}
+%    The spacing between derivation lines defaults to {\tt 8pt} but can be 
+%    changed
+%    \DescribeMacro{derivskip}\index{setting}
+%    by adjusting the length (using |\setlength| on {\tt derivskip})
+%    before starting or during a \flags\ environment. See for example the
+%    more condensed proof:
+% 
+%    \begin{Example}[gobble=7,frame=single,label=Condensing a derivation]
+%      \setlength{\derivskip}{4pt}
+%      \begin{flagderiv}
+%        \assume{}{P}{}
+%          \assume{}{Q}{}
+%            \step{}{P}{}
+%          \conclude{}{Q \implies P}{}
+%        \conclude{}{P \implies Q \implies P}{}
+%      \end{flagderiv}
+%    \end{Example}
+% 
+%    Note that flag derivations will automatically be split across pages if
+%    it is too long and the |flagderiv| environment is used.  See also the
+%    {\tt longtable} package.  This does not happen for |flagderiv*|, which
+%    is a normal |tabular|.
+% 
+%   \subsection{The introduction symbol}
+%    \DescribeMacro{\introsymb}\index{changing}
+%    The way an introduction flag differs from an assumption flag is that it
+%    is prefixed with an {\em introduction symbol}. This symbol is by
+%    default set to $\mathbf{var}$ (|\mathbf{var}|) but can be changed
+%    to a different symbol, for example to $\leadsto$ (|\leadsto|) or
+%    just `Let'. This can be changed by redefining the |\introsymb|
+%    command before opening the \flags\ environment.
+% 
+%    \begin{Example}[gobble=7,frame=single,label=Changing the introduction symbol]
+%      \renewcommand{\introsymb}{\textbf{Let}}
+%      \begin{flagderiv}
+%        \introduce{intro-x}{x: \Nat}{Introduction}
+%          \introduce{intro-y}{y: \Nat}{Introduction}
+%            \skipsteps*{\ddots}{}
+%      \end{flagderiv}
+%    \end{Example}
+% 
+%   \subsection{Numbering and format}
+%    When the derivation lines are automatically numbered the numbers are
+%    formatted as ``({\em number})'' and so are the references. This format
+%    \DescribeMacro{fd@stepcount}
+%    \DescribeMacro{\thestepcount}\index{changing}
+%    can be changed by overriding the |\thestepcount| command using the
+%    {\tt fd@stepcount} counter before opening the \flags\ environment.
+% 
+%    \begin{Example}[gobble=7,frame=single,label=Changing the numbering format]
+%      \renewcommand{\thestepcount}{[\Roman{fd@stepcount}]}
+%      \begin{flagderiv}
+%        \step{ass}{P \implies Q}{}
+%        \step{lem}{P \lor \neg P}{LEM}
+%        \assume{ass-nP}{\neg P}{Assumption}
+%          \step{s0}{\neg P \lor \neg Q}{$\lor$-intro on \ref{ass-nP}}
+%        \done
+%        \assume{ass-nnP}{P}{Assumption}
+%          \step{s1}{Q}{$\implies$-elim on \ref{ass-nnP} and \ref{ass}}
+%          \step{s2}{\neg P \lor \neg Q}{$\lor$-intro on \ref{s1}}
+%        \done
+%        \step{or-el}{\neg P \lor Q}
+%                    {$\lor$-elim on \ref{lem}, \ref{s0} and \ref{s2}}
+%      \end{flagderiv}
+%    \end{Example}
+% 
+%    \DescribeMacro{\thesteplabel}\index{changing}
+%    Since the manual numbered derivations use no counter, the format can be
+%    changed by overriding the |\thesteplabel| command which will take
+%    one argument, the {\em custom number}.
+% 
+%    \begin{Example}[gobble=7,frame=single,label=Changing the numbering format]
+%      \renewcommand{\thesteplabel}[1]{#1.}
+%      \begin{flagderiv}
+%        \assume*{1}{P}{Assumption}
+%          \skipsteps*{\dots}{Derive $Q$}
+%          \step*{n - 1}{Q}{}
+%        \conclude*{n}{P \implies Q}{$\implies$-intro on 1 to n - 1}
+%      \end{flagderiv}
+%    \end{Example}
+% 
+%    Note that since references are also manually done, the same format
+%    should be used there by the writer him/herself.
+% 
+%   \subsection{Inline comments}
+%    In general there are two ways to place the comments with respect to
+%    the formulas in derivations. The first is behind the formula (the
+%    default). The second way is to place them inline, that is, on a separate 
+%    line before the formula.
+% 
+%    All \flags\ environments can be set globally to display the comments
+%    inline by passing the global option {\tt inlcmnts} to the \flags\
+%    package (e.g.\\|\usepackage[inlcmnts]{flagsderiv}|).
+% 
+%    \DescribeMacro{\inlcmnts}\index{usage}
+%    Giving the |\inlcmnts| command makes the environments after this
+%    command explicitly switch into inline-comment-mode (the default or
+%    \DescribeMacro{\noinlcmnts}\index{usage}
+%    global option is forgotten) after which giving |\noinlcmnts| will set 
+%    it back to normal mode.
+% 
+%    \begin{Example}[gobble=7,frame=single,label=Inline comments]
+%      \inlcmnts
+%      \begin{flagderiv}
+%        \assume{as-P}{P}{Assume:}
+%          \assume{as-Q}{Q}{Assume:}
+%            \step{re-P}{P}{Rei \ref{as-P}:}
+%         \conclude{imp1}{Q \implies P}
+%                        {$\implies$-intro on \ref{as-Q} and \ref{re-P}:}
+%        \conclude{imp2}{P \implies Q \implies P}
+%                        {$\implies$-intro on \ref{as-P} and \ref{imp1}:}
+%      \end{flagderiv}
+%    \end{Example}
+% 
+%    When the comments are inserted inline, a certain format is used, namely
+%    to enclose the comment with braces.  This is the default, but can be
+%    \DescribeMacro{\theinlcmnt}
+%    overridden by redefining the |\theinlcmnt| command.\index{override}
+%    \vspace{1em}
+% 
+%    \begin{Example}[gobble=7,frame=single,label=Changing inline comments format]
+%      \inlcmnts
+%      \renewcommand{\theinlcmnt}[1]{--#1--}
+%      \begin{flagderiv}
+%        \assume{ass-P}{P}{Assumption}
+%          \assume{ass-Q}{Q}{Assumption}
+%            \step{rei-P}{P}{Rei \ref{ass-P}}
+%      \end{flagderiv}
+%    \end{Example}
+% 
+%   \subsection{Namespaces for labels}
+%    In a document with a lot of auto-numbered derivations it is easy to lose
+%    overview of labels already used or it may be hard to keep thinking of
+%    new ones. To solve this a \flags\ environment can take a {\em namespace}
+%    as optional argument\index{namespacing}. This makes the lines referable 
+%    as normal within the same derivation but also globally when the namespace
+%    and a colon is added outside the derivation. For example a derivation for 
+%    Modus Tollens (MT):
+% 
+%    \begin{Example}[gobble=7,frame=single,label=Derivation label namespace]
+%      \begin{flagderiv}[mt]
+%        \step{s0}{P \implies Q}{}
+%        \assume{as-nQ}{\neg Q}{Assumption}
+%          \assume{as-P}{P}{Assumption}
+%            \step{s1}{Q}{$\implies$-elim on \ref{s0} and \ref{as-P}}
+%            \step{s2}{\bot}{$\bot$-intro on \ref{as-nQ} and \ref{s1}}
+%          \conclude{nP}{\neg P}{$\neg$-intro on \ref{as-P} and \ref{s2}} 
+%        \conclude{nQ-nP}{\neg Q \implies \neg P}
+%                        {$\implies$-intro on \ref{as-nQ} and \ref{nP}}
+%      \end{flagderiv}
+% 
+%      Note that step~\ref{mt:as-P} is not an intuitive step but necessary 
+%      to get $\neg P$ under the assumption $\neg Q$.
+%    \end{Example}
+% 
+%   \subsection{Other options}
+%    \DescribeMacro{\caption}\index{usage}
+%    \DescribeMacro{\tablehead}\DescribeMacro{\tablefirsthead}
+%    A \flags\ environment actually wraps a {\tt longtable}.  This means
+%    that at the start of an environment all {\tt longtable} options are
+%    available.  This means the use of |\caption|, and setting heads
+%    (|\tablehead| and |\tablefirsthead|) and feet (|\endfoot|
+%    \DescribeMacro{\endfoot}\DescribeMacro{\endlastfoot}
+%    and |\endlastfoot|) but also changing the lengths, etc.
+%
+%    \DescribeEnv{flagderiv*}
+%    Note that this does not hold for the slightly different |flagderiv*|
+%    environment, which acts exactly the same but is wrapped in a normal
+%    {\tt tabular} and thus can not be split across pages.
+%
+%    \begin{Example}[gobble=7,frame=single,label=Captioned]
+%      \inlcmnts
+%      \begin{flagderiv}[reflex]
+%        \caption{The reflexivity of $\equiv_n$} \\
+%        \introduce*{(1)}{x \in \All}{Assume:}
+%          \skipsteps*{\dots \\ \dots}{}
+%          \step*{(n - 1)}{x \equiv_n x}{}
+%        \conclude*{(n)}{\forall x \in \All: x \equiv_n x}
+%                       {$\forall$-intro on (1) and (n - 1):}
+%      \end{flagderiv}
+%    \end{Example}
+% 
+%    \DescribeMacro{\\}
+%    Additional it is possible to add custom newlines (|\\|) in all
+%    step formulas\footnote{This is not possible in introductions or
+%    assumptions, but they can often be split into multiple introductions or
+%    assumptions.} when the formula gets too long as demonstrated in the 
+%    above example.
+%
+% 
+%  \section{Examples\label{sec:ex}}
+%   The following are just a few real-life examples of flag-style proofs,
+%   where \flags\ provides an elegant means to include these proofs in
+%   \LaTeX-documents.
+% 
+%   \subsection{Examples from \flags}
+%    \subsection*{A derivation with auto-numbering and labels/references}
+%     \begin{flagderiv}
+%      \introduce{intro-xy}{x,y \in \mathbb{N}}{Introduction}
+%       \assume{assum:1}{x > 0}{Assumption}
+%        \assume{assum:2}{x < y}{Assumption}
+%         \step{y-pos}{y > 0}{Transitivity on \ref{assum:1} and \ref{assum:2}}
+%         \step{y3-pos}{y^3 > 0}{Arithmetic on \ref{y-pos}}
+%        \conclude{imp:1}{x < y \implies y^3 > 0}
+%                        {$\implies$-intro on \ref{assum:2} and \ref{y3-pos}}
+%       \conclude{imp:2}{x > 0 \implies x < y \implies y^3 > 0}
+%                       {$\implies$-intro on \ref{assum:1} and \ref{imp:1}}
+%      \conclude{}{\forall x, y \in \Nat: x > 0 \land x < y \implies y^3 > 0}
+%                 {$\forall$-intro on \ref{intro-xy} and \ref{imp:2}}
+%     \end{flagderiv}
+% 
+%    \subsection*{A derivation with manual numbering}
+%     \begin{flagderiv}
+%      \assume*{(m)}{\neg P}{}
+%       \skipsteps{1}{\dots}{}
+%       \step*{(n - 2)}{False}{}
+%      \conclude*{(n - 1)}{\neg\neg P}
+%                         {$\implies$-intro on (m) and (n - 2), and Negation}
+%      \step*{(n)}{P}{Double negation on (n - 1)}
+%     \end{flagderiv}
+% 
+% 
+%   \subsection{Predicate Calculus}
+%    \subsubsection*{Idempotence}
+%     \begin{flagderiv}[pc-idempotence]
+%      \assume{intro:PP}{P \land P}{}
+%       \step{and-elim:P}{P}{$\land$-elim on \ref{intro:PP}}
+%      \conclude{impl-intro:PP-P}{P \land P \implies P}
+%                                {$\implies$-intro on \ref{intro:PP}
+%                                 and \ref{and-elim:P}}
+%      \assume{intro:P}{P}{}
+%       \step{and-intro:P}{P \land P}{$\land$-intro on \ref{intro:P}
+%                                     and \ref{intro:P}}
+%      \conclude{impl-intro:P-PP}{P \implies P \land P}
+%                                {$\implies$-intro on \ref{intro:P}
+%                                 and \ref{and-intro:P}}
+%      \step{and-intro:result}{(P \land P \implies P) \land
+%                              (P \implies P \land P)}
+%                             {$\land$-intro on \ref{impl-intro:PP-P}
+%                              and \ref{impl-intro:P-PP}}
+%      \step{idempotence}{P \land P \equiv P}
+%                        {$\equiv$-intro on \ref{and-intro:result}}
+%     \end{flagderiv}
+% 
+%    \subsubsection*{De Morgan}
+%     \begin{flagderiv}[pc-demorgan]
+%      \assume{intro:NPQ}{\lnot (P \land Q)}{}
+%       \assume{intro:NNP}{\lnot\lnot P}{}
+%        \assume{intro:Q}{Q}{}
+%         \step{notnot-elim:P}{P}{$\lnot\lnot$-elim on \ref{intro:NNP}}
+%        \step{and-intro:PQ}{P \land Q}{$\land$-intro on \ref{intro:Q}
+%                                       and \ref{notnot-elim:P}}
+%         \step{false-intro:2}{\false}
+%                             {$\false$-intro on \ref{and-intro:PQ}
+%                              and \ref{intro:NPQ}}
+%        \conclude{not-intro:Q}{\lnot Q}{$\lnot$-intro on \ref{intro:Q}
+%                                        and \ref{false-intro:2}}
+%       \conclude{impl-intro:NNP-NQ}{\lnot\lnot P \implies \lnot Q}
+%                                   {$\implies$-intro on \ref{intro:NNP}
+%                                    and \ref{not-intro:Q}}
+%       \step{or-intro:NP-NQ}{\lnot P \lor \lnot Q}
+%                            {$\lor$-intro on \ref{impl-intro:NNP-NQ}}
+%      \conclude{impl-intro:NPQ-NPNQ}{\lnot (P \land Q) \implies
+%                                     \lnot P \lor \lnot Q}
+%                                    {$\implies$-intro on \ref{intro:NPQ}
+%                                     and \ref{or-intro:NP-NQ}}
+%      \assume{intro:NPNQ}{\lnot P \land \lnot Q}{}
+%       \assume{intro:PQ}{P \lor Q}{}
+%        \step{or-elim:NP-Q}{\lnot P \implies Q}
+%                           {$\lor$-elim on \ref{intro:PQ}}
+%        \step{and-elim:NP}{\lnot P}{$\land$-elim on \ref{intro:NPNQ}}
+%        \step{impl-elim:Q}{Q}{$\implies$-elim on \ref{or-elim:NP-Q}
+%                              and \ref{and-elim:NP}}
+%        \step{and-elim:NQ}{\lnot Q}{$\land$-elim on \ref{intro:NPNQ}}
+%        \step{false-intro:1}{\false}{$\false$-intro on \ref{impl-elim:Q}
+%                                     and \ref{and-elim:NQ}}
+%       \conclude{impl-intro:PQ}{P \lor Q \implies \false}
+%                               {$\implies$-intro on \ref{intro:PQ}
+%                                and \ref{false-intro:1}}
+%       \step{not-intro:PQ}{\lnot (P \lor Q)}
+%                          {$\lnot$-intro on \ref{impl-intro:PQ}}
+%      \conclude{impl-intro:NPNQ-NPQ}{\lnot P \land \lnot Q \implies
+%                                     \lnot (P \lor Q)}
+%                                    {$\implies$-intro on \ref{intro:NPNQ}
+%                                     and \ref{not-intro:PQ}}
+%      \step{and-intro:result}{(\lnot (P \land Q) \implies
+%                               \lnot P \lor \lnot Q)
+%                              \land\\
+%                              (\lnot P \land \lnot Q \implies
+%                               \lnot (P \lor Q))}
+%                             {$\land$-intro on \ref{impl-intro:NPQ-NPNQ}
+%                              and \ref{impl-intro:NPNQ-NPQ}}
+%      \step{demorgan}{\lnot (P \land Q) \equiv \lnot P \lor \lnot Q}
+%                     {$\equiv$-intro on \ref{and-intro:result}}
+%     \end{flagderiv}
+% 
+%    \subsubsection*{Transitivity}
+%     \begin{flagderiv}[pc-transitivity]
+%      \introduce{intro:PQR}{P, Q, R}{}
+%       \assume{intro:PQQR}{(P \implies Q) \land (Q \implies R)}{}
+%        \assume{intro:P}{P}{}
+%         \step{and-elim:PQ}{P \implies Q}
+%                           {$\land$-elim on \ref{intro:PQQR}}
+%         \step{impl-elim:Q}{Q}{$\implies$-elim on \ref{and-elim:PQ}
+%                               and \ref{intro:P}}
+%         \step{and-elim:QR}{Q \implies R}
+%                           {$\land$-elim on \ref{intro:PQQR}}
+%         \step{impl-elim:R}{R}{$\implies$-elim on \ref{and-elim:QR}
+%                               and \ref{impl-elim:Q}}
+%        \conclude{impl-intro:PR}{P \implies R}
+%                                {$\implies$-intro on \ref{intro:P}
+%                                 and \ref{impl-elim:R}}
+%       \conclude{impl-intro:PQQR-PR}{(P \implies Q) \land (Q \implies R)
+%                                     \implies (P \implies R)}
+%                                    {$\implies$-intro on \ref{intro:PQQR}
+%                                     and \ref{impl-intro:PR}}
+%      \conclude{transitivity}{(\forall P, Q, R::
+%                               (P \implies Q) \land (Q \implies R)
+%                               \implies (P \implies R)
+%                              )}
+%                             {$\forall$-intro on \ref{intro:PQR}
+%                              and \ref{impl-intro:PQQR-PR}}
+%     \end{flagderiv}
+% 
+%   \subsection{Rewrite Systems}
+%    \subsubsection*{Mixed confluent $\biimplies$ Church-Rosser}
+%     {
+%      \renewcommand{\introsymb}{\text{Let}}
+%      \begin{flagderiv}
+%       \assume*{1}{\CRtext}{hyp}
+%        \introduce*{2}{a, b, c\in A, \text{such that}~a\OHA b\land a\THA c}{}
+%         \step*{3}{a\OHA b\land a\THA c}{rei (2)}
+%         \step*{4}{a\THA b\land a\THA c}{$\forall$-elimination on lemma~\ref{transclosure} and (3)}
+%         \step*{5}{(\exists d\in A:: b\THA d\land c\THA d)}{$\forall$-elimination on (1) and (4)}
+%        \conclude*{6}{\MCtext}{$\forall$-introduction on (2) and (5)}
+%       \conclude*{7}{\CRtext\implies\MCtext}{$\implies$-introduction on (1) and (6)}
+%       \assume*{8}{\MCtext}{}
+%        \assume*{9}{\text{Induction on the length of}~a\THA b}{}
+%         \skipsteps*{\IHbase}{}
+%         \introduce*{11}{a, b, c\in A, \text{such that}~a\NHA{0} b\land a\THA c}{}
+%          \step*{12}{a=b}{def $\NHA{0}$, (11)}
+%          \step*{13}{a\THA c}{$\land$-elimination on (11)}
+%          \step*{14}{b\THA c}{(12) applied on (13)}
+%          \step*{15}{c\THA c \land b\THA c}{}
+%          \step*{16}{(\exists d\in A:: b\THA d\land c\THA d)}{}
+%         \renewcommand{\thesteplabel}[1]{#1}
+%         \conclude*{}{\IHhyp}{}
+%         \step*{18}{\ensuremath{(\forall a, b, c\in A: a\NHA{n} b\land a\THA c:\\ \quad
+%                                 (\exists d\in A:: b\THA d\land c\THA d))}}{}
+%         \skipsteps*{\IHstep}{}
+%         \introduce*{20}{a, b, c\in A, \text{such that}~a\NHA{n+1} b\land a\THA c}{}
+%          \step*{21}{a\NHA{n+1} b}{$\land$-elimination on (20)}
+%          \step*{22}{a\NHA{n} b'\OHA b}{}
+%          \step*{23}{a\THA c}{$\land$-elimination on (20)}
+%          \step*{24}{a\NHA{n} b' \land a\THA c}{$\land$-introduction on (22) and (23)}
+%          \step*{25}{(\exists d'\in A:: b'\THA d'\land c\THA d')}{$\forall$-elimination on (18) and  (24)}
+%          \step*{26}{d', \text{such that}~b'\THA d'\land c\THA d'}{$\exists$-elimination on (25)}
+%          \step*{27}{b'\OHA b \land b'\THA d'}{}
+%          \step*{28}{(\exists d\in A:: b\THA d\land d'\THA d)}{$\forall$-elimination on (8) and (27)}
+%          \step*{29}{d, \text{such that}~b\THA d\land d'\THA d}{$\exists$-elimination on (28)}
+%          \step*{30}{a\NHA{n} b'\OHA b\THA d \land a\THA c\THA d'\THA d}{}
+%          \step*{31}{b\THA d \land c\THA d}{}
+%          \step*{32}{(\exists d\in A:: b\THA d\land c\THA d)}{}
+%        \conclude*[2]{33}{\CRtext}{}
+%       \conclude*{34}{\MCtext\implies\CRtext}{$\implies$-introduction on (8) and (33)}
+%       \step*{35}{\MCtext\biimplies\CRtext}{$\biimplies$-introduction on (7) and (34)}
+%      \end{flagderiv}
+%     }
+% 
+%     \begin{lemma}
+%      \label{transclosure}
+%      \mbox{\ensuremath{(\forall a, b\in A: a\OHA b: a\THA b)}}
+%     \end{lemma}
+%
+% \StopEventually{}
+%
+% \newpage
+% \section{Implementation}
+%
+%  First some initial code is needed for processing of the options.
+%  Note that {\tt ifthen} is used throughout the package.
+%    \begin{macrocode}
+\RequirePackage{ifthen}
+\newboolean{@inlcmnts}
+%    \end{macrocode}
+% 
+%  Processing of the option ({\tt inlcmnts}) for enabling inline comments.
+%    \begin{macrocode}
+\DeclareOption{inlcmnts}{\setboolean{@inlcmnts}{true}}
+\ProcessOptions
+%    \end{macrocode}
+%
+%  Loading of the required packages.
+%  Note that \flags\ needs to require a fix/override for the array package, 
+%  until the fixed version is available in most distributions.
+%    \begin{macrocode}
+\RequirePackage{array}
+\RequirePackage{longtable}
+\long\@namedef{NC@rewrite@*}#1#2{%
+   \count@#1\relax
+   \loop
+   \ifnum\count@>\z@
+   \advance\count@\m@ne
+   \@temptokena\expandafter{\the\@temptokena#2}%
+   \repeat
+   \NC@find}
+%    \end{macrocode}
+%
+% \subsection{Generic settings, counters and commands}
+%
+%  \begin{macro}{fd@flagcount}
+%  \begin{macro}{fd@stepcount}
+%   The counters keeping the number of opened/nested flags and the number of
+%   derivation steps.
+%    \begin{macrocode}
+\newcounter{fd@flagcount}
+\newcounter{fd@stepcount}
+%    \end{macrocode}
+%  \end{macro}
+%  \end{macro}
+%  
+%  \begin{macro}{\derivskip}
+%   The default space ({\tt 8pt}) between lines in a derivation.  This is 
+%   overridable to define  a different default length.
+%    \begin{macrocode}
+\newlength{\derivskip}
+\setlength{\derivskip}{8pt}
+%    \end{macrocode}
+%  \end{macro}
+%
+%  \begin{macro}{\introsymb}
+%   The symbol used as variable introduction prefix.  Overridable with
+%   |\renewcommand| to insert a different symbol, defaults to: 
+%   |\textbf{var}|.
+%
+%   Ex. |\renewcommand{\introsymb}{\textbf{Let}}|
+%    \begin{macrocode}
+\newcommand{\introsymb}{\textbf{var}}
+%    \end{macrocode}
+%  \end{macro}
+%
+%  \begin{macro}{\thestepcount}
+%   This is the command used to generate a step number label (used by 
+%   auto-numbering). |\thestepcount| can be overridden to display labels 
+%   differently, defaults to: ({\it number}). This exposes the internal
+%   |\thefd@stepcount| command.
+%
+%   Ex. |\renewcommand{\thestepcount}{[\arabic{stepcount}]}|
+%    \begin{macrocode}
+\newcommand{\thestepcount}{(\arabic{fd@stepcount})}
+\renewcommand{\thefd@stepcount}{\thestepcount}
+%    \end{macrocode}
+%  \end{macro}
+%
+%  \begin{macro}{\thesteplabel}
+%   Command used to generate a customized step label (used by manual numbering).
+%   |\thesteplabel| can be overridden to display manual numbers differently,
+%   this command has one argument: \marg{label}.
+%   The command does nothing by default (i.e\@. just returns the argument).
+%
+%   Ex. |\renewcommand{\thesteplabel}[1]{[##1]}|
+%    \begin{macrocode}
+\newcommand{\thesteplabel}[1]{#1}
+%    \end{macrocode}
+%  \end{macro}
+%
+%  \begin{macro}{\theinlcmnt}
+%   The command used to format inline comments (if enabled).  |\theinlcmnt| 
+%   can be overridden to display it differently and has one argument: 
+%   \marg{comment}. Defaults to: \{ {\em comment text} \}.
+%
+%   Ex. |\renewcommand{\theinlcmnt}[1]{--#1--}|
+%    \begin{macrocode}
+\newcommand{\theinlcmnt}[1]{\{ #1 \}}
+%    \end{macrocode}
+%  \end{macro}
+%
+%  \begin{macro}{\inlcmnts}
+%   Command to switch inline comments explicitly on (and by that, overriding
+%   and forgetting the default determined by the absence or presence of the
+%   {\tt inlcmnts} package option).
+%
+%    \begin{macrocode}
+\newcommand{\inlcmnts}{\setboolean{@inlcmnts}{true}}
+%    \end{macrocode}
+%  \end{macro}
+%
+%  \begin{macro}{\noinlcmnts}
+%   Command to switch inline comments explicitly off (and by that, overriding
+%   and forgetting the default determined by the absence or presence of the
+%   {\tt inlcmnts} package option).
+%
+%    \begin{macrocode}
+\newcommand{\noinlcmnts}{\setboolean{@inlcmnts}{false}}
+%    \end{macrocode}
+%  \end{macro}
+%
+% \subsection{The derivation environment}
+%
+% The following three sections describe the internal commands and constructs
+% of the {\tt flagderiv} environment, after which the last section will
+% explain how the environment works and how it is put together using the
+% internal constructs.
+%
+% Note that for almost all commands there exists two versions, one used
+% for manual numbered derivations and one for automatic numbered/labelled
+% derivations (both forms can be mixed within the environment).
+%
+% \subsubsection{Labels}
+%
+% Derivation lines are labelled and can be referred to.  This can be done
+% with automatically numbered lines where the first argument is a normal
+% \LaTeX\ label.  However, to avoid clashing, the labels can be automatically
+% prefixed with a namespace. The following two commands handle this prefixing.
+%
+%  \begin{macro}{\@labelprefix}
+%   Command that specifies the label namespace prefix.
+%
+%    \begin{macrocode}
+\newcommand{\@labelprefix}{\relax}
+%    \end{macrocode}
+%   \end{macro}
+%  \begin{macro}{\@derlabel}
+%   Internal command to define a label using the prefix (if a label
+%   is defined, otherwise do nothing).
+%
+%    \begin{macrocode}
+\newcommand{\@derlabel}[1]{%
+  \ifthenelse{\equal{#1}{}}{}{\label{\@labelprefix#1}}%
+}
+%    \end{macrocode}
+%  \end{macro}
+%
+% \subsubsection{Steps}
+% 
+% A line of a derivation can be one of five types:
+% \begin{enumerate}
+%  \item A simple and bare line, only internally accessible,
+%  \item a comment line,
+%  \item a derivation step (both automatically and manual numbered),
+%  \item a line to indicate skipping of steps,
+%  \item a flag (handled in the next section).
+% \end{enumerate}
+%
+% This section deals with the first four types.
+%
+%  \begin{macro}{\@derline}
+%   A simple derivation line that uses {\tt fd@flagcount} to remember
+%   the number of open flags. This command is used as:
+%   |\@derline|\marg{label}\marg{formula}\marg{comment}, with:
+%   \begin{description}
+%    \item[\marg{label}] a label which can be left empty, to refer back to in 
+%     comments of other derivation lines,
+%    \item[\marg{formula}] the formula, and
+%    \item[\marg{comment}] a comment.
+%   \end{description}
+%
+%    \begin{macrocode}
+\newcommand{\@derline}[3]{%
+ \mbox{#1} &
+ \setlength{\extrarowheight}{\derivskip}%
+%    \end{macrocode}
+%   If the flag counter is still zero\dots
+%    \begin{macrocode}
+ \ifthenelse{\value{fd@flagcount}=0}%
+%    \end{macrocode}
+%   then this line is outside any flag,
+%    \begin{macrocode}
+ {\begin{array}[t]{@{}l}}%
+%    \end{macrocode}
+%   otherwise this is inside one or more flag contexts and the amount of
+%   open flagpoles equal to the number of open contexts should be inserted.
+%
+%    \begin{macrocode}
+ {\begin{array}[t]{*{\value{fd@flagcount}}{|@{\hspace{2\arraycolsep}}}l}}
+  \ensuremath{#2}
+ \end{array} &
+ \mbox{#3} \\
+}
+%    \end{macrocode}
+%  \end{macro}
+%
+%  \begin{macro}{\@CMNTderline}
+%   Command to fold the comment on a separate line before the
+%   actual derivation line if the {\tt inlcmnts} option is set for this
+%   package, see also |\@derline| for the argument handling.
+%
+%    \begin{macrocode}
+\newcommand{\@CMNTderline}[3]{%
+ \ifthenelse{\boolean{@inlcmnts}}{%
+%    \end{macrocode}
+%   If the inline comments option is enabled, fold the comment before the 
+%   actual line.
+%    \begin{macrocode}
+  \ifthenelse{\equal{#3}{}}{}{% 
+%    \end{macrocode}
+%   There is comment, insert it inline.
+%    \begin{macrocode}
+   \@derline{}{\mbox{\theinlcmnt{#3}}}{}%
+  }
+  \@derline{#1}{#2}{}%
+ }{%
+%    \end{macrocode}
+%   If inline comments are not enabled, pass everything to |\@derline| directly.
+%    \begin{macrocode}
+  \@derline{#1}{#2}{#3}%
+ }%
+}
+%    \end{macrocode}
+%  \end{macro}
+%
+%  \begin{macro}{\@MANstep}
+%  \begin{macro}{\@AUTOstep}
+%   Command for the manual ({\tt MAN}) and automatically ({\tt AUTO})
+%   numbered version of a derivation step.  See also |\@derline|.
+%
+%    \begin{macrocode}
+\newcommand{\@MANstep}[3]{\@CMNTderline{\thesteplabel{#1}}{#2}{#3}}
+%    \end{macrocode}
+%
+%    \begin{macrocode}
+\newcommand{\@AUTOstep}[3]{%
+ \refstepcounter{fd@stepcount}%
+ \@derlabel{#1}\@CMNTderline{\thestepcount}{#2}{#3}%
+}
+%    \end{macrocode}
+%  \end{macro}
+%  \end{macro}
+%
+%  \begin{macro}{\@MANskipsteps}
+%  \begin{macro}{\@AUTOskipsteps}
+%   Command for the manual ({\tt MAN}) and automatically ({\tt AUTO})
+%   numbered version of skipping derivation steps.  See also |\@derline|.
+%
+%    \begin{macrocode}
+\newcommand{\@MANskipsteps}[2]{\@CMNTderline{}{#1}{#2}}
+%    \end{macrocode}
+%
+%    \begin{macrocode}
+\newcommand{\@AUTOskipsteps}[3]{%
+ \addtocounter{fd@stepcount}{#1}%
+ \@CMNTderline{}{#2}{#3}%
+}
+%    \end{macrocode}
+%  \end{macro}
+%  \end{macro}
+%
+% \subsubsection{Flags}
+%
+% Flags are actually simple derivation lines with two extras: the formula
+% is put into a flag box and the flag counter {\tt fd@flagcount} is incremented
+% when one is opened.  Next to flag commands there are also commands to
+% to close (and by that decrementing the counter) flags.
+%
+% There exist three types of flags:
+% \begin{enumerate}
+%  \item the simple and bare flag,
+%  \item the assumption flag (both manual and automatically numbered),
+%  \item the variable introduction flag (also manual and automatically numbered).
+% \end{enumerate}
+%
+%  \begin{macro}{\@flagbox}
+%   Creates a flag for (a box around) the given text/formula, takes
+%   \marg{formula} as an argument.
+%    \begin{macrocode}
+\newcommand{\@flagbox}[1]{%
+ \setlength{\fboxsep}{0.75ex}%
+ \fbox{#1}%
+}
+%    \end{macrocode}
+%  \end{macro}
+%
+%  \begin{macro}{\@startflag}
+%   Starts a flag context by opening a flag and incrementing the counter.
+%   The command is used as:
+%   |\@startflag|\marg{label}\marg{formula}\marg{comment},
+%   see also |\@derline| for the meaning of these arguments.
+%
+%    \begin{macrocode}
+\newcommand{\@startflag}[3]{%
+ \@CMNTderline{#1}{\@flagbox{\ensuremath{#2}}}{#3}%
+ \addtocounter{fd@flagcount}{1}%
+}
+%    \end{macrocode}
+%  \end{macro}
+%
+%  \begin{macro}{\@endflag}
+%   Ends a flag by closing it and decrementing the counter.  Takes the
+%   number of flags to close \marg{number} as an argument.
+%
+%    \begin{macrocode}
+\newcommand{\@endflag}[1]{\addtocounter{fd@flagcount}{-#1}}
+%    \end{macrocode}
+%  \end{macro}
+%
+%  \begin{macro}{\@flagclose}
+%   Wrapper command for closing a number of flags simultaneously taking \oarg{number}
+%   as an optional argument, defaulting to 1. See also |\@endflag|.
+%
+%    \begin{macrocode}
+\newcommand{\@flagclose}[1][1]{\@endflag{#1}}
+%    \end{macrocode}
+%  \end{macro}
+%
+%  \begin{macro}{\@MANassume}
+%  \begin{macro}{\@AUTOassume}
+%   Command for the manual ({\tt MAN}) and automatic ({\tt AUTO}) 
+%   numbered version of an assumption flag, see also |\@startflag|.
+%
+%    \begin{macrocode}
+\newcommand{\@MANassume}[3]{\@startflag{\thesteplabel{#1}}{#2}{#3}}
+%    \end{macrocode}
+%
+%    \begin{macrocode}
+\newcommand{\@AUTOassume}[3]{
+ \refstepcounter{fd@stepcount}%
+ \@derlabel{#1}\@startflag{\thestepcount}{#2}{#3}%
+}
+%    \end{macrocode}
+%  \end{macro}
+%  \end{macro}
+%
+%  \begin{macro}{\@MANintroduction}
+%  \begin{macro}{\@AUTOintroduction}
+%   Command for the manual ({\tt MAN}) and automatically ({\tt AUTO}) 
+%   numbered version of an introduction flag, see also |\@startflag|.
+%
+%    \begin{macrocode}
+\newcommand{\@MANintroduction}[3]{%
+  \@startflag{\thesteplabel{#1}}{\introsymb~#2}{#3}%
+}
+%    \end{macrocode}
+%
+%    \begin{macrocode}
+\newcommand{\@AUTOintroduction}[3]{
+  \refstepcounter{fd@stepcount}%
+  \@derlabel{#1}\@startflag{\thestepcount}{\introsymb~#2}{#3}%
+}
+%    \end{macrocode}
+%  \end{macro}
+%  \end{macro}
+%
+%  \begin{macro}{\@MANconclude}
+%  \begin{macro}{\@AUTOconclude}
+%   Command to conclude from one or more open flags in the manual ({\tt MAN}) 
+%   and automatically ({\tt AUTO}) numbered version, see also |\@endflag|.  
+%   The command is used as: 
+%   |\@MANconclude|\oarg{number}\marg{label}\marg{formula}\marg{comment},
+%   where the \oarg{number} indicates the number of flags to close,
+%   defaulting to 1.
+%
+%    \begin{macrocode}
+\newcommand{\@MANconclude}[4][1]{\@endflag{#1}\step*{#2}{#3}{#4}}
+%    \end{macrocode}
+%
+%    \begin{macrocode}
+\newcommand{\@AUTOconclude}[4][1]{\@endflag{#1}\step{#2}{#3}{#4}}
+%    \end{macrocode}
+%  \end{macro}
+%  \end{macro}
+%
+% \subsubsection{The environment itself}
+%
+%  \begin{environment}{flagderiv}
+%   This section explains the main environment for flag style
+%   derivations/proofs:  {\tt flagderiv}.  The command has an optional
+%   argument \oarg{prefix}, used as label prefix so that labels can be
+%   ``scoped'' with a namespace local to the derivation but still 
+%   accessible from the outside.
+% 
+%   Examples:\\
+%   |\begin{flagderiv} ... \end{flagderiv}|\\
+%   |\begin{flagderiv}[abs] ... \end{flagderiv}|
+% 
+%    \begin{macrocode}
+\newenvironment{flagderiv}[1][]{%
+%    \end{macrocode}
+%
+%  First, set the optional label prefix (if given) and reset the counters.
+%
+%    \begin{macrocode}
+ \ifthenelse{\equal{#1}{}}{%
+  \renewcommand{\@labelprefix}{}%
+ }{%
+  \renewcommand{\@labelprefix}{#1:}%
+ }%
+ \setcounter{fd@flagcount}{0}%
+ \setcounter{fd@stepcount}{0}%
+%    \end{macrocode}
+%
+%  Note: {\em All} of the following five commands have a star version which
+%  allows manual numbering, instead of having auto-numbering, \LaTeX\ labels 
+%  and references.
+%
+%  \begin{macro}{\assume}
+%  \begin{macro}{\assume*}
+%   Opens an assumption flag; command usage:\\[1em]
+%   |\assume|\marg{label}\marg{formula}\marg{comment}\\
+%   |\assume*|\marg{custom-number}\marg{formula}\marg{comment}
+%
+%   Examples: \\
+%   |\assume{assum:1}{x > 0}{Assumption}|\\
+%   |\assume*{l}{\neg P}{}|
+%
+%    \begin{macrocode}
+ \newcommand{\assume}{\@ifstar{\@MANassume}{\@AUTOassume}}
+%    \end{macrocode}
+%  \end{macro}
+%  \end{macro}
+%
+%  \begin{macro}{\introduce}
+%  \begin{macro}{\introduce*}
+%   Opens an introduction flag. Command usage: \\[1em]
+%   |\introduce|\marg{label}\marg{formula}\marg{comment} \\
+%   |\introduce*|\marg{custom-number}\marg{formula}\marg{comment}
+%
+%   Examples:\\
+%   |\introduce{intro-x}{x \in \mathbb{N}}{Introduction}| \\
+%   |\introduce*{l - 1}{P \in s_P}{}|
+%
+%    \begin{macrocode}
+ \newcommand{\introduce}{\@ifstar{\@MANintroduction}{\@AUTOintroduction}}
+%    \end{macrocode}
+%  \end{macro}
+%  \end{macro}
+%
+%  \begin{macro}{\conclude}
+%  \begin{macro}{\conclude*}
+%   Performs a conclusion/multiple conclusion from one or more
+%   introductions and/or assumptions. The command usage:\\[1em]
+%   |\conclude|\oarg{number}\marg{label}\marg{formula}\marg{comment}\\
+%   |\conclude*|\oarg{number}\marg{custon-number}\marg{formula}\marg{comment}
+%
+%   The optional argument \oarg{number} indicates how much flags should be 
+%   closed with this conclusion, this defaults to 1.
+%
+%   Examples;\\
+%   |\conclude[2]{concl:2}{x > 0 \implies ...}{$\implies$-intro on ...}|\\
+%   |\conclude*{n - 1}{\neg\neg P}{$\implies$-intro on (l) ...}|
+%
+%    \begin{macrocode}
+ \newcommand{\conclude}{\@ifstar{\@MANconclude}{\@AUTOconclude}}
+%    \end{macrocode}
+%   \end{macro}
+%   \end{macro}
+%
+%   \begin{macro}{\step}
+%   \begin{macro}{\step*}
+%    Performs a derivation step, command usage:\\[1em]
+%    |\step|\marg{label}\marg{formula}\marg{comment}\\
+%    |\step*|\marg{custom-number}\marg{formula}\marg{comment} 
+%
+%    Examples:\\
+%    |\step{x-elim}{x > 0}{$\forall$-elem on \ref{assum:1}}|\\
+%    |\step*{n - 1}{x > 0}{$\forall$-elem on (n - 3)}|
+%
+%    Note: |\\| (line breaks) may be inserted for splitting
+%    large formulas.
+%
+%    \begin{macrocode}
+ \newcommand{\step}{\@ifstar{\@MANstep}{\@AUTOstep}}
+%    \end{macrocode}
+%  \end{macro}
+%  \end{macro}
+%
+%  \begin{macro}{\skipsteps}
+%  \begin{macro}{\skipsteps*}
+%    Skips a number of steps (for usage in examples), usage:\\[1em]
+%    |\skipsteps|\marg{number}\marg{formula}\marg{comments}\\
+%    |\skipsteps*|\marg{formula}\marg{comments}.
+%
+%    Examples:\\
+%    |\skipsteps{3}{\vdots}{Etcetera, etcetera}|\\
+%    |\skipsteps*{\vdots}{Etcetera, etcetera}|
+%
+%    \begin{macrocode}
+ \newcommand{\skipsteps}{\@ifstar{\@MANskipsteps}{\@AUTOskipsteps}}
+%    \end{macrocode}
+%  \end{macro}
+%  \end{macro}
+%
+%  \begin{macro}{\done}
+%   Closes a number of flags because contexts have been opened and
+%   should be closed without conclusions.  Command usage: \\[1em]
+%   |\done|\oarg{number}
+%
+%   This command takes a number of introductions/assumptions, \oarg{number},
+%   to close as an optional argument, which defaults to 1.
+%
+%   Examples:\\
+%   |\done|\\
+%   |\done[3]|
+%
+%    \begin{macrocode}
+ \newcommand{\done}{\@flagclose}
+%    \end{macrocode}
+%  \end{macro}
+%
+%  Silently override |\ref| to work with the defined namespace.
+%    \begin{macrocode}
+ \let\origref\ref%
+ \renewcommand{\ref}[1]{\origref{\@labelprefix##1}}%
+%    \end{macrocode}
+%
+% The actual flagderiv environment is just a longtable (called
+% ``derivation'').
+%
+%    \begin{macrocode}
+ \renewcommand{\tablename}{Derivation}%
+ \begin{longtable}[l]{rll}
+}{%
+ \end{longtable}
+}
+%    \end{macrocode}
+%  \end{environment}
+%
+%  \begin{environment}{flagderiv*}
+%   The |flagderiv*| environment is almost the same as |flagderiv|
+%   with the only difference that the resulting derivation will and
+%   can not be split across pages.
+%
+%   Example:\\
+%   |\begin{flagderiv*} ... \end{flagderiv*}|\\
+% 
+%    \begin{macrocode}
+\newenvironment{flagderiv*}[1][]{%
+ \ifthenelse{\equal{#1}{}}{%
+  \renewcommand{\@labelprefix}{}%
+ }{%
+  \renewcommand{\@labelprefix}{#1:}%
+ }%
+ \setcounter{fd@flagcount}{0}%
+ \setcounter{fd@stepcount}{0}%
+ \newcommand{\assume}{\@ifstar{\@MANassume}{\@AUTOassume}}
+ \newcommand{\introduce}{\@ifstar{\@MANintroduction}{\@AUTOintroduction}}
+ \newcommand{\conclude}{\@ifstar{\@MANconclude}{\@AUTOconclude}}
+ \newcommand{\step}{\@ifstar{\@MANstep}{\@AUTOstep}}
+ \newcommand{\skipsteps}{\@ifstar{\@MANskipsteps}{\@AUTOskipsteps}}
+ \newcommand{\done}{\@flagclose}
+ \let\origref\ref%
+ \renewcommand{\ref}[1]{\origref{\@labelprefix##1}}%
+ \renewcommand{\tablename}{Derivation}
+ \begin{tabular}{rll}
+}{%
+ \end{tabular}
+}
+%    \end{macrocode}
+%  \end{environment}
+%
+% \PrintIndex
+% \PrintChanges
+%
+% \Finale
+\endinput

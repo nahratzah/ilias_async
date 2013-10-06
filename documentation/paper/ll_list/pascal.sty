@@ -1,0 +1,92 @@
+\input mathtabbing.sty
+%
+%
+\def\pascal{%
+\def\if@margin{\@stopfield\@addfield\@startfield
+               \ifdim \wd\@curline = \z@}%
+%
+%
+\def\PROGskip{\hskip 0.3em}%
+\def\MPROGskip{\hskip -0.3em}%
+\def\SEMICOLONskip{\PROGskip}%
+\def\COMMENTskip{\PROGskip}%
+\def\KWskip{\PROGskip}%
+\def\NAMEskip{\PROGskip}%
+\def\BLOCKskip{\PROGskip\PROGskip\PROGskip\PROGskip}%
+\def\MBLOCKskip{\MPROGskip\MPROGskip\MPROGskip\MPROGskip}%
+%
+%
+\def\keyword##1{{\bf ##1}}%
+%
+%
+\def\becomes{\,\colon\!=}%
+\let\become\becomes
+\def\pointer{{\rm\hat{\phantom{x}}}}%
+\let\empty\emptylist
+%
+%
+\def\SKIP{{\rm skip}}%
+\def\NEW{{\rm new}}%
+\def\NIL{{\rm nil}}%
+%
+%
+\def\indentn@xt{\BLOCKskip\=\+\MBLOCKskip}%
+\def\@utdent{\MBLOCKskip}%
+\def\bl@ckopen##1{\indentn@xt\keyword{##1}\KWskip}%
+\def\bl@ckclose##1{\if@margin \@utdent \else \KWskip \fi
+                   \keyword{##1}\-}%
+\def\BEGIN{\bl@ckopen{begin}}%
+\def\RECORD{{}\bl@ckopen{record}}%
+\def\CASE{\bl@ckopen{case}}%
+\def\OF{\if@margin \@utdent \else \KWskip \fi \keyword{of}\KWskip}%
+\def\:{{}:{}}%
+\def\END{\bl@ckclose{end}}%
+\def\WITH{\keyword{with}\KWskip}%
+\def\WHILE{\keyword{while}\KWskip}%
+\def\DO{\if@margin \relax \else \KWskip \fi
+        \keyword{do}\KWskip}%
+\def\FOR{\keyword{for}\KWskip}%
+\def\TO{\if@margin \relax \else \KWskip \fi \keyword{to}\KWskip}%
+\def\DOWNTO{\if@margin \relax \else \KWskip \fi \keyword{downto}\KWskip}%
+\def\REPEAT{\indentn@xt\keyword{repeat}\KWskip}%
+\def\UNTIL{\bl@ckclose{until}\KWskip}%
+\def\IF{\keyword{if}\KWskip}%
+\def\THEN{\if@margin \relax \else \KWskip \fi \keyword{then}\KWskip}%
+\def\ELSE{\if@margin \relax \else \KWskip \fi \keyword{else}\KWskip}%
+\def\;{\if@margin \llap{;\hskip 0.1em} \else
+       ;\SEMICOLONskip \fi}%
+\def\BB{\if@margin \BLOCKskip \fi\=\+}%
+\def\EB##1{\-\if@margin \< \else ##1 \fi}%
+\def\BC{\{\COMMENTskip\=\+}%
+\def\EC{\if@margin \< \else \COMMENTskip \fi \}\COMMENTskip\-}%
+%
+\def\PROGRAM{\keyword{program}\KWskip}
+\def\CONST{\keyword{const}\KWskip}%
+\def\TYPE{\keyword{type}\KWskip}%
+\def\ARRAY{\keyword{array}}%
+\def\PACKED{\keyword{packed}\KWskip}%
+\def\SET{\keyword{set}\KWskip}%
+\def\VAR{\keyword{var}\KWskip}%
+\def\FUNCTION{\keyword{function}\KWskip}%
+\def\PROCEDURE{\keyword{procedure}\KWskip}%
+\def\IN{\KWskip\keyword{in}\KWskip}%
+\def\AND{\KWskip\keyword{and}\KWskip}%
+\def\OR{\KWskip\keyword{or}\KWskip}%
+\def\NOT{\keyword{not}\@ifnextchar ({}{\KWskip}}%
+%%%
+\def\CLASS{\keyword{class}\KWskip}%
+\def\PUBLIC{\keyword{public}\KWskip}%
+\def\PRIVATE{\keyword{private}\KWskip}%
+\def\CONSTRUCTOR{\keyword{constructor}\KWskip}%
+\def\DESTRUCTOR{\keyword{destructor}\KWskip}%
+\def\PROPERTY{\keyword{property}\KWskip}%
+\def\READ{\if@margin \relax \else \KWskip \fi \keyword{read}\KWskip}%
+\def\WRITE{\if@margin \relax \else \KWskip \fi \keyword{write}\KWskip}%
+%
+%
+\obeycr\mathtabbing}
+%
+%
+\def\endpascal{\endmathtabbing}
+%
+%
