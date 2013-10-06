@@ -14,6 +14,7 @@
 \newcommand{\neqval}{\ensuremath{\mathrel{\stackrel{val}{\neq}}}}
 \newcommand{\modelsval}{\ensuremath{\mathrel{\stackrel{val}{\models}}}}
 \renewcommand{\implies}{\ensuremath{\mathrel{\Rightarrow}}}
+\newcommand{\rimplies}{\ensuremath{\mathrel{\Leftarrow}}}
 \newcommand{\biimplies}{\ensuremath{\mathrel{\Leftrightarrow}}}
 
 % Hoare triple: { state-predicate }  transition  { state-predicate }
@@ -164,9 +165,9 @@ In this paper, I will be (ab)using flag derivations to proof transitions.
 		\skipsteps{2}{\vdots}{}
 		\step{}
 		    {\mathcal{T} \implies \mathcal{B}}
-		    {Some predicate $\mathcal{B}$}
+		    {Derive some predicate $\mathcal{B}$ from $\mathcal{T}$}
 		\step{}
-		    {\mathcal{A} \land \mathcal{T} \implies \mathcal{A}}
+		    {\mathcal{A} \land \mathcal{T} \rimplies \mathcal{A}}
 		    {Only way to pull in $\mathcal{A}$
 		      is to filter through $\mathcal{T}$}
 		\step{abuse:conclusion}
@@ -174,7 +175,7 @@ In this paper, I will be (ab)using flag derivations to proof transitions.
 			\mathcal{B} \land
 			\left(
 				\mathcal{A} \land \mathcal{T}
-				\implies \mathcal{A}
+				\rimplies \mathcal{A}
 			\right)
 		    }
 		    {Final conclusion on
@@ -188,7 +189,7 @@ In this paper, I will be (ab)using flag derivations to proof transitions.
 		\mathcal{B} \land
 		\left(
 			\mathcal{A} \land \mathcal{T}
-			\implies \mathcal{A}
+			\rimplies \mathcal{A}
 		\right)
 	    }
     }
@@ -203,7 +204,9 @@ $
 \right)
 \lor
 \left(
-	\mathcal{S} \land \mathcal{T} \implies \mathcal{P}
+	\left( \mathcal{S} \implies \mathcal{P} \right)
+	\land
+	\left( \mathcal{P} \land \mathcal{T} \equiv \true \right)
 \right)
 $.
 In other words, predicate $\mathcal{T}$ acts as a filter on $\mathcal{S}$.
