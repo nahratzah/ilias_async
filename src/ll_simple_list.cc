@@ -86,7 +86,7 @@ elem::succ() const noexcept
 	while (this->succ_propagate_fl(s)) {
 		elem_ptr& s_ptr = std::get<0>(s);
 		data_t ss = s_ptr->m_succ_.load(std::memory_order_consume);
-		bool ss_deleted = s_ptr->succ_propagate_fl(ss);
+		/*bool ss_deleted = */s_ptr->succ_propagate_fl(ss);  // XXX
 		std::get<1>(ss) = PRESENT;
 
 		if (this->m_succ_.compare_exchange_weak(s, ss,

@@ -50,7 +50,7 @@ struct visitor<Futures, 0U>
 {
 	template<typename Functor>
 	static Functor
-	action(Futures& f, Functor&& fn)
+	action(Futures&, Functor&& fn)
 	{
 		return std::forward<Functor>(fn);
 	}
@@ -162,7 +162,7 @@ protected:
 		operator()(future<T>& f)
 		{
 			std::weak_ptr<base_combiner> self = this->m_self;
-			callback(f, [self](future<T> f) {
+			callback(f, [self](future<T> /*f*/) {
 				auto ptr = self.lock();
 				if (ptr)
 					ptr->notify();

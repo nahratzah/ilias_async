@@ -285,7 +285,7 @@ class ILIAS_ASYNC_EXPORT refcount
 public:
 	refcount() = default;
 	refcount(const refcount&) : refcount() {}
-	virtual ~refcount();
+	virtual ~refcount() noexcept;
 
 private:
 	mutable std::atomic<uintptr_t> m_service_refcnt{ 0U };

@@ -704,7 +704,7 @@ workq_detail::co_runnable::unlock_run(workq_job::run_lck rl) noexcept
 }
 
 bool
-workq_detail::co_runnable::release(std::size_t n) noexcept
+workq_detail::co_runnable::release(std::size_t) noexcept
 {
 	bool did_unlock = false;
 

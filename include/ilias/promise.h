@@ -22,8 +22,8 @@
 #include <cassert>
 #include <mutex>
 #include <stdexcept>
-#include <thread>
 #include <vector>
+#include <exception>
 
 
 namespace ilias {
@@ -47,7 +47,7 @@ class ILIAS_ASYNC_EXPORT uninitialized_promise
 {
 public:
 	uninitialized_promise();
-	~uninitialized_promise();
+	~uninitialized_promise() noexcept;
 };
 
 
@@ -56,7 +56,7 @@ class ILIAS_ASYNC_EXPORT promise_cb_installed
 {
 public:
 	promise_cb_installed();
-	~promise_cb_installed();
+	~promise_cb_installed() noexcept;
 };
 
 
@@ -99,7 +99,9 @@ private:
 		CB_DONE
 	};
 
+#if !ILIAS_ASYNC_NO_SYNC_CODE
 	class promwait;
+#endif  // !ILIAS_ASYNC_NO_SYNC_CODE
 
 	std::atomic<state> m_state{ state::S_NIL };
 	cb_state m_cbstate{ cb_state::CB_NONE };

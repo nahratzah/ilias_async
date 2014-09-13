@@ -544,12 +544,33 @@ public:
 	derived_t operator++(int) const noexcept;
 	derived_t operator--(int) const noexcept;
 
-	friend derived_t next(derived_t,
-	    ll_list_detail::basic_list::difference_type = 1) noexcept;
-	friend derived_t prev(derived_t,
-	    ll_list_detail::basic_list::difference_type = 1) noexcept;
-	friend derived_t advance(derived_t,
-	    ll_list_detail::basic_list::difference_type = 1) noexcept;
+	friend derived_t next(derived_t iter,
+	    ll_list_detail::basic_list::difference_type n = 1) noexcept
+	{
+		if (n > 0)
+			iter.next(n);
+		if (n < 0)
+			iter.prev(-n);
+		return iter;
+	}
+	friend derived_t prev(derived_t iter,
+	    ll_list_detail::basic_list::difference_type n = 1) noexcept
+	{
+		if (n > 0)
+			iter.prev(n);
+		if (n < 0)
+			iter.next(-n);
+		return iter;
+	}
+	friend derived_t advance(derived_t iter,
+	    ll_list_detail::basic_list::difference_type n = 1) noexcept
+	{
+		if (n > 0)
+			iter.next(n);
+		if (n < 0)
+			iter.prev(-n);
+		return iter;
+	}
 };
 
 template<typename Iter>
@@ -578,12 +599,33 @@ public:
 	derived_t operator++(int) const noexcept;
 	derived_t operator--(int) const noexcept;
 
-	friend derived_t next(derived_t,
-	    ll_list_detail::basic_list::difference_type = 1) noexcept;
-	friend derived_t prev(derived_t,
-	    ll_list_detail::basic_list::difference_type = 1) noexcept;
-	friend derived_t advance(derived_t,
-	    ll_list_detail::basic_list::difference_type = 1) noexcept;
+	friend derived_t next(derived_t iter,
+	    ll_list_detail::basic_list::difference_type n = 1) noexcept
+	{
+		if (n > 0)
+			iter.prev(n);
+		if (n < 0)
+			iter.next(-n);
+		return iter;
+	}
+	friend derived_t prev(derived_t iter,
+	    ll_list_detail::basic_list::difference_type n = 1) noexcept
+	{
+		if (n > 0)
+			iter.next(n);
+		if (n < 0)
+			iter.prev(-n);
+		return iter;
+	}
+	friend derived_t advance(derived_t iter,
+	    ll_list_detail::basic_list::difference_type n = 1) noexcept
+	{
+		if (n > 0)
+			iter.prev(n);
+		if (n < 0)
+			iter.next(-n);
+		return iter;
+	}
 };
 
 

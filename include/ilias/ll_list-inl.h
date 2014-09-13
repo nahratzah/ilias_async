@@ -625,7 +625,7 @@ inline void
 ll_list_transformations<Type, Tag, no_acqrel>::post_unlink_(
     ll_list_transformations<Type, Tag, no_acqrel>::const_reference
      unlinked_value,
-    std::size_t uv_refs) const noexcept
+    std::size_t /*uv_refs*/) const noexcept
 {
 	hazard_t::wait_unused(*this, unlinked_value);
 }
@@ -1303,42 +1303,6 @@ iter_direction<Iter, forward>::operator--(int) const noexcept
 	return clone;
 }
 
-template<typename Iter>
-typename iter_direction<Iter, forward>::derived_t
-next(typename iter_direction<Iter, forward>::derived_t iter,
-    ll_list_detail::basic_list::difference_type n) noexcept
-{
-	if (n > 0)
-		iter.next(n);
-	if (n < 0)
-		iter.prev(-n);
-	return iter;
-}
-
-template<typename Iter>
-typename iter_direction<Iter, forward>::derived_t
-prev(typename iter_direction<Iter, forward>::derived_t iter,
-    ll_list_detail::basic_list::difference_type n) noexcept
-{
-	if (n > 0)
-		iter.prev(n);
-	if (n < 0)
-		iter.next(-n);
-	return iter;
-}
-
-template<typename Iter>
-typename iter_direction<Iter, forward>::derived_t
-advance(typename iter_direction<Iter, forward>::derived_t iter,
-    ll_list_detail::basic_list::difference_type n) noexcept
-{
-	if (n > 0)
-		iter.next(n);
-	if (n < 0)
-		iter.prev(-n);
-	return iter;
-}
-
 
 template<typename Iter>
 inline iter_direction<Iter, reverse>::iter_direction(
@@ -1390,42 +1354,6 @@ iter_direction<Iter, reverse>::operator--(int) const noexcept
 	derived_t clone = *this;
 	this->next();
 	return clone;
-}
-
-template<typename Iter>
-typename iter_direction<Iter, reverse>::derived_t
-next(typename iter_direction<Iter, reverse>::derived_t iter,
-    ll_list_detail::basic_list::difference_type n) noexcept
-{
-	if (n > 0)
-		iter.prev(n);
-	if (n < 0)
-		iter.next(-n);
-	return iter;
-}
-
-template<typename Iter>
-typename iter_direction<Iter, reverse>::derived_t
-prev(typename iter_direction<Iter, reverse>::derived_t iter,
-    ll_list_detail::basic_list::difference_type n) noexcept
-{
-	if (n > 0)
-		iter.next(n);
-	if (n < 0)
-		iter.prev(-n);
-	return iter;
-}
-
-template<typename Iter>
-typename iter_direction<Iter, reverse>::derived_t
-advance(typename iter_direction<Iter, reverse>::derived_t iter,
-    ll_list_detail::basic_list::difference_type n) noexcept
-{
-	if (n > 0)
-		iter.prev(n);
-	if (n < 0)
-		iter.next(-n);
-	return iter;
 }
 
 

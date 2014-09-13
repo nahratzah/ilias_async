@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 #include <ilias/ll_queue.h>
+#include <thread>
 
 namespace ilias {
 namespace ll_queue_detail {
