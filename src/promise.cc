@@ -15,11 +15,13 @@
  */
 #include <ilias/promise.h>
 #include <ilias/util.h>
+#include <thread>
 
 namespace ilias {
 namespace prom_detail {
 
 
+#if !ILIAS_ASYNC_NO_SYNC_CODE
 /*
  * Helper for base_prom_data::wait().
  *
@@ -56,6 +58,7 @@ public:
 		    });
 	}
 };
+#endif  // ILIAS_ASYNC_NO_SYNC_CODE
 
 
 } /* namespace ilias::prom_detail */
@@ -217,6 +220,7 @@ base_prom_data::wait() const noexcept
 	if (!this->ready()) {
 		const_cast<base_prom_data*>(this)->start();
 
+#if !ILIAS_ASYNC_NO_SYNC_CODE
 		try {
 			auto pw = std::make_shared<promwait>(*this);
 			const_cast<base_prom_data*>(this)->add_callback(
@@ -227,6 +231,11 @@ base_prom_data::wait() const noexcept
 			while (!this->ready())
 				std::this_thread::yield();
 		}
+#else
+		/* Fallback: use busy waiting. */
+		while (!this->ready())
+			std::this_thread::yield();
+#endif  // ILIAS_ASYNC_NO_SYNC_CODE
 	}
 
 	assert(this->ready());
