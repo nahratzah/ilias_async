@@ -78,7 +78,58 @@ public:
 	}
 };
 
+/*
+ * Workq based future callback.
+ *
+ * Will execute at most once.
+ * If the promise is never started, the callback may never be invoked.
+ * The callback must not throw exceptions.
+ */
+template<typename FutType>
+class wq_future_event
+:	public workq_job,
+	public std::enable_shared_from_this<wq_future_event<FutType>>
+{
+private:
+	FutType m_fut;
+	std::shared_ptr<wq_future_event> m_self;
+	std::function<void(FutType)> m_fn;
+
+public:
+	wq_future_event(workq_ptr wq, std::function<void(FutType)> fn,
+	    unsigned int flags)
+	:	workq_job(wq, flags | workq_job::TYPE_ONCE),
+		m_fn(std::move(fn))
+	{
+		if (flags & workq_job::TYPE_PERSIST) {
+			throw std::invalid_argument(
+			    "promise workq job cannot be persistant");
+		}
+	}
+
+	/*
+	 * Fill in promise, activate the workq job and store the pointer to
+	 * self in order to keep the job alive.
+	 */
+	void
+	pfcb(FutType prom) noexcept
+	{
+		this->m_fut = std::move(prom);
+		this->activate();
+		this->m_self = this->shared_from_this();
+	}
+
+	virtual void
+	run() noexcept
+	{
+		this->m_self.reset();	/* Cancel our self reference. */
+		FutType p = std::move(this->m_fut);
+		this->m_fn(std::move(p));
+	}
+};
+
 extern template class ILIAS_ASYNC_EXPORT wq_promise_event<promise<void>>;
+extern template class ILIAS_ASYNC_EXPORT wq_future_event<promise<void>>;
 
 
 } /* namespace ilias::wqprom_detail */
@@ -104,7 +155,7 @@ void
 callback(future<Type>& fut, workq_ptr wq, Functor&& fn,
     unsigned int fl = 0, promise_start ps = PROM_START)
 {
-	typedef wqprom_detail::wq_promise_event<future<Type>> event;
+	typedef wqprom_detail::wq_future_event<future<Type>> event;
 	using namespace std::placeholders;
 
 	callback(fut, std::bind(&event::pfcb,
