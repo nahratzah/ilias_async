@@ -25,7 +25,6 @@
 #include <vector>
 #include <exception>
 
-
 namespace ilias {
 
 
@@ -418,8 +417,8 @@ public:
 	 * If the promise was broken, a broken_promise()
 	 * exception is thrown.
 	 */
-	const_reference
-	get() const
+	reference
+	get()
 	{
 		this->wait();
 
@@ -830,6 +829,38 @@ public:
 		if (!this->m_ptr)
 			throw uninitialized_promise();
 		return this->m_ptr->get();
+	}
+
+	/*
+	 * Return the result of the promise.
+	 *
+	 * As get(), but returns a nonconst reference instead.
+	 * If your future is shared, this may not be thread-safe with
+	 * respect to the contained value.
+	 */
+	reference
+	get_mutable() const
+	{
+		if (!this->m_ptr)
+			throw uninitialized_promise();
+		return this->m_ptr->get();
+	}
+
+	/*
+	 * Move or copy the value from the promise.
+	 */
+	value_type move_or_copy() const {
+		if (!this->m_ptr)
+			throw uninitialized_promise();
+
+		auto ptr = std::move(this->m_ptr);
+		if (refcnt_is_solo(*ptr)) {
+			value_type rv = move(ptr->get());
+			return rv;
+		}
+
+		value_type rv = ptr->get();
+		return rv;
 	}
 
 	/* Start execution of the promise. */
