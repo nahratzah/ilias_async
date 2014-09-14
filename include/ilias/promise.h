@@ -855,7 +855,7 @@ public:
 
 		auto ptr = std::move(this->m_ptr);
 		if (refcnt_is_solo(*ptr)) {
-			value_type rv = move(ptr->get());
+			value_type rv = std::move(ptr->get());
 			return rv;
 		}
 
