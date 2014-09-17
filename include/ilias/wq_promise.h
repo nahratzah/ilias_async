@@ -60,7 +60,7 @@ public:
 	pfcb(PromType prom) noexcept
 	{
 		this->m_prom = std::move(prom);
-		this->activate();
+		this->activate(workq_job::ACT_IMMED);
 		this->m_self = this->shared_from_this();
 	}
 
@@ -115,7 +115,7 @@ public:
 	pfcb(FutType prom) noexcept
 	{
 		this->m_fut = std::move(prom);
-		this->activate();
+		this->activate(workq_job::ACT_IMMED);
 		this->m_self = this->shared_from_this();
 	}
 
