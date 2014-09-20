@@ -156,6 +156,20 @@ protected:
 		const refcount_base& self = o;
 		return (self.m_refcount.load(std::memory_order_relaxed) == 0);
 	}
+
+	friend bool
+	refcnt_acquire_iff_live(const Derived& o, unsigned int nrefs = 1U)
+		noexcept
+	{
+		const refcount_base& self = o;
+		unsigned int expect = 1;
+		while (!self.m_refcount.compare_exchange_weak(
+		    expect, expect + nrefs,
+		    std::memory_order_acquire, std::memory_order_relaxed)) {
+			if (expect == 0) return false;
+		}
+		return true;
+	}
 };
 
 template<typename Type>
