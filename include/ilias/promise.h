@@ -24,6 +24,7 @@
 #include <stdexcept>
 #include <vector>
 #include <exception>
+#include <type_traits>
 
 namespace ilias {
 
@@ -899,6 +900,18 @@ new_promise(Args&&... args)
 	callback(rv, std::forward<Args>(args)...);
 	return rv;
 }
+
+
+/* Type traits for future/promise. */
+template<typename T> struct _is_future : std::false_type {};
+template<typename T> struct _is_future<future<T>> : std::true_type {};
+template<typename T> using is_future =
+    typename _is_future<std::remove_cv_t<std::remove_reference_t<T>>>::type;
+
+template<typename T> struct _is_promise : std::false_type {};
+template<typename T> struct _is_promise<promise<T>> : std::true_type {};
+template<typename T> using is_promise =
+    typename _is_promise<std::remove_cv_t<std::remove_reference_t<T>>>::type;
 
 
 } /* namespace ilias */
