@@ -193,12 +193,25 @@ private:
 	promise<Type> m_prom;
 	fn_type m_fn;
 
+	template<size_t... Idx>
+	static void
+	run_invoke(fn_type& fn, promise<Type> prom,
+	    std::tuple<future<Futures>...>&& futures,
+	    std::index_sequence<Idx...>) {
+		assert(prom.is_initialized());
+		fn(std::move(prom), std::get<Idx>(std::move(futures))...);
+	}
+
 	void
 	run() noexcept
 	{
-		assert(this->m_prom.is_initialized());
-		this->m_fn(std::move(this->m_prom),
-		    std::move(this->m_futures));
+		try {
+			run_invoke(this->m_fn, this->m_prom,
+			    std::move(this->m_futures),
+			    std::index_sequence_for<Futures...>());
+		} catch (...) {
+			this->m_prom.set_exception(std::current_exception());
+		}
 	}
 
 	static void
@@ -207,6 +220,7 @@ private:
 		static_cast<combiner&>(bc).run();
 	}
 
+public:
 	template<typename Init>
 	combiner(fn_type fn, Init&& futures)
 	:	base_combiner(sizeof...(Futures), &combiner::run),
@@ -219,13 +233,12 @@ private:
 		}
 	}
 
-public:
 	template<typename Init>
 	static std::shared_ptr<combiner>
 	new_combiner(fn_type fn, Init&& futures)
 	{
-		std::shared_ptr<combiner> c{ new combiner(
-		    std::move(fn), std::forward<Init>(futures)) };
+		std::shared_ptr<combiner> c = std::make_shared<combiner>(
+		    std::move(fn), std::forward<Init>(futures));
 		visit(c->m_futures, callback_impl(c));
 		return c;
 	}
@@ -346,9 +359,181 @@ struct resolve<void, Future>
 };
 
 
+template<typename Arg, size_t FutCount, bool = is_future<Arg>::value>
+struct replacer {
+	static constexpr size_t future_count = FutCount;
+
+	template<typename T>
+	static auto handle(T&& v) -> decltype(std::forward<T>(v))
+	{
+		return std::forward<T>(v);
+	}
+
+	template<typename T>
+	static auto future_tuple(T&&) -> std::tuple<> {
+		return std::tuple<>();
+	}
+};
+
+template<size_t Idx> struct bound_future {};
+
+template<typename Arg, size_t FutCount>
+struct replacer<Arg, FutCount, true> {
+	static constexpr size_t future_count = FutCount + 1U;
+
+	template<typename T>
+	static auto handle(T&&) ->
+		decltype(std::bind(&Arg::get, bound_future<FutCount>()))
+	{
+		return std::bind(&Arg::get, bound_future<FutCount>());
+	}
+
+	template<typename T>
+	static auto future_tuple(T&& v) ->
+	    decltype(std::make_tuple(std::forward<T>(v))) {
+		return std::make_tuple(std::forward<T>(v));
+	}
+};
+
+template<size_t, typename...> struct arg_or_fut_placeholder;
+
+template<size_t FutCount>
+struct arg_or_fut_placeholder<FutCount> {
+};
+
+template<size_t FutCount, typename Arg0, typename... Args>
+struct arg_or_fut_placeholder<FutCount, Arg0, Args...> {
+	using replacer_type = replacer<Arg0, FutCount>;
+	using successor_type =
+	    arg_or_fut_placeholder<replacer_type::future_count, Args...>;
+};
+
+template<size_t, typename> struct replacer_for;
+
+template<size_t Idx, size_t FutCount, typename... Args>
+struct replacer_for<Idx, arg_or_fut_placeholder<FutCount, Args...>> {
+	using type = typename replacer_for<Idx - 1U,
+	    typename arg_or_fut_placeholder<FutCount, Args...>::successor_type>::type;
+};
+
+template<size_t FutCount, typename... Args>
+struct replacer_for<size_t(0), arg_or_fut_placeholder<FutCount, Args...>> {
+	using type =
+	    typename arg_or_fut_placeholder<FutCount, Args...>::replacer_type;
+};
+
+
+template<typename T>
+auto unbind(T&& v) ->
+	std::enable_if_t<!std::is_bind_expression<std::remove_cv_t<std::remove_reference_t<T>>>::value, decltype(std::forward<T>(v))>
+{
+	return std::forward<T>(v);
+}
+
+template<typename T>
+struct unbound_ {
+	using v_type = std::remove_cv_t<std::remove_reference_t<T>>;
+
+	template<typename U> unbound_(U&& v) : v_(std::forward<U>(v)) {}
+
+	template<typename... Args>
+	auto operator()(Args&&... args) -> decltype(std::declval<v_type&>()(std::forward<Args>(args)...)) {
+		return v_(std::forward<Args>(args)...);
+	}
+
+	v_type v_;
+};
+
+template<typename T>
+auto unbind(T&& v) ->
+	std::enable_if_t<std::is_bind_expression<std::remove_cv_t<std::remove_reference_t<T>>>::value, unbound_<T>>
+{
+	return std::forward<T>(v);
+}
+
+
+template<typename Type, typename FN, typename... Args, size_t... Idx>
+future<Type>
+combine(FN&& fn, std::index_sequence<Idx...>, Args&&... args) {
+	using arg_transform = arg_or_fut_placeholder<size_t(0),
+	    std::remove_cv_t<std::remove_reference_t<Args>>...>;
+
+	auto transformed_fn = std::bind(unbind(std::forward<FN>(fn)), std::placeholders::_1, replacer_for<Idx, arg_transform>::type::handle(std::forward<Args>(args))...);
+	auto future_tuple = std::tuple_cat(replacer_for<Idx, arg_transform>::type::future_tuple(std::forward<Args>(args))...);
+
+	using combi =
+	    combiner<Type, decltype(transformed_fn), decltype(future_tuple)>;
+
+	return new_promise<Type>(std::bind(&combi::operator(),
+	    combi::new_combiner(std::move(transformed_fn), std::move(future_tuple)),
+	    std::placeholders::_1));
+}
+
+template<typename Type, typename FN, typename... Args, size_t... Idx>
+future<Type>
+combine(workq_ptr wq, unsigned int fl,
+    FN&& fn, std::index_sequence<Idx...>, Args&&... args) {
+	using arg_transform = arg_or_fut_placeholder<size_t(0),
+	    std::remove_cv_t<std::remove_reference_t<Args>>...>;
+
+	auto transformed_fn = std::bind(unbind(std::forward<FN>(fn)), std::placeholders::_1, replacer_for<Idx, arg_transform>::type::handle(std::forward<Args>(args))...);
+	auto future_tuple = std::tuple_cat(replacer_for<Idx, arg_transform>::type::future_tuple(std::forward<Args>(args))...);
+
+	using combi =
+	    wq_combiner<Type, decltype(transformed_fn), decltype(future_tuple)>;
+
+	return new_promise<Type>(std::bind(&combi::operator(),
+	    combi::new_combiner(std::move(wq), std::move(transformed_fn), std::move(future_tuple), fl),
+	    std::placeholders::_1));
+}
+
+
 } /* namespace ilias::cprom_detail */
 
 
+/*
+ * Create a promise that fires once all its futures are complete.
+ *
+ * Function prototype must be such that it will accept resolved futures.
+ *
+ * Starting this promise will also start all its dependant promises.
+ *
+ * Because the created promise runs asynchronous, it is ill advised to
+ * wait() on the promise.
+ */
+template<typename Type, typename FN, typename... Args>
+future<Type>
+combine(FN&& fn, Args&&... args) {
+	return cprom_detail::combine<Type>(std::forward<FN>(fn),
+	    std::index_sequence_for<Args...>(),
+	    std::forward<Args>(args)...);
+}
+
+/*
+ * Create a promise that combines the result of multiple futures.
+ * The functor combining the futures will run as a workq job.
+ *
+ * The functor prototype must be:
+ * void (promise<Type>, std::tuple<std::future<...>, ...>);
+ *
+ * Starting this promise will also start all its dependant promises.
+ *
+ * Because the created promise runs asynchronous, it is ill advised to
+ * wait() on the promise.
+ */
+template<typename Type, typename FN, typename... Args>
+future<Type>
+combine(workq_ptr wq, unsigned int fl,
+    FN&& fn, Args&&... args)
+{
+	return cprom_detail::combine<Type>(std::move(wq), fl,
+	    std::forward<FN>(fn),
+	    std::index_sequence_for<Args...>(),
+	    std::forward<Args>(args)...);
+}
+
+
+#if 0  // Old code.
 /*
  * Create a promise that combines the result of multiple futures.
  *
@@ -421,6 +606,7 @@ combine(workq_ptr wq, unsigned int fl,
 	      std::move(f), fl),
 	    _1));
 }
+#endif // 0
 template<typename Type, typename FN, typename... Futures>
 future<Type>
 combine(workq_ptr wq, FN&& fn, std::tuple<future<Futures>...> f)
@@ -487,5 +673,16 @@ passthrough(future<Type> f) noexcept
 
 
 } /* namespace ilias */
+
+
+/* Enable placeholder semantics for bound futures. */
+namespace std {
+
+template<size_t FutCount>
+struct is_placeholder<ilias::cprom_detail::arg_or_fut_placeholder<FutCount>>
+: integral_constant<int, FutCount + 2U> {};
+
+} /* namespace std */
+
 
 #endif /* ILIAS_COMBI_PROMISE_H */
