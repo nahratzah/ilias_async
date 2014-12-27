@@ -137,27 +137,27 @@ auto shared_state<void>::get() -> void {
 } /* namespace ilias::impl */
 
 
-promise<void>::promise()
-: promise(std::allocator_arg, std::allocator<void>())
+cb_promise<void>::cb_promise()
+: cb_promise(std::allocator_arg, std::allocator<void>())
 {}
 
-auto promise<void>::get_future() -> future<void> {
+auto cb_promise<void>::get_future() -> cb_future<void> {
   if (!state_)
     impl::__throw(future_errc::no_state);
   if (!state_->mark_shared())
     impl::__throw(future_errc::future_already_retrieved);
 
-  return future<void>(state_);
+  return cb_future<void>(state_);
 }
 
-auto promise<void>::set_value() -> void {
+auto cb_promise<void>::set_value() -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
 
   state_->set_value();
 }
 
-auto promise<void>::set_exception(std::exception_ptr exc) -> void {
+auto cb_promise<void>::set_exception(std::exception_ptr exc) -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
 
@@ -165,7 +165,7 @@ auto promise<void>::set_exception(std::exception_ptr exc) -> void {
 }
 
 
-auto future<void>::get() -> void {
+auto cb_future<void>::get() -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
 
@@ -173,32 +173,32 @@ auto future<void>::get() -> void {
   state_.reset();
 }
 
-auto future<void>::start() const -> void {
+auto cb_future<void>::start() const -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
   state_->start_deferred();
 }
 
-auto future<void>::wait() const -> void {
+auto cb_future<void>::wait() const -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
   state_->wait();
 }
 
 
-auto shared_future<void>::get() const -> void {
+auto shared_cb_future<void>::get() const -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
   state_->get();
 }
 
-auto shared_future<void>::start() const -> void {
+auto shared_cb_future<void>::start() const -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
   state_->start_deferred();
 }
 
-auto shared_future<void>::wait() const -> void {
+auto shared_cb_future<void>::wait() const -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
   state_->wait();

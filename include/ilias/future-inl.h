@@ -112,8 +112,8 @@ class shared_state
   friend shared_state_fn_invoke_and_assign<T>;
 
  public:
-  using fut_callback_fn = void(future<T>);
-  using shared_fut_callback_fn = void(shared_future<T>);
+  using fut_callback_fn = void(cb_future<T>);
+  using shared_fut_callback_fn = void(shared_cb_future<T>);
 
  protected:
   shared_state() = delete;
@@ -134,9 +134,9 @@ class shared_state
   virtual void install_callback(std::function<shared_fut_callback_fn>) = 0;
 
  protected:
-  promise<T> as_promise() noexcept;
-  future<T> as_future() noexcept;
-  shared_future<T> as_shared_future() noexcept;
+  cb_promise<T> as_promise() noexcept;
+  cb_future<T> as_future() noexcept;
+  shared_cb_future<T> as_shared_future() noexcept;
 
  private:
   std::aligned_union_t<0, T, std::exception_ptr> storage_;
@@ -150,8 +150,8 @@ class shared_state<T&>
   friend shared_state_fn_invoke_and_assign<T&>;
 
  public:
-  using fut_callback_fn = void(future<T&>);
-  using shared_fut_callback_fn = void(shared_future<T&>);
+  using fut_callback_fn = void(cb_future<T&>);
+  using shared_fut_callback_fn = void(shared_cb_future<T&>);
 
  protected:
   shared_state() = delete;
@@ -172,9 +172,9 @@ class shared_state<T&>
   virtual void install_callback(std::function<shared_fut_callback_fn>) = 0;
 
  protected:
-  promise<T&> as_promise() noexcept;
-  future<T&> as_future() noexcept;
-  shared_future<T&> as_shared_future() noexcept;
+  cb_promise<T&> as_promise() noexcept;
+  cb_future<T&> as_future() noexcept;
+  shared_cb_future<T&> as_shared_future() noexcept;
 
  private:
   std::aligned_union_t<0, T*, std::exception_ptr> storage_;
@@ -188,8 +188,8 @@ class ILIAS_ASYNC_EXPORT shared_state<void>
   friend shared_state_fn_invoke_and_assign<void>;
 
  public:
-  using fut_callback_fn = void(future<void>);
-  using shared_fut_callback_fn = void(shared_future<void>);
+  using fut_callback_fn = void(cb_future<void>);
+  using shared_fut_callback_fn = void(shared_cb_future<void>);
 
  protected:
   shared_state() = delete;
@@ -210,9 +210,9 @@ class ILIAS_ASYNC_EXPORT shared_state<void>
   virtual void install_callback(std::function<shared_fut_callback_fn>) = 0;
 
  protected:
-  promise<void> as_promise() noexcept;
-  future<void> as_future() noexcept;
-  shared_future<void> as_shared_future() noexcept;
+  cb_promise<void> as_promise() noexcept;
+  cb_future<void> as_future() noexcept;
+  shared_cb_future<void> as_shared_future() noexcept;
 
  private:
   std::aligned_union_t<0, std::exception_ptr> storage_;
@@ -537,18 +537,18 @@ auto shared_state<T>::get() -> T* {
 }
 
 template<typename T>
-auto shared_state<T>::as_promise() noexcept -> promise<T> {
-  return promise<T>(this->shared_from_this());
+auto shared_state<T>::as_promise() noexcept -> cb_promise<T> {
+  return cb_promise<T>(this->shared_from_this());
 }
 
 template<typename T>
-auto shared_state<T>::as_future() noexcept -> future<T> {
-  return future<T>(this->shared_from_this());
+auto shared_state<T>::as_future() noexcept -> cb_future<T> {
+  return cb_future<T>(this->shared_from_this());
 }
 
 template<typename T>
-auto shared_state<T>::as_shared_future() noexcept -> shared_future<T> {
-  return shared_future<T>(this->shared_from_this());
+auto shared_state<T>::as_shared_future() noexcept -> shared_cb_future<T> {
+  return shared_cb_future<T>(this->shared_from_this());
 }
 
 
@@ -617,32 +617,32 @@ auto shared_state<T&>::get() -> T* {
 }
 
 template<typename T>
-auto shared_state<T&>::as_promise() noexcept -> promise<T&> {
-  return promise<T&>(this->shared_from_this());
+auto shared_state<T&>::as_promise() noexcept -> cb_promise<T&> {
+  return cb_promise<T&>(this->shared_from_this());
 }
 
 template<typename T>
-auto shared_state<T&>::as_future() noexcept -> future<T&> {
-  return future<T&>(this->shared_from_this());
+auto shared_state<T&>::as_future() noexcept -> cb_future<T&> {
+  return cb_future<T&>(this->shared_from_this());
 }
 
 template<typename T>
-auto shared_state<T&>::as_shared_future() noexcept -> shared_future<T&> {
-  return shared_future<T&>(this->shared_from_this());
+auto shared_state<T&>::as_shared_future() noexcept -> shared_cb_future<T&> {
+  return shared_cb_future<T&>(this->shared_from_this());
 }
 
 
-inline auto shared_state<void>::as_promise() noexcept -> promise<void> {
-  return promise<void>(this->shared_from_this());
+inline auto shared_state<void>::as_promise() noexcept -> cb_promise<void> {
+  return cb_promise<void>(this->shared_from_this());
 }
 
-inline auto shared_state<void>::as_future() noexcept -> future<void> {
-  return future<void>(this->shared_from_this());
+inline auto shared_state<void>::as_future() noexcept -> cb_future<void> {
+  return cb_future<void>(this->shared_from_this());
 }
 
 inline auto shared_state<void>::as_shared_future() noexcept ->
-    shared_future<void> {
-  return shared_future<void>(this->shared_from_this());
+    shared_cb_future<void> {
+  return shared_cb_future<void>(this->shared_from_this());
 }
 
 
@@ -898,7 +898,7 @@ shared_state_wqjob<T, Alloc, Fn, Args...>::shared_state_wqjob(
   workq_job(std::move(wq), flags | workq_job::TYPE_ONCE)
 {
   if (flags & workq_job::TYPE_PERSIST)
-    throw std::invalid_argument("promise workq job cannot be persistant");
+    throw std::invalid_argument("cb_promise workq job cannot be persistant");
 }
 
 template<typename T, typename Alloc, typename Fn, typename... Args>
@@ -1109,9 +1109,9 @@ constexpr launch operator~(launch x) noexcept {
 
 template<typename F, typename... Args>
 auto async_lazy(F&& f, Args&&... args) ->
-    future<impl::future_result_type<F, Args...>> {
+    cb_future<impl::future_result_type<F, Args...>> {
   using result_type = impl::future_result_type<F, Args...>;
-  using future_type = future<result_type>;
+  using future_type = cb_future<result_type>;
 
   return future_type(impl::allocate_future_state<result_type>(
                          std::allocator<void>(),
@@ -1120,7 +1120,7 @@ auto async_lazy(F&& f, Args&&... args) ->
 
 template<typename F, typename... Args>
 auto async(workq_ptr wq, F&& f, Args&&... args) ->
-    future<typename std::enable_if<!impl::is_launch<F>::value,
+    cb_future<typename std::enable_if<!impl::is_launch<F>::value,
                                    impl::future_result_type<F, Args...>
                                   >::type> {
   return async(std::move(wq), launch::dfl,
@@ -1129,7 +1129,7 @@ auto async(workq_ptr wq, F&& f, Args&&... args) ->
 
 template<typename F, typename... Args>
 auto async(workq_service_ptr wqs, F&& f, Args&&... args) ->
-    future<typename std::enable_if<!impl::is_launch<F>::value,
+    cb_future<typename std::enable_if<!impl::is_launch<F>::value,
                                    impl::future_result_type<F, Args...>
                                   >::type> {
   return async(std::move(wqs), launch::dfl,
@@ -1138,10 +1138,10 @@ auto async(workq_service_ptr wqs, F&& f, Args&&... args) ->
 
 template<typename F, typename... Args>
 auto async(workq_ptr wq, launch l, F&& f, Args&&... args) ->
-    future<impl::future_result_type<F, Args...>> {
+    cb_future<impl::future_result_type<F, Args...>> {
   using alloc_type = std::allocator<void>;
   using result_type = impl::future_result_type<F, Args...>;
-  using future_type = future<result_type>;
+  using future_type = cb_future<result_type>;
   using job_type = impl::shared_state_wqjob<result_type, alloc_type,
                                             std::decay_t<F>,
                                             std::decay_t<Args>...>;
@@ -1162,51 +1162,51 @@ auto async(workq_ptr wq, launch l, F&& f, Args&&... args) ->
 
 template<typename F, typename... Args>
 auto async(workq_service_ptr wqs, launch l, F&& f, Args&&... args) ->
-    future<impl::future_result_type<F, Args...>> {
+    cb_future<impl::future_result_type<F, Args...>> {
   return async(wqs->new_workq(), l, std::forward<F>(f),
                std::forward<Args>(args)...);
 }
 
 
 template<typename R>
-promise<R>::promise()
-: promise(std::allocator_arg, std::allocator<void>())
+cb_promise<R>::cb_promise()
+: cb_promise(std::allocator_arg, std::allocator<void>())
 {}
 
 template<typename R>
 template<typename Alloc>
-promise<R>::promise(std::allocator_arg_t, const Alloc& alloc)
+cb_promise<R>::cb_promise(std::allocator_arg_t, const Alloc& alloc)
 : state_(impl::allocate_future_state<R>(alloc))
 {}
 
 template<typename R>
-promise<R>::promise(promise&& p) noexcept
+cb_promise<R>::cb_promise(cb_promise&& p) noexcept
 : state_(std::move(p.state_))
 {}
 
 template<typename R>
-auto promise<R>::operator=(promise&& p) noexcept -> promise& {
+auto cb_promise<R>::operator=(cb_promise&& p) noexcept -> cb_promise& {
   state_ = std::move(p.state_);
   return *this;
 }
 
 template<typename R>
-auto promise<R>::swap(promise& p) noexcept -> void {
+auto cb_promise<R>::swap(cb_promise& p) noexcept -> void {
   std::swap(state_, p.state_);
 }
 
 template<typename R>
-auto promise<R>::get_future() -> future<R> {
+auto cb_promise<R>::get_future() -> cb_future<R> {
   if (!state_)
     impl::__throw(future_errc::no_state);
   if (!state_->mark_shared())
     impl::__throw(future_errc::future_already_retrieved);
 
-  return future<R>(state_);
+  return cb_future<R>(state_);
 }
 
 template<typename R>
-auto promise<R>::set_value(const R& v) -> void {
+auto cb_promise<R>::set_value(const R& v) -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
 
@@ -1214,7 +1214,7 @@ auto promise<R>::set_value(const R& v) -> void {
 }
 
 template<typename R>
-auto promise<R>::set_value(R&& v) -> void {
+auto cb_promise<R>::set_value(R&& v) -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
 
@@ -1222,7 +1222,7 @@ auto promise<R>::set_value(R&& v) -> void {
 }
 
 template<typename R>
-auto promise<R>::set_exception(std::exception_ptr exc) -> void {
+auto cb_promise<R>::set_exception(std::exception_ptr exc) -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
 
@@ -1230,50 +1230,50 @@ auto promise<R>::set_exception(std::exception_ptr exc) -> void {
 }
 
 template<typename R>
-promise<R>::promise(std::shared_ptr<impl::shared_state<R>> s) noexcept
+cb_promise<R>::cb_promise(std::shared_ptr<impl::shared_state<R>> s) noexcept
 : state_(s)
 {}
 
 
 template<typename R>
-promise<R&>::promise()
-: promise(std::allocator_arg, std::allocator<void>())
+cb_promise<R&>::cb_promise()
+: cb_promise(std::allocator_arg, std::allocator<void>())
 {}
 
 template<typename R>
 template<typename Alloc>
-promise<R&>::promise(std::allocator_arg_t, const Alloc& alloc)
+cb_promise<R&>::cb_promise(std::allocator_arg_t, const Alloc& alloc)
 : state_(impl::allocate_future_state<R&>(alloc))
 {}
 
 template<typename R>
-promise<R&>::promise(promise&& p) noexcept
+cb_promise<R&>::cb_promise(cb_promise&& p) noexcept
 : state_(std::move(p.state_))
 {}
 
 template<typename R>
-auto promise<R&>::operator=(promise&& p) noexcept -> promise& {
+auto cb_promise<R&>::operator=(cb_promise&& p) noexcept -> cb_promise& {
   state_ = std::move(p.state_);
   return *this;
 }
 
 template<typename R>
-auto promise<R&>::swap(promise& p) noexcept -> void {
+auto cb_promise<R&>::swap(cb_promise& p) noexcept -> void {
   std::swap(state_, p.state_);
 }
 
 template<typename R>
-auto promise<R&>::get_future() -> future<R&> {
+auto cb_promise<R&>::get_future() -> cb_future<R&> {
   if (!state_)
     impl::__throw(future_errc::no_state);
   if (!state_->mark_shared())
     impl::__throw(future_errc::future_already_retrieved);
 
-  return future<R&>(state_);
+  return cb_future<R&>(state_);
 }
 
 template<typename R>
-auto promise<R&>::set_value(R& v) -> void {
+auto cb_promise<R&>::set_value(R& v) -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
 
@@ -1281,7 +1281,7 @@ auto promise<R&>::set_value(R& v) -> void {
 }
 
 template<typename R>
-auto promise<R&>::set_exception(std::exception_ptr exc) -> void {
+auto cb_promise<R&>::set_exception(std::exception_ptr exc) -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
 
@@ -1289,58 +1289,59 @@ auto promise<R&>::set_exception(std::exception_ptr exc) -> void {
 }
 
 template<typename R>
-promise<R&>::promise(std::shared_ptr<impl::shared_state<R&>> s) noexcept
+cb_promise<R&>::cb_promise(std::shared_ptr<impl::shared_state<R&>> s) noexcept
 : state_(s)
 {}
 
 
 template<typename Alloc>
-promise<void>::promise(std::allocator_arg_t, const Alloc& alloc)
+cb_promise<void>::cb_promise(std::allocator_arg_t, const Alloc& alloc)
 : state_(impl::allocate_future_state<void>(alloc))
 {}
 
-inline promise<void>::promise(promise&& p) noexcept
+inline cb_promise<void>::cb_promise(cb_promise&& p) noexcept
 : state_(std::move(p.state_))
 {}
 
-inline auto promise<void>::operator=(promise&& p) noexcept -> promise& {
+inline auto cb_promise<void>::operator=(cb_promise&& p) noexcept ->
+    cb_promise& {
   state_ = std::move(p.state_);
   return *this;
 }
 
-inline auto promise<void>::swap(promise& p) noexcept -> void {
+inline auto cb_promise<void>::swap(cb_promise& p) noexcept -> void {
   std::swap(state_, p.state_);
 }
 
-inline promise<void>::promise(std::shared_ptr<impl::shared_state<void>> s)
-    noexcept
+inline cb_promise<void>::cb_promise(
+    std::shared_ptr<impl::shared_state<void>> s) noexcept
 : state_(s)
 {}
 
 
 template<typename R>
-future<R>::future(future&& f) noexcept
+cb_future<R>::cb_future(cb_future&& f) noexcept
 : state_(std::move(f.state_))
 {}
 
 template<typename R>
-auto future<R>::operator=(future&& f) noexcept -> future& {
+auto cb_future<R>::operator=(cb_future&& f) noexcept -> cb_future& {
   state_ = std::move(f.state_);
   return *this;
 }
 
 template<typename R>
-auto future<R>::swap(future& f) noexcept -> void {
+auto cb_future<R>::swap(cb_future& f) noexcept -> void {
   std::swap(state_, f.state_);
 }
 
 template<typename R>
-auto future<R>::share() -> shared_future<R> {
-  return shared_future<R>(std::move(state_));
+auto cb_future<R>::share() -> shared_cb_future<R> {
+  return shared_cb_future<R>(std::move(state_));
 }
 
 template<typename R>
-auto future<R>::get() -> R {
+auto cb_future<R>::get() -> R {
   if (!state_)
     impl::__throw(future_errc::no_state);
 
@@ -1350,19 +1351,19 @@ auto future<R>::get() -> R {
 }
 
 template<typename R>
-auto future<R>::valid() const noexcept -> bool {
+auto cb_future<R>::valid() const noexcept -> bool {
   return state_ != nullptr;
 }
 
 template<typename R>
-auto future<R>::start() const -> void {
+auto cb_future<R>::start() const -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
   state_->start_deferred();
 }
 
 template<typename R>
-auto future<R>::wait() const -> void {
+auto cb_future<R>::wait() const -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
   state_->wait();
@@ -1370,8 +1371,8 @@ auto future<R>::wait() const -> void {
 
 template<typename R>
 template<typename Rep, typename Period>
-auto future<R>::wait_for(const std::chrono::duration<Rep, Period>& d) const ->
-    future_status {
+auto cb_future<R>::wait_for(const std::chrono::duration<Rep, Period>& d)
+    const -> future_status {
   using state_t = impl::shared_state_base::state_t;
 
   if (state_ && d.count() == 0) {
@@ -1391,8 +1392,9 @@ auto future<R>::wait_for(const std::chrono::duration<Rep, Period>& d) const ->
 
 template<typename R>
 template<typename Clock, typename Duration>
-auto future<R>::wait_until(const std::chrono::time_point<Clock, Duration>& tp)
-    const -> future_status {
+auto cb_future<R>::wait_until(
+    const std::chrono::time_point<Clock, Duration>& tp) const ->
+    future_status {
   using state_t = impl::shared_state_base::state_t;
 
   if (!state_)
@@ -1410,34 +1412,34 @@ auto future<R>::wait_until(const std::chrono::time_point<Clock, Duration>& tp)
 }
 
 template<typename R>
-future<R>::future(std::shared_ptr<impl::shared_state<R>> s) noexcept
+cb_future<R>::cb_future(std::shared_ptr<impl::shared_state<R>> s) noexcept
 : state_(std::move(s))
 {}
 
 
 template<typename R>
-future<R&>::future(future&& f) noexcept
+cb_future<R&>::cb_future(cb_future&& f) noexcept
 : state_(std::move(f.state_))
 {}
 
 template<typename R>
-auto future<R&>::operator=(future&& f) noexcept -> future& {
+auto cb_future<R&>::operator=(cb_future&& f) noexcept -> cb_future& {
   state_ = std::move(f.state_);
   return *this;
 }
 
 template<typename R>
-auto future<R&>::swap(future& f) noexcept -> void {
+auto cb_future<R&>::swap(cb_future& f) noexcept -> void {
   std::swap(state_, f.state_);
 }
 
 template<typename R>
-auto future<R&>::share() -> shared_future<R&> {
-  return shared_future<R&>(std::move(state_));
+auto cb_future<R&>::share() -> shared_cb_future<R&> {
+  return shared_cb_future<R&>(std::move(state_));
 }
 
 template<typename R>
-auto future<R&>::get() -> R& {
+auto cb_future<R&>::get() -> R& {
   if (!state_)
     impl::__throw(future_errc::no_state);
 
@@ -1447,19 +1449,19 @@ auto future<R&>::get() -> R& {
 }
 
 template<typename R>
-auto future<R&>::valid() const noexcept -> bool {
+auto cb_future<R&>::valid() const noexcept -> bool {
   return state_ != nullptr;
 }
 
 template<typename R>
-auto future<R&>::start() const -> void {
+auto cb_future<R&>::start() const -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
   state_->start_deferred();
 }
 
 template<typename R>
-auto future<R&>::wait() const -> void {
+auto cb_future<R&>::wait() const -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
   state_->wait();
@@ -1467,8 +1469,8 @@ auto future<R&>::wait() const -> void {
 
 template<typename R>
 template<typename Rep, typename Period>
-auto future<R&>::wait_for(const std::chrono::duration<Rep, Period>& d) const ->
-    future_status {
+auto cb_future<R&>::wait_for(const std::chrono::duration<Rep, Period>& d)
+    const -> future_status {
   using state_t = impl::shared_state_base::state_t;
 
   if (state_ && d.count() == 0) {
@@ -1488,73 +1490,7 @@ auto future<R&>::wait_for(const std::chrono::duration<Rep, Period>& d) const ->
 
 template<typename R>
 template<typename Clock, typename Duration>
-auto future<R&>::wait_until(const std::chrono::time_point<Clock, Duration>& tp)
-    const -> future_status {
-  using state_t = impl::shared_state_base::state_t;
-
-  if (!state_)
-    impl::__throw(future_errc::no_state);
-
-  switch (state_->wait_until(tp)) {
-  case state_t::uninitialized_deferred:
-    return future_status::deferred;
-  case state_t::ready_value:
-  case state_t::ready_exc:
-    return future_status::ready;
-  default:
-    return future_status::timeout;
-  }
-}
-
-template<typename R>
-future<R&>::future(std::shared_ptr<impl::shared_state<R&>> s) noexcept
-: state_(std::move(s))
-{}
-
-
-inline future<void>::future(future&& f) noexcept
-: state_(std::move(f.state_))
-{}
-
-inline auto future<void>::operator=(future&& f) noexcept -> future& {
-  state_ = std::move(f.state_);
-  return *this;
-}
-
-inline auto future<void>::swap(future& f) noexcept -> void {
-  std::swap(state_, f.state_);
-}
-
-inline auto future<void>::share() -> shared_future<void> {
-  return shared_future<void>(std::move(state_));
-}
-
-inline auto future<void>::valid() const noexcept -> bool {
-  return state_ != nullptr;
-}
-
-template<typename Rep, typename Period>
-auto future<void>::wait_for(const std::chrono::duration<Rep, Period>& d)
-    const -> future_status {
-  using state_t = impl::shared_state_base::state_t;
-
-  if (state_ && d.count() == 0) {
-    switch (state_->get_state()) {
-    case state_t::uninitialized_deferred:
-      return future_status::deferred;
-    case state_t::ready_value:
-    case state_t::ready_exc:
-      return future_status::ready;
-    default:
-      return future_status::timeout;
-    }
-  }
-
-  return wait_until(std::chrono::steady_clock::now() + d);
-}
-
-template<typename Clock, typename Duration>
-auto future<void>::wait_until(
+auto cb_future<R&>::wait_until(
     const std::chrono::time_point<Clock, Duration>& tp) const ->
     future_status {
   using state_t = impl::shared_state_base::state_t;
@@ -1573,66 +1509,134 @@ auto future<void>::wait_until(
   }
 }
 
-inline future<void>::future(std::shared_ptr<impl::shared_state<void>> s)
+template<typename R>
+cb_future<R&>::cb_future(std::shared_ptr<impl::shared_state<R&>> s) noexcept
+: state_(std::move(s))
+{}
+
+
+inline cb_future<void>::cb_future(cb_future&& f) noexcept
+: state_(std::move(f.state_))
+{}
+
+inline auto cb_future<void>::operator=(cb_future&& f) noexcept -> cb_future& {
+  state_ = std::move(f.state_);
+  return *this;
+}
+
+inline auto cb_future<void>::swap(cb_future& f) noexcept -> void {
+  std::swap(state_, f.state_);
+}
+
+inline auto cb_future<void>::share() -> shared_cb_future<void> {
+  return shared_cb_future<void>(std::move(state_));
+}
+
+inline auto cb_future<void>::valid() const noexcept -> bool {
+  return state_ != nullptr;
+}
+
+template<typename Rep, typename Period>
+auto cb_future<void>::wait_for(const std::chrono::duration<Rep, Period>& d)
+    const -> future_status {
+  using state_t = impl::shared_state_base::state_t;
+
+  if (state_ && d.count() == 0) {
+    switch (state_->get_state()) {
+    case state_t::uninitialized_deferred:
+      return future_status::deferred;
+    case state_t::ready_value:
+    case state_t::ready_exc:
+      return future_status::ready;
+    default:
+      return future_status::timeout;
+    }
+  }
+
+  return wait_until(std::chrono::steady_clock::now() + d);
+}
+
+template<typename Clock, typename Duration>
+auto cb_future<void>::wait_until(
+    const std::chrono::time_point<Clock, Duration>& tp) const ->
+    future_status {
+  using state_t = impl::shared_state_base::state_t;
+
+  if (!state_)
+    impl::__throw(future_errc::no_state);
+
+  switch (state_->wait_until(tp)) {
+  case state_t::uninitialized_deferred:
+    return future_status::deferred;
+  case state_t::ready_value:
+  case state_t::ready_exc:
+    return future_status::ready;
+  default:
+    return future_status::timeout;
+  }
+}
+
+inline cb_future<void>::cb_future(std::shared_ptr<impl::shared_state<void>> s)
     noexcept
 : state_(std::move(s))
 {}
 
 
 template<typename R>
-shared_future<R>::shared_future(const shared_future& f)
+shared_cb_future<R>::shared_cb_future(const shared_cb_future& f)
 : state_(f.state_)
 {}
 
 template<typename R>
-shared_future<R>::shared_future(shared_future&& f) noexcept
+shared_cb_future<R>::shared_cb_future(shared_cb_future&& f) noexcept
 : state_(std::move(f.state_))
 {}
 
 template<typename R>
-shared_future<R>::shared_future(future<R>&& f) noexcept
-: shared_future(f.share())
+shared_cb_future<R>::shared_cb_future(cb_future<R>&& f) noexcept
+: shared_cb_future(f.share())
 {}
 
 template<typename R>
-auto shared_future<R>::operator=(const shared_future& f) -> shared_future& {
+auto shared_cb_future<R>::operator=(const shared_cb_future& f) ->
+    shared_cb_future& {
   state_ = f.state_;
   return *this;
 }
 
 template<typename R>
-auto shared_future<R>::operator=(shared_future&& f) noexcept ->
-    shared_future& {
+auto shared_cb_future<R>::operator=(shared_cb_future&& f) noexcept ->
+    shared_cb_future& {
   state_ = std::move(f.state_);
   return *this;
 }
 
 template<typename R>
-auto shared_future<R>::swap(shared_future& f) noexcept -> void {
+auto shared_cb_future<R>::swap(shared_cb_future& f) noexcept -> void {
   std::swap(state_, f.state_);
 }
 
 template<typename R>
-auto shared_future<R>::get() const -> const R& {
+auto shared_cb_future<R>::get() const -> const R& {
   if (!state_)
     impl::__throw(future_errc::no_state);
   return *state_->get();
 }
 
 template<typename R>
-auto shared_future<R>::valid() const noexcept -> bool {
+auto shared_cb_future<R>::valid() const noexcept -> bool {
   return state_ != nullptr;
 }
 
 template<typename R>
-auto shared_future<R>::start() const -> void {
+auto shared_cb_future<R>::start() const -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
   state_->start_deferred();
 }
 
 template<typename R>
-auto shared_future<R>::wait() const -> void {
+auto shared_cb_future<R>::wait() const -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
   state_->wait();
@@ -1640,7 +1644,7 @@ auto shared_future<R>::wait() const -> void {
 
 template<typename R>
 template<typename Rep, typename Period>
-auto shared_future<R>::wait_for(const std::chrono::duration<Rep, Period>& d)
+auto shared_cb_future<R>::wait_for(const std::chrono::duration<Rep, Period>& d)
     const -> future_status {
   using state_t = impl::shared_state_base::state_t;
 
@@ -1661,7 +1665,7 @@ auto shared_future<R>::wait_for(const std::chrono::duration<Rep, Period>& d)
 
 template<typename R>
 template<typename Clock, typename Duration>
-auto shared_future<R>::wait_until(
+auto shared_cb_future<R>::wait_until(
     const std::chrono::time_point<Clock, Duration>& tp) const ->
     future_status {
   using state_t = impl::shared_state_base::state_t;
@@ -1681,66 +1685,67 @@ auto shared_future<R>::wait_until(
 }
 
 template<typename R>
-shared_future<R>::shared_future(std::shared_ptr<impl::shared_state<R>> s)
+shared_cb_future<R>::shared_cb_future(std::shared_ptr<impl::shared_state<R>> s)
     noexcept
 : state_(std::move(s))
 {}
 
 
 template<typename R>
-shared_future<R&>::shared_future(const shared_future& f)
+shared_cb_future<R&>::shared_cb_future(const shared_cb_future& f)
 : state_(f.state_)
 {}
 
 template<typename R>
-shared_future<R&>::shared_future(shared_future&& f) noexcept
+shared_cb_future<R&>::shared_cb_future(shared_cb_future&& f) noexcept
 : state_(std::move(f.state_))
 {}
 
 template<typename R>
-shared_future<R&>::shared_future(future<R&>&& f) noexcept
-: shared_future(f.share())
+shared_cb_future<R&>::shared_cb_future(cb_future<R&>&& f) noexcept
+: shared_cb_future(f.share())
 {}
 
 template<typename R>
-auto shared_future<R&>::operator=(const shared_future& f) -> shared_future& {
+auto shared_cb_future<R&>::operator=(const shared_cb_future& f) ->
+    shared_cb_future& {
   state_ = f.state_;
   return *this;
 }
 
 template<typename R>
-auto shared_future<R&>::operator=(shared_future&& f) noexcept ->
-    shared_future& {
+auto shared_cb_future<R&>::operator=(shared_cb_future&& f) noexcept ->
+    shared_cb_future& {
   state_ = std::move(f.state_);
   return *this;
 }
 
 template<typename R>
-auto shared_future<R&>::swap(shared_future& f) noexcept -> void {
+auto shared_cb_future<R&>::swap(shared_cb_future& f) noexcept -> void {
   std::swap(state_, f.state_);
 }
 
 template<typename R>
-auto shared_future<R&>::get() const -> R& {
+auto shared_cb_future<R&>::get() const -> R& {
   if (!state_)
     impl::__throw(future_errc::no_state);
   return *state_->get();
 }
 
 template<typename R>
-auto shared_future<R&>::valid() const noexcept -> bool {
+auto shared_cb_future<R&>::valid() const noexcept -> bool {
   return state_ != nullptr;
 }
 
 template<typename R>
-auto shared_future<R&>::start() const -> void {
+auto shared_cb_future<R&>::start() const -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
   state_->start_deferred();
 }
 
 template<typename R>
-auto shared_future<R&>::wait() const -> void {
+auto shared_cb_future<R&>::wait() const -> void {
   if (!state_)
     impl::__throw(future_errc::no_state);
   state_->wait();
@@ -1748,8 +1753,9 @@ auto shared_future<R&>::wait() const -> void {
 
 template<typename R>
 template<typename Rep, typename Period>
-auto shared_future<R&>::wait_for(const std::chrono::duration<Rep, Period>& d)
-    const -> future_status {
+auto shared_cb_future<R&>::wait_for(
+    const std::chrono::duration<Rep, Period>& d) const ->
+    future_status {
   using state_t = impl::shared_state_base::state_t;
 
   if (state_ && d.count() == 0) {
@@ -1769,7 +1775,7 @@ auto shared_future<R&>::wait_for(const std::chrono::duration<Rep, Period>& d)
 
 template<typename R>
 template<typename Clock, typename Duration>
-auto shared_future<R&>::wait_until(
+auto shared_cb_future<R&>::wait_until(
     const std::chrono::time_point<Clock, Duration>& tp) const ->
     future_status {
   using state_t = impl::shared_state_base::state_t;
@@ -1789,47 +1795,49 @@ auto shared_future<R&>::wait_until(
 }
 
 template<typename R>
-shared_future<R&>::shared_future(std::shared_ptr<impl::shared_state<R&>> s)
-    noexcept
+shared_cb_future<R&>::shared_cb_future(
+    std::shared_ptr<impl::shared_state<R&>> s) noexcept
 : state_(std::move(s))
 {}
 
 
-inline shared_future<void>::shared_future(const shared_future& f)
+inline shared_cb_future<void>::shared_cb_future(const shared_cb_future& f)
 : state_(f.state_)
 {}
 
-inline shared_future<void>::shared_future(shared_future&& f) noexcept
+inline shared_cb_future<void>::shared_cb_future(shared_cb_future&& f) noexcept
 : state_(std::move(f.state_))
 {}
 
-inline shared_future<void>::shared_future(future<void>&& f) noexcept
-: shared_future(f.share())
+inline shared_cb_future<void>::shared_cb_future(cb_future<void>&& f) noexcept
+: shared_cb_future(f.share())
 {}
 
-inline auto shared_future<void>::operator=(const shared_future& f) ->
-    shared_future& {
+inline auto shared_cb_future<void>::operator=(const shared_cb_future& f) ->
+    shared_cb_future& {
   state_ = f.state_;
   return *this;
 }
 
-inline auto shared_future<void>::operator=(shared_future&& f) noexcept ->
-    shared_future& {
+inline auto shared_cb_future<void>::operator=(shared_cb_future&& f) noexcept ->
+    shared_cb_future& {
   state_ = std::move(f.state_);
   return *this;
 }
 
-inline auto shared_future<void>::swap(shared_future& f) noexcept -> void {
+inline auto shared_cb_future<void>::swap(shared_cb_future& f) noexcept ->
+    void {
   std::swap(state_, f.state_);
 }
 
-inline auto shared_future<void>::valid() const noexcept -> bool {
+inline auto shared_cb_future<void>::valid() const noexcept -> bool {
   return state_ != nullptr;
 }
 
 template<typename Rep, typename Period>
-auto shared_future<void>::wait_for(const std::chrono::duration<Rep, Period>& d)
-    const -> future_status {
+auto shared_cb_future<void>::wait_for(
+    const std::chrono::duration<Rep, Period>& d) const ->
+    future_status {
   using state_t = impl::shared_state_base::state_t;
 
   if (state_ && d.count() == 0) {
@@ -1848,7 +1856,7 @@ auto shared_future<void>::wait_for(const std::chrono::duration<Rep, Period>& d)
 }
 
 template<typename Clock, typename Duration>
-auto shared_future<void>::wait_until(
+auto shared_cb_future<void>::wait_until(
     const std::chrono::time_point<Clock, Duration>& tp) const ->
     future_status {
   using state_t = impl::shared_state_base::state_t;
@@ -1867,7 +1875,7 @@ auto shared_future<void>::wait_until(
   }
 }
 
-inline shared_future<void>::shared_future(
+inline shared_cb_future<void>::shared_cb_future(
     std::shared_ptr<impl::shared_state<void>> s) noexcept
 : state_(std::move(s))
 {}
@@ -1905,13 +1913,13 @@ auto packaged_task<R(Args...)>::valid() const noexcept -> bool {
 }
 
 template<typename R, typename... Args>
-auto packaged_task<R(Args...)>::get_future() -> future<R> {
+auto packaged_task<R(Args...)>::get_future() -> cb_future<R> {
   if (!state_)
     impl::__throw(future_errc::no_state);
   if (!state_->mark_shared())
     impl::__throw(future_errc::future_already_retrieved);
 
-  return future<R>(state_);
+  return cb_future<R>(state_);
 }
 
 template<typename R, typename... Args>
@@ -1972,14 +1980,18 @@ auto pass_promise(F&& f) -> pass_promise_t<ResultType, F> {
 
 
 template<typename R>
-void callback(future<R> f, std::function<void(future<R>)> fn) {
+void callback(cb_future<R> f,
+              std::function<
+                  void(typename cb_future<R>::callback_arg_type)> fn) {
   if (!f.state_) impl::__throw(future_errc::no_state);
   f.state_->install_callback(std::move(fn));
   f.start();
 }
 
 template<typename R>
-void callback(shared_future<R> f, std::function<void(shared_future<R>)> fn,
+void callback(shared_cb_future<R> f,
+              std::function<
+                  void(typename shared_cb_future<R>::callback_arg_type)> fn,
               promise_start ps) {
   if (!f.state_) impl::__throw(future_errc::no_state);
   f.state_->install_callback(std::move(fn));

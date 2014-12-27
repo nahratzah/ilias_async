@@ -30,9 +30,9 @@
 namespace ilias {
 
 
-template<typename> class promise;
-template<typename> class future;
-template<typename> class shared_future;
+template<typename> class cb_promise;
+template<typename> class cb_future;
+template<typename> class shared_cb_future;
 template<typename, typename> class pass_promise_t;
 
 
@@ -49,20 +49,21 @@ template<typename T> using is_pass_promise =
     typename _is_pass_promise<std::remove_cv_t<T>>::type;
 
 template<typename> struct _is_future : std::false_type {};
-template<typename T> struct _is_future<future<T>> : std::true_type {};
+template<typename T> struct _is_future<cb_future<T>> : std::true_type {};
 template<typename T> struct _is_future<std::future<T>> : std::true_type {};
-template<typename T> struct _is_future<shared_future<T>> : std::true_type {};
+template<typename T> struct _is_future<shared_cb_future<T>>
+: std::true_type {};
 template<typename T> struct _is_future<std::shared_future<T>>
 : std::true_type {};
 
 template<typename> struct _is_promise : std::false_type {};
-template<typename T> struct _is_promise<promise<T>> : std::true_type {};
+template<typename T> struct _is_promise<cb_promise<T>> : std::true_type {};
 template<typename T> struct _is_promise<std::promise<T>> : std::true_type {};
 
 template<typename> struct _is_startable_future : std::false_type {};
-template<typename T> struct _is_startable_future<future<T>>
+template<typename T> struct _is_startable_future<cb_future<T>>
 : std::true_type {};
-template<typename T> struct _is_startable_future<shared_future<T>>
+template<typename T> struct _is_startable_future<shared_cb_future<T>>
 : std::true_type {};
 
 
@@ -165,118 +166,118 @@ template<typename F, typename... Args> using future_result_type =
 
 template<typename F, typename... Args>
 auto async_lazy(F&&, Args&&...) ->
-    future<impl::future_result_type<F, Args...>>;
+    cb_future<impl::future_result_type<F, Args...>>;
 
 template<typename F, typename... Args>
 auto async(workq_ptr, F&&, Args&&...) ->
-    future<typename std::enable_if<!impl::is_launch<F>::value,
+    cb_future<typename std::enable_if<!impl::is_launch<F>::value,
                                    impl::future_result_type<F, Args...>
                                   >::type>;
 
 template<typename F, typename... Args>
 auto async(workq_service_ptr, F&&, Args&&...) ->
-    future<typename std::enable_if<!impl::is_launch<F>::value,
+    cb_future<typename std::enable_if<!impl::is_launch<F>::value,
                                    impl::future_result_type<F, Args...>
                                   >::type>;
 
 template<typename F, typename... Args>
 auto async(workq_ptr, launch, F&&, Args&&...) ->
-    future<impl::future_result_type<F, Args...>>;
+    cb_future<impl::future_result_type<F, Args...>>;
 
 template<typename F, typename... Args>
 auto async(workq_service_ptr, launch, F&&, Args&&...) ->
-    future<impl::future_result_type<F, Args...>>;
+    cb_future<impl::future_result_type<F, Args...>>;
 
 
 template<typename> class packaged_task;  // Not implemented.
 
 
 template<typename R>
-class promise {
+class cb_promise {
   template<typename> friend class impl::shared_state;
 
  public:
-  promise();
-  promise(const promise&) = delete;
-  promise(promise&&) noexcept;
-  template<typename Alloc> promise(std::allocator_arg_t, const Alloc&);
+  cb_promise();
+  cb_promise(const cb_promise&) = delete;
+  cb_promise(cb_promise&&) noexcept;
+  template<typename Alloc> cb_promise(std::allocator_arg_t, const Alloc&);
 
-  ~promise() noexcept = default;
+  ~cb_promise() noexcept = default;
 
-  promise& operator=(const promise&) = delete;
-  promise& operator=(promise&&) noexcept;
-  void swap(promise&) noexcept;
+  cb_promise& operator=(const cb_promise&) = delete;
+  cb_promise& operator=(cb_promise&&) noexcept;
+  void swap(cb_promise&) noexcept;
 
-  future<R> get_future();
+  cb_future<R> get_future();
 
   void set_value(const R&);
   void set_value(R&&);
   void set_exception(std::exception_ptr);
 
  private:
-  promise(std::shared_ptr<impl::shared_state<R>>) noexcept;
+  cb_promise(std::shared_ptr<impl::shared_state<R>>) noexcept;
 
   std::shared_ptr<impl::shared_state<R>> state_;
 };
 
 template<typename R>
-class promise<R&> {
+class cb_promise<R&> {
   template<typename> friend class impl::shared_state;
 
  public:
-  promise();
-  promise(const promise&) = delete;
-  promise(promise&&) noexcept;
-  template<typename Alloc> promise(std::allocator_arg_t, const Alloc&);
+  cb_promise();
+  cb_promise(const cb_promise&) = delete;
+  cb_promise(cb_promise&&) noexcept;
+  template<typename Alloc> cb_promise(std::allocator_arg_t, const Alloc&);
 
-  ~promise() noexcept = default;
+  ~cb_promise() noexcept = default;
 
-  promise& operator=(const promise&) = delete;
-  promise& operator=(promise&&) noexcept;
-  void swap(promise&) noexcept;
+  cb_promise& operator=(const cb_promise&) = delete;
+  cb_promise& operator=(cb_promise&&) noexcept;
+  void swap(cb_promise&) noexcept;
 
-  future<R&> get_future();
+  cb_future<R&> get_future();
 
   void set_value(R&);
   void set_exception(std::exception_ptr);
 
  private:
-  promise(std::shared_ptr<impl::shared_state<R&>>) noexcept;
+  cb_promise(std::shared_ptr<impl::shared_state<R&>>) noexcept;
 
   std::shared_ptr<impl::shared_state<R&>> state_;
 };
 
 template<>
-class promise<void> {
+class cb_promise<void> {
   template<typename> friend class impl::shared_state;
 
  public:
-  ILIAS_ASYNC_EXPORT promise();
-  promise(const promise&) = delete;
-  promise(promise&&) noexcept;
-  template<typename Alloc> promise(std::allocator_arg_t, const Alloc&);
+  ILIAS_ASYNC_EXPORT cb_promise();
+  cb_promise(const cb_promise&) = delete;
+  cb_promise(cb_promise&&) noexcept;
+  template<typename Alloc> cb_promise(std::allocator_arg_t, const Alloc&);
 
-  ~promise() noexcept = default;
+  ~cb_promise() noexcept = default;
 
-  promise& operator=(const promise&) = delete;
-  promise& operator=(promise&&) noexcept;
-  void swap(promise&) noexcept;
+  cb_promise& operator=(const cb_promise&) = delete;
+  cb_promise& operator=(cb_promise&&) noexcept;
+  void swap(cb_promise&) noexcept;
 
-  ILIAS_ASYNC_EXPORT future<void> get_future();
+  ILIAS_ASYNC_EXPORT cb_future<void> get_future();
 
   ILIAS_ASYNC_EXPORT void set_value();
   ILIAS_ASYNC_EXPORT void set_exception(std::exception_ptr);
 
  private:
-  promise(std::shared_ptr<impl::shared_state<void>>) noexcept;
+  cb_promise(std::shared_ptr<impl::shared_state<void>>) noexcept;
 
   std::shared_ptr<impl::shared_state<void>> state_;
 };
 
 
 template<typename R>
-class future {
-  friend promise<R>;
+class cb_future {
+  friend cb_promise<R>;
   template<typename> friend class impl::shared_state;
   template<typename, typename, typename, typename...>
       friend class impl::shared_state_fn;
@@ -284,26 +285,26 @@ class future {
 
   template<typename F, typename... Args>
   friend auto async_lazy(F&&, Args&&...) ->
-      future<impl::future_result_type<F, Args...>>;
+      cb_future<impl::future_result_type<F, Args...>>;
 
   template<typename F, typename... Args>
   friend auto async(workq_ptr, launch, F&&, Args&&...) ->
-      future<impl::future_result_type<F, Args...>>;
+      cb_future<impl::future_result_type<F, Args...>>;
 
  public:
-  using callback_arg_type = future;
+  using callback_arg_type = cb_future;
 
-  future() noexcept = default;
-  future(const future&) = delete;
-  future(future&&) noexcept;
+  cb_future() noexcept = default;
+  cb_future(const cb_future&) = delete;
+  cb_future(cb_future&&) noexcept;
 
-  ~future() noexcept = default;
+  ~cb_future() noexcept = default;
 
-  future& operator=(const future&) = delete;
-  future& operator=(future&&) noexcept;
-  void swap(future&) noexcept;
+  cb_future& operator=(const cb_future&) = delete;
+  cb_future& operator=(cb_future&&) noexcept;
+  void swap(cb_future&) noexcept;
 
-  shared_future<R> share();
+  shared_cb_future<R> share();
 
   R get();
 
@@ -318,14 +319,14 @@ class future {
       const;
 
  private:
-  future(std::shared_ptr<impl::shared_state<R>>) noexcept;
+  cb_future(std::shared_ptr<impl::shared_state<R>>) noexcept;
 
   std::shared_ptr<impl::shared_state<R>> state_;
 };
 
 template<typename R>
-class future<R&> {
-  friend promise<R&>;
+class cb_future<R&> {
+  friend cb_promise<R&>;
   template<typename> friend class impl::shared_state;
   template<typename, typename, typename, typename...>
       friend class impl::shared_state_fn;
@@ -333,26 +334,26 @@ class future<R&> {
 
   template<typename F, typename... Args>
   friend auto async_lazy(F&&, Args&&...) ->
-      future<impl::future_result_type<F, Args...>>;
+      cb_future<impl::future_result_type<F, Args...>>;
 
   template<typename F, typename... Args>
   friend auto async(workq_ptr, launch, F&&, Args&&...) ->
-      future<impl::future_result_type<F, Args...>>;
+      cb_future<impl::future_result_type<F, Args...>>;
 
  public:
-  using callback_arg_type = future;
+  using callback_arg_type = cb_future;
 
-  future() noexcept = default;
-  future(const future&) = delete;
-  future(future&&) noexcept;
+  cb_future() noexcept = default;
+  cb_future(const cb_future&) = delete;
+  cb_future(cb_future&&) noexcept;
 
-  ~future() noexcept = default;
+  ~cb_future() noexcept = default;
 
-  future& operator=(const future&) = delete;
-  future& operator=(future&&) noexcept;
-  void swap(future&) noexcept;
+  cb_future& operator=(const cb_future&) = delete;
+  cb_future& operator=(cb_future&&) noexcept;
+  void swap(cb_future&) noexcept;
 
-  shared_future<R&> share();
+  shared_cb_future<R&> share();
 
   R& get();
 
@@ -367,14 +368,14 @@ class future<R&> {
       const;
 
  private:
-  future(std::shared_ptr<impl::shared_state<R&>>) noexcept;
+  cb_future(std::shared_ptr<impl::shared_state<R&>>) noexcept;
 
   std::shared_ptr<impl::shared_state<R&>> state_;
 };
 
 template<>
-class future<void> {
-  friend promise<void>;
+class cb_future<void> {
+  friend cb_promise<void>;
   template<typename> friend class impl::shared_state;
   template<typename, typename, typename, typename...>
       friend class impl::shared_state_fn;
@@ -382,26 +383,26 @@ class future<void> {
 
   template<typename F, typename... Args>
   friend auto async_lazy(F&&, Args&&...) ->
-      future<impl::future_result_type<F, Args...>>;
+      cb_future<impl::future_result_type<F, Args...>>;
 
   template<typename F, typename... Args>
   friend auto async(workq_ptr, launch, F&&, Args&&...) ->
-      future<impl::future_result_type<F, Args...>>;
+      cb_future<impl::future_result_type<F, Args...>>;
 
  public:
-  using callback_arg_type = future;
+  using callback_arg_type = cb_future;
 
-  future() noexcept = default;
-  future(const future&) = delete;
-  future(future&&) noexcept;
+  cb_future() noexcept = default;
+  cb_future(const cb_future&) = delete;
+  cb_future(cb_future&&) noexcept;
 
-  ~future() noexcept = default;
+  ~cb_future() noexcept = default;
 
-  future& operator=(const future&) = delete;
-  future& operator=(future&&) noexcept;
-  void swap(future&) noexcept;
+  cb_future& operator=(const cb_future&) = delete;
+  cb_future& operator=(cb_future&&) noexcept;
+  void swap(cb_future&) noexcept;
 
-  shared_future<void> share();
+  shared_cb_future<void> share();
 
   ILIAS_ASYNC_EXPORT void get();
 
@@ -416,32 +417,32 @@ class future<void> {
       const;
 
  private:
-  future(std::shared_ptr<impl::shared_state<void>>) noexcept;
+  cb_future(std::shared_ptr<impl::shared_state<void>>) noexcept;
 
   std::shared_ptr<impl::shared_state<void>> state_;
 };
 
 
 template<typename R>
-class shared_future {
-  friend future<R>;
+class shared_cb_future {
+  friend cb_future<R>;
   template<typename> friend class impl::shared_state;
   template<typename, typename, typename, typename...>
       friend class impl::shared_state_fn;
 
  public:
-  using callback_arg_type = shared_future;
+  using callback_arg_type = shared_cb_future;
 
-  shared_future() noexcept = default;
-  shared_future(const shared_future&);
-  shared_future(shared_future&&) noexcept;
-  shared_future(future<R>&&) noexcept;
+  shared_cb_future() noexcept = default;
+  shared_cb_future(const shared_cb_future&);
+  shared_cb_future(shared_cb_future&&) noexcept;
+  shared_cb_future(cb_future<R>&&) noexcept;
 
-  ~shared_future() noexcept = default;
+  ~shared_cb_future() noexcept = default;
 
-  shared_future& operator=(const shared_future&);
-  shared_future& operator=(shared_future&&) noexcept;
-  void swap(shared_future&) noexcept;
+  shared_cb_future& operator=(const shared_cb_future&);
+  shared_cb_future& operator=(shared_cb_future&&) noexcept;
+  void swap(shared_cb_future&) noexcept;
 
   const R& get() const;
 
@@ -456,31 +457,31 @@ class shared_future {
       const;
 
  private:
-  shared_future(std::shared_ptr<impl::shared_state<R>>) noexcept;
+  shared_cb_future(std::shared_ptr<impl::shared_state<R>>) noexcept;
 
   std::shared_ptr<impl::shared_state<R>> state_;
 };
 
 template<typename R>
-class shared_future<R&> {
-  friend future<R&>;
+class shared_cb_future<R&> {
+  friend cb_future<R&>;
   template<typename> friend class impl::shared_state;
   template<typename, typename, typename, typename...>
       friend class impl::shared_state_fn;
 
  public:
-  using callback_arg_type = shared_future;
+  using callback_arg_type = shared_cb_future;
 
-  shared_future() noexcept = default;
-  shared_future(const shared_future&);
-  shared_future(shared_future&&) noexcept;
-  shared_future(future<R&>&&) noexcept;
+  shared_cb_future() noexcept = default;
+  shared_cb_future(const shared_cb_future&);
+  shared_cb_future(shared_cb_future&&) noexcept;
+  shared_cb_future(cb_future<R&>&&) noexcept;
 
-  ~shared_future() noexcept = default;
+  ~shared_cb_future() noexcept = default;
 
-  shared_future& operator=(const shared_future&);
-  shared_future& operator=(shared_future&&) noexcept;
-  void swap(shared_future&) noexcept;
+  shared_cb_future& operator=(const shared_cb_future&);
+  shared_cb_future& operator=(shared_cb_future&&) noexcept;
+  void swap(shared_cb_future&) noexcept;
 
   R& get() const;
 
@@ -495,31 +496,31 @@ class shared_future<R&> {
       const;
 
  private:
-  shared_future(std::shared_ptr<impl::shared_state<R&>>) noexcept;
+  shared_cb_future(std::shared_ptr<impl::shared_state<R&>>) noexcept;
 
   std::shared_ptr<impl::shared_state<R&>> state_;
 };
 
 template<>
-class shared_future<void> {
-  friend future<void>;
+class shared_cb_future<void> {
+  friend cb_future<void>;
   template<typename> friend class impl::shared_state;
   template<typename, typename, typename, typename...>
       friend class impl::shared_state_fn;
 
  public:
-  using callback_arg_type = shared_future;
+  using callback_arg_type = shared_cb_future;
 
-  shared_future() noexcept = default;
-  shared_future(const shared_future&);
-  shared_future(shared_future&&) noexcept;
-  shared_future(future<void>&&) noexcept;
+  shared_cb_future() noexcept = default;
+  shared_cb_future(const shared_cb_future&);
+  shared_cb_future(shared_cb_future&&) noexcept;
+  shared_cb_future(cb_future<void>&&) noexcept;
 
-  ~shared_future() noexcept = default;
+  ~shared_cb_future() noexcept = default;
 
-  shared_future& operator=(const shared_future&);
-  shared_future& operator=(shared_future&&) noexcept;
-  void swap(shared_future&) noexcept;
+  shared_cb_future& operator=(const shared_cb_future&);
+  shared_cb_future& operator=(shared_cb_future&&) noexcept;
+  void swap(shared_cb_future&) noexcept;
 
   ILIAS_ASYNC_EXPORT void get() const;
 
@@ -534,7 +535,7 @@ class shared_future<void> {
       const;
 
  private:
-  shared_future(std::shared_ptr<impl::shared_state<void>>) noexcept;
+  shared_cb_future(std::shared_ptr<impl::shared_state<void>>) noexcept;
 
   std::shared_ptr<impl::shared_state<void>> state_;
 };
@@ -557,7 +558,7 @@ class packaged_task<R(Args...)> {
 
   bool valid() const noexcept;
 
-  future<R> get_future();
+  cb_future<R> get_future();
 
   void operator()(Args...);
 
@@ -599,10 +600,14 @@ auto pass_promise(F&&) -> pass_promise_t<ResultType, F>;
 
 
 template<typename R>
-void callback(future<R>, std::function<void(future<R>)>);
+void callback(cb_future<R>,
+              std::function<
+                  void(typename cb_future<R>::callback_arg_type)>);
 
 template<typename R, typename Fn>
-void callback(shared_future<R>, std::function<void(shared_future<R>)>,
+void callback(shared_cb_future<R>,
+              std::function<
+                  void(typename shared_cb_future<R>::callback_arg_type)>,
               promise_start = promise_start::start);
 
 
@@ -611,7 +616,7 @@ void callback(shared_future<R>, std::function<void(shared_future<R>)>,
 namespace std {
 
 template<typename R, typename Alloc>
-struct uses_allocator<::ilias::promise<R>, Alloc> : true_type {};
+struct uses_allocator<::ilias::cb_promise<R>, Alloc> : true_type {};
 template<typename R, typename Alloc>
 struct uses_allocator<::ilias::packaged_task<R>, Alloc> : true_type {};
 
