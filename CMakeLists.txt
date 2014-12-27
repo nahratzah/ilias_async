@@ -148,9 +148,8 @@ list (APPEND hdrs
 	include/ilias/msg_queue.h
 	include/ilias/mq_ptr.h
 	include/ilias/wq_callback.h
-	include/ilias/promise.h
-	include/ilias/wq_promise.h
-	include/ilias/combi_promise.h
+	include/ilias/future.h
+	include/ilias/future-inl.h
 	include/ilias/threadpool_intf.h
 	include/ilias/threadpool.h
 	include/ilias/workq.h
@@ -163,9 +162,7 @@ list (APPEND srcs
 	src/refcnt.cc
 	src/msg_queue.cc
 	src/mq_ptr.cc
-	src/promise.cc
-	src/wq_promise.cc
-	src/combi_promise.cc
+	src/future.cc
 	src/threadpool_intf.cc
 	src/threadpool.cc
 	src/workq.cc
