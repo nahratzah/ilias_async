@@ -64,7 +64,7 @@ If a promise is destroyed prior to assigning a result, the associated future wil
 To get the associated ```cb_future<T>``` for a ```cb_promise<T>```, use the ```cb_promise<T>::get_future()``` method.
 
 	template<typename T>
-	class promise {
+	class cb_promise {
 	 public:
 	  cb_future<T> get_future();
 	}
@@ -77,7 +77,7 @@ A future represents the (asynchronous) outcome of a promise.
 When a promise is assigned a result, all futures bound to it will be able to access the assigned value (or exception).
 
 The default constructor of future creates an uninitialized future (i.e. one not bound to (the shared state of) a promise).
-Initialized futures are acquired via the ```promise<T>::get_future()``` method on a promise.
+Initialized futures are acquired via the ```cb_promise<T>::get_future()``` method on a promise.
 
 	template<typename T> class cb_future;
 
@@ -87,17 +87,17 @@ Initialized futures are acquired via the ```promise<T>::get_future()``` method o
 
 
 A future can be used to read the value that the promise assigned.
-```future<T>::get()``` will return the value.
+```cb_future<T>::get()``` will return the value.
 If the promise assigned an exception, the exception will be thrown instead.
-The ```future<T>::get()``` method will block until the promise is ready.
+The ```cb_future<T>::get()``` method will block until the promise is ready.
 
 	cb_promise<int> p;
 	cb_future<int> f = p.get_future();
 	p.set(42);  // Assign result: 42.
 	f.get();  // Returns 42.
 
-	promise<int> p;
-	future<int> f = p.get_future();
+	cb_promise<int> p;
+	cb_future<int> f = p.get_future();
 	p.set_exception(std::make_exception_ptr(std::exception()));  // Assign result.
 	f.get();  // Throws std::exception.
 
@@ -112,8 +112,8 @@ The ```future<T>::get()``` method will block until the promise is ready.
 	f.get();  // Throws future_error, since the future has no association.
 
 
-Instead of calling ```future<T>::get()``` to wait for a promise to complete, the ```future<T>::wait()``` method can be used.
-The ```future<T>::wait()``` method will not throw an exception and will not return the assigned value.
+Instead of calling ```cb_future<T>::get()``` to wait for a promise to complete, the ```cb_future<T>::wait()``` method can be used.
+The ```cb_future<T>::wait()``` method will not throw an exception and will not return the assigned value.
 It will simply block execution until the promise completes, at which point it will return.
 
 	class cb_future<T> {
@@ -127,7 +127,7 @@ It will simply block execution until the promise completes, at which point it wi
 The ```cb_future<T>::get()``` method will throw ```future_error``` with ```future_errc::future_already_retrieved``` after the first ```cb_future<T>::get()``` returns.
 
 
-The ```future<T>::valid()``` method can be used to test if a future holds an associated state.
+The ```cb_future<T>::valid()``` method can be used to test if a future holds an associated state.
 Note that only the presence of a shared state is tested for, not if the future can actually complete (i.e. its associated promise still lives).
 
 	class cb_future<T> {
@@ -176,10 +176,10 @@ Callbacks are invoked as soon as the associated promise is assigned a result.
 
 	template<typename T>
 	void callback(cb_future<T>&& f,
-	              std::function<void(future<T>)> cb);
+	              std::function<void(cb_future<T>)> cb);
 	template<typename T>
 	void callback(shared_cb_future<T> f,
-	              std::function<void(shared_future<T>)> cb,
+	              std::function<void(shared_cb_future<T>)> cb,
 	              promise_start = promise_start::start);
 
 Calling callback methods on uninitialized promises or futures will result in an ```future_error``` exception being thrown, with ```future_errc::no_state```.
@@ -225,9 +225,9 @@ However, because the futures from the STL don't support callbacks, their resolut
 
 This even works for the function argument.
 
-	promise<std::function<int(int, int)>> p;
+	cb_promise<std::function<int(int, int)>> p;
 	p.set_value([](int x, int y) -> int { return x * y; });
-	future<int> the_answer = async_lazy(p.get_future(), 6, 7);
+	cb_future<int> the_answer = async_lazy(p.get_future(), 6, 7);
 	the_answer.get();  // Invoke all callbacks and return 42.
 
 
@@ -262,14 +262,14 @@ In order to facilitate this without sacrificing composition, the ```pass_promise
 	template<typename ResultType, typename Fn>
 	pass_promise_t<T, Fn> pass_promise(Fn&&);
 
-The ```T``` argument represents the type for the promise, i.e. ```promise<T>``` argument.
+The ```T``` argument represents the type for the promise, i.e. ```cb_promise<T>``` argument.
 This decorator informs the ```cb_promise<ResultType>``` to pass itself as the first argument of your functor.
 
-	void do_something_with_promise(promise<int>, long);
+	void do_something_with_promise(cb_promise<int>, long);
 
-	future<int> f = async_lazy(pass_promise<int>(&do_something_with_promise),
+	cb_future<int> f = async_lazy(pass_promise<int>(&do_something_with_promise),
 	                           async_lazy([]() -> long { return 42L; }));
-	f.start();  // Invokes:  do_something_with_promise(promise<int>(...), 42L);
+	f.start();  // Invokes:  do_something_with_promise(cb_promise<int>(...), 42L);
 
 Note that this callback (```do_something_with_promise()```) is now responsible for completing the promise.
 If ```do_something_with_promise()``` throws an exception, it *will* be assigned to the promise.
