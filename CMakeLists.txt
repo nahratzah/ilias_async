@@ -150,6 +150,8 @@ list (APPEND hdrs
 	include/ilias/wq_callback.h
 	include/ilias/future.h
 	include/ilias/future-inl.h
+	include/ilias/monitor.h
+	include/ilias/monitor-inl.h
 	include/ilias/threadpool_intf.h
 	include/ilias/threadpool.h
 	include/ilias/workq.h
@@ -163,6 +165,7 @@ list (APPEND srcs
 	src/msg_queue.cc
 	src/mq_ptr.cc
 	src/future.cc
+	src/monitor.cc
 	src/threadpool_intf.cc
 	src/threadpool.cc
 	src/workq.cc
