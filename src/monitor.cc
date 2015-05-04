@@ -1,5 +1,6 @@
 #include <ilias/monitor.h>
 #include <cassert>
+#include <iterator>
 
 namespace ilias {
 
@@ -35,8 +36,8 @@ auto monitor::queue(access a) -> cb_future<token> {
   /* Delayed access. */
   switch (a) {
   case access::read:
-    r_queue_.emplace_back();
-    return r_queue_.back().get_future();
+    r_queue_.emplace_front();
+    return r_queue_.front().get_future();
   case access::write:
     w_queue_.emplace_back();
     return w_queue_.back().get_future();
@@ -76,8 +77,8 @@ auto monitor::unlock_(access a) noexcept -> void {
     p.set_value(token(*this, access::write));
   } else if (!r_queue_.empty()) {
     /* Move all unfulfilled read-token promises out of the critical section. */
-    queue_type q = move(r_queue_);
-    active_readers_ += q.size();
+    r_queue_type q = move(r_queue_);
+    active_readers_ += std::distance(q.begin(), q.end());
     lck.unlock();
 
     /* Unblock all readers. */

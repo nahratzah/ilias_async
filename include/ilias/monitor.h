@@ -3,6 +3,7 @@
 
 #include <ilias/future.h>
 #include <list>
+#include <forward_list>
 #include <mutex>
 
 namespace ilias {
@@ -18,7 +19,8 @@ class monitor {
   class token;
 
  private:
-  using queue_type = std::list<cb_promise<token>>;
+  using w_queue_type = std::list<cb_promise<token>>;
+  using r_queue_type = std::forward_list<cb_promise<token>>;
 
  public:
   monitor() noexcept;
@@ -35,8 +37,8 @@ class monitor {
   std::mutex mtx_;
   uintptr_t active_readers_ = 0;
   uintptr_t active_writers_ = 0;
-  queue_type w_queue_;
-  queue_type r_queue_;
+  w_queue_type w_queue_;
+  r_queue_type r_queue_;
 };
 
 class monitor::token {
