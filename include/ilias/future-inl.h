@@ -28,14 +28,14 @@ namespace impl {
 
 template<typename T>
 constexpr auto resolve_future(T&& v) noexcept ->
-    typename std::enable_if_t<!is_future<T>::value,
+    typename std::enable_if_t<!is_future<std::remove_reference_t<T>>::value,
                               T&&> {
   return std::forward<T>(v);
 }
 
 template<typename T>
 auto resolve_future(T&& v) ->
-    typename std::enable_if_t<is_future<T>::value,
+    typename std::enable_if_t<is_future<std::remove_reference_t<T>>::value,
                               decltype(std::declval<T>().get())> {
   return v.get();
 }

@@ -124,12 +124,12 @@ template<typename T> using is_launch =
 
 template<typename T>
 constexpr auto resolve_future(T&&) noexcept ->
-    typename std::enable_if_t<!is_future<T>::value,
+    typename std::enable_if_t<!is_future<std::remove_reference_t<T>>::value,
                               T&&>;
 
 template<typename T>
 auto resolve_future(T&&) ->
-    typename std::enable_if_t<is_future<T>::value,
+    typename std::enable_if_t<is_future<std::remove_reference_t<T>>::value,
                               decltype(std::declval<T>().get())
                              >;
 
@@ -604,7 +604,7 @@ void callback(cb_future<R>,
               std::function<
                   void(typename cb_future<R>::callback_arg_type)>);
 
-template<typename R, typename Fn>
+template<typename R>
 void callback(shared_cb_future<R>,
               std::function<
                   void(typename shared_cb_future<R>::callback_arg_type)>,
