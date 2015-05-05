@@ -44,6 +44,21 @@ auto monitor::queue(access a) -> cb_future<token> {
   }
 }
 
+auto monitor::try_lock(access a) noexcept -> token {
+  std::lock_guard<std::mutex> lck{ mtx_ };
+
+  /* Read access, when immediately available. */
+  if (a == access::read && active_writers_ == 0) {
+    ++active_readers_;
+  } else if (a == access::write &&
+             active_writers_ == 0 && active_readers_ == 0) {
+    ++active_writers_;
+  } else {
+    return token();
+  }
+  return token(*this, a);
+}
+
 auto monitor::unlock_(access a) noexcept -> void {
   std::unique_lock<std::mutex> lck{ mtx_ };
 

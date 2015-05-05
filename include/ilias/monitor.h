@@ -29,6 +29,7 @@ class monitor {
   ~monitor() noexcept;
 
   cb_future<token> queue(access = access::write);
+  token try_lock(access = access::write) noexcept;
 
  private:
   void unlock_(access) noexcept;
