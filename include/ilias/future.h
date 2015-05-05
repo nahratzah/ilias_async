@@ -276,6 +276,18 @@ class cb_promise<void> {
 
 
 template<typename R>
+void callback(cb_future<R>,
+              std::function<
+                  void(typename cb_future<R>::callback_arg_type)>);
+
+template<typename R>
+void callback(shared_cb_future<R>,
+              std::function<
+                  void(typename shared_cb_future<R>::callback_arg_type)>,
+              promise_start = promise_start::start);
+
+
+template<typename R>
 class cb_future {
   friend cb_promise<R>;
   template<typename> friend class impl::shared_state;
@@ -290,6 +302,10 @@ class cb_future {
   template<typename F, typename... Args>
   friend auto async(workq_ptr, launch, F&&, Args&&...) ->
       cb_future<impl::future_result_type<F, Args...>>;
+
+  template<typename S> friend void callback(
+      cb_future<S>,
+      std::function<void(typename cb_future<S>::callback_arg_type)>);
 
  public:
   using callback_arg_type = cb_future;
@@ -340,6 +356,10 @@ class cb_future<R&> {
   friend auto async(workq_ptr, launch, F&&, Args&&...) ->
       cb_future<impl::future_result_type<F, Args...>>;
 
+  template<typename S> friend void callback(
+      cb_future<S>,
+      std::function<void(typename cb_future<S>::callback_arg_type)>);
+
  public:
   using callback_arg_type = cb_future;
 
@@ -389,6 +409,10 @@ class cb_future<void> {
   friend auto async(workq_ptr, launch, F&&, Args&&...) ->
       cb_future<impl::future_result_type<F, Args...>>;
 
+  template<typename S> friend void callback(
+      cb_future<S>,
+      std::function<void(typename cb_future<S>::callback_arg_type)>);
+
  public:
   using callback_arg_type = cb_future;
 
@@ -430,6 +454,10 @@ class shared_cb_future {
   template<typename, typename, typename, typename...>
       friend class impl::shared_state_fn;
 
+  template<typename S> friend void callback(
+      shared_cb_future<S>,
+      std::function<void(typename shared_cb_future<S>::callback_arg_type)>);
+
  public:
   using callback_arg_type = shared_cb_future;
 
@@ -469,6 +497,10 @@ class shared_cb_future<R&> {
   template<typename, typename, typename, typename...>
       friend class impl::shared_state_fn;
 
+  template<typename S> friend void callback(
+      shared_cb_future<S>,
+      std::function<void(typename shared_cb_future<S>::callback_arg_type)>);
+
  public:
   using callback_arg_type = shared_cb_future;
 
@@ -507,6 +539,10 @@ class shared_cb_future<void> {
   template<typename> friend class impl::shared_state;
   template<typename, typename, typename, typename...>
       friend class impl::shared_state_fn;
+
+  template<typename S> friend void callback(
+      shared_cb_future<S>,
+      std::function<void(typename shared_cb_future<S>::callback_arg_type)>);
 
  public:
   using callback_arg_type = shared_cb_future;
@@ -597,18 +633,6 @@ class pass_promise_t {
 
 template<typename ResultType, typename F>
 auto pass_promise(F&&) -> pass_promise_t<ResultType, F>;
-
-
-template<typename R>
-void callback(cb_future<R>,
-              std::function<
-                  void(typename cb_future<R>::callback_arg_type)>);
-
-template<typename R>
-void callback(shared_cb_future<R>,
-              std::function<
-                  void(typename shared_cb_future<R>::callback_arg_type)>,
-              promise_start = promise_start::start);
 
 
 } /* namespace ilias */
