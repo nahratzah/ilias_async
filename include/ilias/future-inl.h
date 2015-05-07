@@ -19,6 +19,7 @@
 #include <ilias/future.h>
 #include <ilias/detail/invoke.h>
 #include <ilias/workq.h>
+#include <memory>
 #include <vector>
 #include <thread>
 
@@ -55,6 +56,59 @@ auto start_future(T& v) ->
 
 template<typename> struct shared_state_fn_invoke_and_assign;
 template<> struct shared_state_fn_invoke_and_assign<void>;
+
+
+template<typename> class future_callback_functor;
+
+template<typename T>
+class future_callback_functor<cb_future<T>> {
+ public:
+  future_callback_functor() noexcept {}
+  virtual ~future_callback_functor() noexcept {}
+  virtual void operator()(cb_future<T>&& f) noexcept = 0;
+};
+
+template<typename T>
+class future_callback_functor<shared_cb_future<T>> {
+ public:
+  future_callback_functor() noexcept {}
+  virtual ~future_callback_functor() noexcept { if (chain) delete chain; }
+  virtual void operator()(shared_cb_future<T>&& f) noexcept = 0;
+
+  /*
+   * This should be a unique_ptr, but the type is incomplete at this
+   * point, preventing us from instantiating it.
+   */
+  future_callback_functor<shared_cb_future<T>>* chain;
+};
+
+template<typename Fut, typename Impl>
+class future_callback_functor_impl
+: public future_callback_functor<Fut>
+{
+ public:
+  future_callback_functor_impl() = delete;
+  future_callback_functor_impl(const future_callback_functor_impl&) = delete;
+  future_callback_functor_impl& operator=(
+      const future_callback_functor_impl&) = delete;
+  future_callback_functor_impl(Impl&& impl) : impl_(std::move(impl)) {}
+  ~future_callback_functor_impl() noexcept override;
+  void operator()(Fut&& f) noexcept override;
+
+ private:
+  Impl impl_;
+};
+
+
+template<typename Fut, typename Impl>
+future_callback_functor_impl<Fut, Impl>::~future_callback_functor_impl()
+    noexcept
+{}
+
+template<typename Fut, typename Impl>
+void future_callback_functor_impl<Fut, Impl>::operator()(Fut&& f) noexcept {
+  ilias::detail::invoke(std::move(impl_), std::move(f));
+}
 
 
 class ILIAS_ASYNC_EXPORT shared_state_base {
@@ -112,8 +166,8 @@ class shared_state
   friend shared_state_fn_invoke_and_assign<T>;
 
  public:
-  using fut_callback_fn = void(cb_future<T>);
-  using shared_fut_callback_fn = void(shared_cb_future<T>);
+  using fut_callback_fn = future_callback_functor<cb_future<T>>;
+  using shared_fut_callback_fn = future_callback_functor<shared_cb_future<T>>;
 
  protected:
   shared_state() = delete;
@@ -130,8 +184,8 @@ class shared_state
 
   T* get();
 
-  virtual void install_callback(std::function<fut_callback_fn>) = 0;
-  virtual void install_callback(std::function<shared_fut_callback_fn>) = 0;
+  virtual void install_callback(std::unique_ptr<fut_callback_fn>) = 0;
+  virtual void install_callback(std::unique_ptr<shared_fut_callback_fn>) = 0;
 
  protected:
   cb_promise<T> as_promise() noexcept;
@@ -150,8 +204,8 @@ class shared_state<T&>
   friend shared_state_fn_invoke_and_assign<T&>;
 
  public:
-  using fut_callback_fn = void(cb_future<T&>);
-  using shared_fut_callback_fn = void(shared_cb_future<T&>);
+  using fut_callback_fn = future_callback_functor<cb_future<T&>>;
+  using shared_fut_callback_fn = future_callback_functor<shared_cb_future<T&>>;
 
  protected:
   shared_state() = delete;
@@ -168,8 +222,8 @@ class shared_state<T&>
 
   T* get();
 
-  virtual void install_callback(std::function<fut_callback_fn>) = 0;
-  virtual void install_callback(std::function<shared_fut_callback_fn>) = 0;
+  virtual void install_callback(std::unique_ptr<fut_callback_fn>) = 0;
+  virtual void install_callback(std::unique_ptr<shared_fut_callback_fn>) = 0;
 
  protected:
   cb_promise<T&> as_promise() noexcept;
@@ -188,8 +242,9 @@ class ILIAS_ASYNC_EXPORT shared_state<void>
   friend shared_state_fn_invoke_and_assign<void>;
 
  public:
-  using fut_callback_fn = void(cb_future<void>);
-  using shared_fut_callback_fn = void(shared_cb_future<void>);
+  using fut_callback_fn = future_callback_functor<cb_future<void>>;
+  using shared_fut_callback_fn =
+      future_callback_functor<shared_cb_future<void>>;
 
  protected:
   shared_state() = delete;
@@ -206,8 +261,8 @@ class ILIAS_ASYNC_EXPORT shared_state<void>
 
   void get();
 
-  virtual void install_callback(std::function<fut_callback_fn>) = 0;
-  virtual void install_callback(std::function<shared_fut_callback_fn>) = 0;
+  virtual void install_callback(std::unique_ptr<fut_callback_fn>) = 0;
+  virtual void install_callback(std::unique_ptr<shared_fut_callback_fn>) = 0;
 
  protected:
   cb_promise<void> as_promise() noexcept;
@@ -238,15 +293,16 @@ class shared_state_nofn
   void register_dependant(void (*)(std::weak_ptr<void>),
                           std::weak_ptr<void>) override final;
 
-  void install_callback(std::function<fut_callback_fn>) override final;
-  void install_callback(std::function<shared_fut_callback_fn>) override final;
+  void install_callback(std::unique_ptr<fut_callback_fn>) override final;
+  void install_callback(std::unique_ptr<shared_fut_callback_fn>)
+      override final;
 
  private:
   void invoke_ready_cb() noexcept override final;
 
   std::mutex ready_cb_mtx_;
-  std::function<fut_callback_fn> ready_cb_;
-  std::vector<std::function<shared_fut_callback_fn>, Alloc> shared_ready_cb_;
+  std::unique_ptr<fut_callback_fn> ready_cb_;
+  std::unique_ptr<shared_fut_callback_fn> shared_ready_cb_;
   std::vector<std::pair<void (*)(std::weak_ptr<void>), std::weak_ptr<void>>,
               Alloc> dependants_;
 };
@@ -406,8 +462,9 @@ class shared_state_task_impl<T(Args...), Alloc, Fn> final
 
   void register_dependant(void (*)(std::weak_ptr<void>),
                           std::weak_ptr<void>) override final;
-  void install_callback(std::function<fut_callback_fn>) override final;
-  void install_callback(std::function<shared_fut_callback_fn>) override final;
+  void install_callback(std::unique_ptr<fut_callback_fn>) override final;
+  void install_callback(std::unique_ptr<shared_fut_callback_fn>)
+      override final;
 
  private:
   void invoke_ready_cb() noexcept override final;
@@ -415,8 +472,8 @@ class shared_state_task_impl<T(Args...), Alloc, Fn> final
   std::decay_t<Fn> fn_;
 
   std::mutex ready_cb_mtx_;
-  std::function<fut_callback_fn> ready_cb_;
-  std::vector<std::function<shared_fut_callback_fn>, Alloc> shared_ready_cb_;
+  std::unique_ptr<fut_callback_fn> ready_cb_;
+  std::unique_ptr<shared_fut_callback_fn> shared_ready_cb_;
   std::vector<std::pair<void (*)(std::weak_ptr<void>), std::weak_ptr<void>>,
               Alloc> dependants_;
 };
@@ -650,7 +707,6 @@ template<typename T, typename Alloc>
 shared_state_nofn<T, Alloc>::shared_state_nofn(const Alloc& alloc,
                                                bool deferred)
 : shared_state<T>(deferred),
-  shared_ready_cb_(alloc),
   dependants_(alloc)
 {}
 
@@ -673,7 +729,7 @@ auto shared_state_nofn<T, Alloc>::register_dependant(
 
 template<typename T, typename Alloc>
 auto shared_state_nofn<T, Alloc>::install_callback(
-    std::function<fut_callback_fn> cb) -> void {
+    std::unique_ptr<fut_callback_fn> cb) -> void {
   std::unique_lock<std::mutex> lck{ ready_cb_mtx_ };
 
   switch (this->get_state()) {
@@ -684,32 +740,33 @@ auto shared_state_nofn<T, Alloc>::install_callback(
   case state_t::ready_value:
   case state_t::ready_exc:
     lck.unlock();
-    cb(this->as_future());
+    (*cb)(this->as_future());
     break;
   }
 }
 
 template<typename T, typename Alloc>
 auto shared_state_nofn<T, Alloc>::install_callback(
-    std::function<shared_fut_callback_fn> cb) -> void {
+    std::unique_ptr<shared_fut_callback_fn> cb) -> void {
   std::unique_lock<std::mutex> lck{ ready_cb_mtx_ };
 
   switch (this->get_state()) {
   default:
-    shared_ready_cb_.push_back(std::move(cb));
+    cb->chain = shared_ready_cb_.release();
+    shared_ready_cb_ = move(cb);
     break;
   case state_t::ready_value:
   case state_t::ready_exc:
     lck.unlock();
-    cb(this->as_shared_future());
+    (*cb)(this->as_shared_future());
     break;
   }
 }
 
 template<typename T, typename Alloc>
 auto shared_state_nofn<T, Alloc>::invoke_ready_cb() noexcept -> void {
-  std::function<fut_callback_fn> ready_cb;
-  std::vector<std::function<shared_fut_callback_fn>, Alloc> shared_ready_cb;
+  std::unique_ptr<fut_callback_fn> ready_cb;
+  std::unique_ptr<shared_fut_callback_fn> shared_ready_cb;
   std::vector<std::pair<void (*)(std::weak_ptr<void>), std::weak_ptr<void>>,
               Alloc> dependants;
 
@@ -732,10 +789,15 @@ auto shared_state_nofn<T, Alloc>::invoke_ready_cb() noexcept -> void {
 
   /* Callback for (unshared) future. */
   if (ready_cb)
-    ready_cb(this->as_future());
+    (*ready_cb)(this->as_future());
   /* Callback for shared future. */
-  for (auto& fn : shared_ready_cb)
-    fn(this->as_shared_future());
+  while (shared_ready_cb) {
+    std::unique_ptr<shared_fut_callback_fn> fn;
+    swap(fn, shared_ready_cb);
+    shared_ready_cb = std::unique_ptr<shared_fut_callback_fn>(
+	std::exchange(fn->chain, nullptr));
+    (*fn)(this->as_shared_future());
+  }
   /* Notification of dependants. */
   for (auto& dep : dependants)
     (*std::get<0>(std::move(dep)))(std::get<1>(std::move(dep)));
@@ -968,7 +1030,7 @@ auto shared_state_task_impl<T(Args...), Alloc, Fn>::register_dependant(
 
 template<typename T, typename... Args, typename Alloc, typename Fn>
 auto shared_state_task_impl<T(Args...), Alloc, Fn>::install_callback(
-    std::function<fut_callback_fn> cb) -> void {
+    std::unique_ptr<fut_callback_fn> cb) -> void {
   std::unique_lock<std::mutex> lck{ ready_cb_mtx_ };
 
   switch (this->get_state()) {
@@ -979,24 +1041,25 @@ auto shared_state_task_impl<T(Args...), Alloc, Fn>::install_callback(
   case state_t::ready_value:
   case state_t::ready_exc:
     lck.unlock();
-    cb(this->as_future());
+    (*cb)(this->as_future());
     break;
   }
 }
 
 template<typename T, typename... Args, typename Alloc, typename Fn>
 auto shared_state_task_impl<T(Args...), Alloc, Fn>::install_callback(
-    std::function<shared_fut_callback_fn> cb) -> void {
+    std::unique_ptr<shared_fut_callback_fn> cb) -> void {
   std::unique_lock<std::mutex> lck{ ready_cb_mtx_ };
 
   switch (this->get_state()) {
   default:
-    shared_ready_cb_.push_back(std::move(cb));
+    cb->chain = move(shared_ready_cb_);
+    shared_ready_cb_ = move(cb);
     break;
   case state_t::ready_value:
   case state_t::ready_exc:
     lck.unlock();
-    cb(this->as_shared_future());
+    (*cb)(this->as_shared_future());
     break;
   }
 }
@@ -1004,8 +1067,8 @@ auto shared_state_task_impl<T(Args...), Alloc, Fn>::install_callback(
 template<typename T, typename... Args, typename Alloc, typename Fn>
 auto shared_state_task_impl<T(Args...), Alloc, Fn>::invoke_ready_cb()
     noexcept -> void {
-  std::function<fut_callback_fn> ready_cb;
-  std::vector<std::function<shared_fut_callback_fn>, Alloc> shared_ready_cb;
+  std::unique_ptr<fut_callback_fn> ready_cb;
+  std::unique_ptr<shared_fut_callback_fn> shared_ready_cb;
   std::vector<std::pair<void (*)(std::weak_ptr<void>), std::weak_ptr<void>>,
               Alloc> dependants;
 
@@ -1028,10 +1091,15 @@ auto shared_state_task_impl<T(Args...), Alloc, Fn>::invoke_ready_cb()
 
   /* Callback for (unshared) future. */
   if (ready_cb)
-    ready_cb(this->as_future());
+    (*ready_cb)(this->as_future());
   /* Callback for shared future. */
-  for (auto& fn : shared_ready_cb)
-    fn(this->as_shared_future());
+  while (shared_ready_cb) {
+    std::unique_ptr<shared_fut_callback_fn> fn;
+    swap(fn, shared_ready_cb);
+    shared_ready_cb = std::unique_ptr<shared_fut_callback_fn>(
+	std::exchange(fn->chain, nullptr));
+    (*fn)(this->as_shared_future());
+  }
   /* Notification of dependants. */
   for (auto& dep : dependants)
     (*std::get<0>(std::move(dep)))(std::get<1>(std::move(dep)));
@@ -1979,23 +2047,60 @@ auto pass_promise(F&& f) -> pass_promise_t<ResultType, F> {
 }
 
 
-template<typename R>
-void callback(cb_future<R> f,
-              std::function<
-                  void(typename cb_future<R>::callback_arg_type)> fn) {
+template<typename R, typename Fn>
+void callback(cb_future<R>&& f, Fn&& fn) {
+  using std::remove_cv_t;
+  using std::remove_reference_t;
+  using fn_impl =
+      impl::future_callback_functor_impl<cb_future<R>,
+                                         remove_cv_t<remove_reference_t<Fn>>>;
+  using fn_base = impl::future_callback_functor<cb_future<R>>;
+  using std::make_unique;
+  using std::move;
+
   if (!f.state_) impl::__throw(future_errc::no_state);
-  f.state_->install_callback(std::move(fn));
-  f.start();
+  switch (f.state_->get_state()) {
+  case impl::shared_state_base::state_t::ready_exc:
+  case impl::shared_state_base::state_t::ready_value:
+    fn_impl(move(fn))(move(f));
+    break;
+  default:
+    {
+      auto fn_ptr = std::unique_ptr<fn_base>(new fn_impl(move(fn)));
+      f.state_->install_callback(move(fn_ptr));
+    }
+    f.start();
+    f.state_ = nullptr;
+    break;
+  }
 }
 
-template<typename R>
-void callback(shared_cb_future<R> f,
-              std::function<
-                  void(typename shared_cb_future<R>::callback_arg_type)> fn,
-              promise_start ps) {
+template<typename R, typename Fn>
+void callback(shared_cb_future<R> f, Fn&& fn, promise_start ps) {
+  using std::remove_cv_t;
+  using std::remove_reference_t;
+  using fn_impl =
+      impl::future_callback_functor_impl<shared_cb_future<R>,
+                                         remove_cv_t<remove_reference_t<Fn>>>;
+  using fn_base = impl::future_callback_functor<shared_cb_future<R>>;
+  using std::make_unique;
+  using std::move;
+
   if (!f.state_) impl::__throw(future_errc::no_state);
-  f.state_->install_callback(std::move(fn));
-  if (ps == promise_start::start) f.start();
+  switch (f.state_->get_state()) {
+  case impl::shared_state_base::state_t::ready_exc:
+  case impl::shared_state_base::state_t::ready_value:
+    fn_impl(move(fn))(move(f));
+    break;
+  default:
+    {
+      auto fn_ptr = std::unique_ptr<fn_base>(new fn_impl(move(fn)));
+      f.state_->install_callback(move(fn_ptr));
+    }
+    if (ps == promise_start::start) f.start();
+    f.state_ = nullptr;
+    break;
+  }
 }
 
 
