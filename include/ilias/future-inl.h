@@ -70,9 +70,20 @@ class future_callback_functor<cb_future<T>> {
 
 template<typename T>
 class future_callback_functor<shared_cb_future<T>> {
+ private:
+  void clear_chain_() noexcept {
+    future_callback_functor<shared_cb_future<T>>* p =
+        std::exchange(chain, nullptr);
+    while (p) {
+      auto pp = p;
+      p = std::exchange(pp->chain, nullptr);
+      delete pp;
+    }
+  }
+
  public:
   future_callback_functor() noexcept {}
-  virtual ~future_callback_functor() noexcept { if (chain) delete chain; }
+  virtual ~future_callback_functor() noexcept { clear_chain_(); }
   virtual void operator()(shared_cb_future<T>&& f) noexcept = 0;
 
   /*
