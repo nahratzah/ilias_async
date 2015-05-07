@@ -802,13 +802,8 @@ auto shared_state_nofn<T, Alloc>::invoke_ready_cb() noexcept -> void {
   if (ready_cb)
     (*ready_cb)(this->as_future());
   /* Callback for shared future. */
-  while (shared_ready_cb) {
-    std::unique_ptr<shared_fut_callback_fn> fn;
-    swap(fn, shared_ready_cb);
-    shared_ready_cb = std::unique_ptr<shared_fut_callback_fn>(
-	std::exchange(fn->chain, nullptr));
+  for (auto fn = shared_ready_cb.get(); fn != nullptr; fn = fn->chain)
     (*fn)(this->as_shared_future());
-  }
   /* Notification of dependants. */
   for (auto& dep : dependants)
     (*std::get<0>(std::move(dep)))(std::get<1>(std::move(dep)));
