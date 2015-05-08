@@ -190,11 +190,13 @@ auto async(workq_service_ptr, launch, F&&, Args&&...) ->
 
 
 template<typename> class packaged_task;  // Not implemented.
+template<typename> class cb_promise_exceptor;
 
 
 template<typename R>
 class cb_promise {
   template<typename> friend class impl::shared_state;
+  template<typename> friend class cb_promise_exceptor;
 
  public:
   cb_promise();
@@ -223,6 +225,7 @@ class cb_promise {
 template<typename R>
 class cb_promise<R&> {
   template<typename> friend class impl::shared_state;
+  template<typename> friend class cb_promise_exceptor;
 
  public:
   cb_promise();
@@ -250,6 +253,7 @@ class cb_promise<R&> {
 template<>
 class cb_promise<void> {
   template<typename> friend class impl::shared_state;
+  template<typename> friend class cb_promise_exceptor;
 
  public:
   ILIAS_ASYNC_EXPORT cb_promise();
@@ -272,6 +276,38 @@ class cb_promise<void> {
   cb_promise(std::shared_ptr<impl::shared_state<void>>) noexcept;
 
   std::shared_ptr<impl::shared_state<void>> state_;
+};
+
+/*
+ * Special exception handler.
+ *
+ * Used when moving a cb_promise away, but if the act of moving it away
+ * triggers an exception, this functor can assign the exception regardless
+ * of if the original promise is still valid.
+ *
+ * Example:
+ *   promise<int> p;
+ *   cb_promise_exceptor<int> pe = p;
+ *   try {
+ *     do_something_with_promise(move(p));
+ *   } catch (...) {
+ *     if (!pe.set_current_exception()) throw;
+ *   }
+ */
+template<typename T>
+class cb_promise_exceptor {
+ public:
+  cb_promise_exceptor() noexcept {}
+  cb_promise_exceptor(const cb_promise_exceptor&) = delete;
+  cb_promise_exceptor& operator=(const cb_promise_exceptor&) = delete;
+  cb_promise_exceptor(cb_promise_exceptor&&) noexcept;
+  cb_promise_exceptor& operator=(cb_promise_exceptor&&) noexcept;
+  cb_promise_exceptor(cb_promise<T>&) noexcept;
+
+  bool set_current_exception() noexcept;
+
+ private:
+  std::shared_ptr<impl::shared_state<T>> state_;
 };
 
 

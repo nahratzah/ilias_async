@@ -1242,6 +1242,47 @@ auto async(workq_service_ptr wqs, launch l, F&& f, Args&&... args) ->
 }
 
 
+template<typename T>
+cb_promise_exceptor<T>::cb_promise_exceptor(cb_promise_exceptor&& e) noexcept
+: state_(std::move(e.state_))
+{}
+
+template<typename T>
+auto cb_promise_exceptor<T>::operator=(cb_promise_exceptor&& e) noexcept ->
+    cb_promise_exceptor& {
+  state_ = std::move(e.state_);
+  return *this;
+}
+
+template<typename T>
+cb_promise_exceptor<T>::cb_promise_exceptor(cb_promise<T>& p) noexcept
+: state_(p.state_)
+{}
+
+template<typename T>
+auto cb_promise_exceptor<T>::set_current_exception() noexcept -> bool {
+  using state_t = typename impl::shared_state<T>::state_t;
+
+  if (!state_) return false;
+
+  switch (state_->get_state()) {
+  case state_t::uninitialized:
+    break;
+  case state_t::uninitialized_deferred:
+  case state_t::ready_value:
+  case state_t::ready_exc:
+    return false;
+  }
+
+  std::exception_ptr p = std::current_exception();
+  if (!p) return false;
+
+  state_->set_exc(move(p));
+  state_.reset();
+  return true;
+}
+
+
 template<typename R>
 cb_promise<R>::cb_promise()
 : cb_promise(std::allocator_arg, std::allocator<void>())
