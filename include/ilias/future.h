@@ -194,6 +194,12 @@ auto convert(cb_promise<T>, cb_future<U>, Fn&&) -> void;
 template<typename T, typename U, typename Fn>
 auto convert(cb_promise<T>, shared_cb_future<U>, Fn&&) -> void;
 
+template<typename T, typename U>
+auto convert(cb_promise<T>, cb_future<U>) -> void;
+
+template<typename T, typename U>
+auto convert(cb_promise<T>, shared_cb_future<U>) -> void;
+
 
 template<typename> class packaged_task;  // Not implemented.
 template<typename> class cb_promise_exceptor;

@@ -1655,6 +1655,16 @@ auto convert(cb_promise<T> prom, shared_cb_future<U> src, Fn&& fn) -> void {
   impl->init_cb(prom.state_, true);
 }
 
+template<typename T, typename U>
+auto convert(cb_promise<T> prom, cb_future<U> src) -> void {
+  convert(std::move(prom), std::move(src), [](U v) -> T { return v; });
+}
+
+template<typename T, typename U>
+auto convert(cb_promise<T> prom, shared_cb_future<U> src) -> void {
+  convert(std::move(prom), std::move(src), [](U v) -> T { return v; });
+}
+
 
 template<typename T>
 cb_promise_exceptor<T>::cb_promise_exceptor(cb_promise_exceptor&& e) noexcept
