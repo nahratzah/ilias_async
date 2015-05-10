@@ -188,6 +188,12 @@ template<typename F, typename... Args>
 auto async(workq_service_ptr, launch, F&&, Args&&...) ->
     cb_future<impl::future_result_type<F, Args...>>;
 
+template<typename T, typename U, typename Fn>
+auto convert(cb_promise<T>, cb_future<U>, Fn&&) -> void;
+
+template<typename T, typename U, typename Fn>
+auto convert(cb_promise<T>, shared_cb_future<U>, Fn&&) -> void;
+
 
 template<typename> class packaged_task;  // Not implemented.
 template<typename> class cb_promise_exceptor;
@@ -197,6 +203,12 @@ template<typename R>
 class cb_promise {
   template<typename> friend class impl::shared_state;
   template<typename> friend class cb_promise_exceptor;
+
+  template<typename T, typename U, typename Fn>
+  friend auto convert(cb_promise<T>, cb_future<U>, Fn&&) -> void;
+
+  template<typename T, typename U, typename Fn>
+  friend auto convert(cb_promise<T>, shared_cb_future<U>, Fn&&) -> void;
 
  public:
   cb_promise();
@@ -227,6 +239,12 @@ class cb_promise<R&> {
   template<typename> friend class impl::shared_state;
   template<typename> friend class cb_promise_exceptor;
 
+  template<typename T, typename U, typename Fn>
+  friend auto convert(cb_promise<T>, cb_future<U>, Fn&&) -> void;
+
+  template<typename T, typename U, typename Fn>
+  friend auto convert(cb_promise<T>, shared_cb_future<U>, Fn&&) -> void;
+
  public:
   cb_promise();
   cb_promise(const cb_promise&) = delete;
@@ -254,6 +272,12 @@ template<>
 class cb_promise<void> {
   template<typename> friend class impl::shared_state;
   template<typename> friend class cb_promise_exceptor;
+
+  template<typename T, typename U, typename Fn>
+  friend auto convert(cb_promise<T>, cb_future<U>, Fn&&) -> void;
+
+  template<typename T, typename U, typename Fn>
+  friend auto convert(cb_promise<T>, shared_cb_future<U>, Fn&&) -> void;
 
  public:
   ILIAS_ASYNC_EXPORT cb_promise();
@@ -338,6 +362,9 @@ class cb_future {
   template<typename S, typename Fn> friend void callback(
       cb_future<S>&&, Fn&&);
 
+  template<typename T, typename U, typename Fn>
+  friend auto convert(cb_promise<T>, cb_future<U>, Fn&&) -> void;
+
  public:
   using callback_arg_type = cb_future;
 
@@ -389,6 +416,9 @@ class cb_future<R&> {
 
   template<typename S, typename Fn> friend void callback(
       cb_future<S>&&, Fn&&);
+
+  template<typename T, typename U, typename Fn>
+  friend auto convert(cb_promise<T>, cb_future<U>, Fn&&) -> void;
 
  public:
   using callback_arg_type = cb_future;
@@ -442,6 +472,9 @@ class cb_future<void> {
   template<typename S, typename Fn> friend void callback(
       cb_future<S>&&, Fn&&);
 
+  template<typename T, typename U, typename Fn>
+  friend auto convert(cb_promise<T>, cb_future<U>, Fn&&) -> void;
+
  public:
   using callback_arg_type = cb_future;
 
@@ -486,6 +519,9 @@ class shared_cb_future {
   template<typename S, typename Fn> friend void callback(
       shared_cb_future<S>, Fn&&, promise_start);
 
+  template<typename T, typename U, typename Fn>
+  friend auto convert(cb_promise<T>, shared_cb_future<U>, Fn&&) -> void;
+
  public:
   using callback_arg_type = shared_cb_future;
 
@@ -528,6 +564,9 @@ class shared_cb_future<R&> {
   template<typename S, typename Fn> friend void callback(
       shared_cb_future<S>, Fn&&, promise_start);
 
+  template<typename T, typename U, typename Fn>
+  friend auto convert(cb_promise<T>, shared_cb_future<U>, Fn&&) -> void;
+
  public:
   using callback_arg_type = shared_cb_future;
 
@@ -569,6 +608,9 @@ class shared_cb_future<void> {
 
   template<typename S, typename Fn> friend void callback(
       shared_cb_future<S>, Fn&&, promise_start);
+
+  template<typename T, typename U, typename Fn>
+  friend auto convert(cb_promise<T>, shared_cb_future<U>, Fn&&) -> void;
 
  public:
   using callback_arg_type = shared_cb_future;

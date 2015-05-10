@@ -27,6 +27,10 @@ namespace ilias {
 namespace impl {
 
 
+template<typename> class shared_state_converter;
+template<typename, typename, typename> class shared_state_converter_impl;
+
+
 template<typename T>
 constexpr auto resolve_future(T&& v) noexcept ->
     typename std::enable_if_t<!is_future<std::remove_reference_t<T>>::value,
@@ -122,14 +126,25 @@ void future_callback_functor_impl<Fut, Impl>::operator()(Fut&& f) noexcept {
 }
 
 
+ILIAS_ASYNC_EXPORT void noop_dependant(std::weak_ptr<void>) noexcept;
+
+
 class ILIAS_ASYNC_EXPORT shared_state_base {
+  /*
+   * Allow shared_state_converter to invoke clear_convert.
+   */
+  template<typename> friend class shared_state_converter;
+
  public:
   enum class state_t {
     uninitialized,
     uninitialized_deferred,
+    uninitialized_convert,
     ready_value,
     ready_exc
   };
+
+  class register_dependant_tx;
 
  protected:
   shared_state_base() = delete;
@@ -147,19 +162,35 @@ class ILIAS_ASYNC_EXPORT shared_state_base {
   template<typename Clock, typename Duration>
   state_t wait_until(const std::chrono::time_point<Clock, Duration>&);
 
-  virtual void start_deferred(bool = false) noexcept;
+  void start_deferred(bool = false) noexcept;
+  std::tuple<bool, bool> get_start_deferred() const noexcept;
 
+ protected:
+  virtual void do_start_deferred(bool = false) noexcept;
+
+ public:
   void lock() noexcept;
   void unlock() noexcept;
   void ensure_uninitialized() const;
 
+  register_dependant_tx register_dependant_begin();
+
+ private:
+  virtual size_t register_dependant_begin_() = 0;
+  virtual void register_dependant_commit_(size_t,
+                                          void (*)(std::weak_ptr<void>),
+                                          std::weak_ptr<void>) noexcept = 0;
+
+ public:
   virtual void register_dependant(void (*)(std::weak_ptr<void>),
-                                  std::weak_ptr<void>) = 0;
+                                  std::weak_ptr<void>);
 
  protected:
   void set_ready_val(std::unique_lock<shared_state_base>) noexcept;
   void set_ready_exc(std::unique_lock<shared_state_base>) noexcept;
   bool clear_deferred() noexcept;
+  bool clear_convert() noexcept;
+  void mark_convert_present() noexcept;
 
  private:
   virtual void invoke_ready_cb() noexcept = 0;
@@ -167,6 +198,8 @@ class ILIAS_ASYNC_EXPORT shared_state_base {
   std::atomic<state_t> state_;
   std::atomic<bool> lck_;
   std::atomic<bool> shared_;
+  std::atomic<bool> start_deferred_called_;
+  std::atomic<bool> start_deferred_value_;
 };
 
 template<typename T>
@@ -175,6 +208,9 @@ class shared_state
   public std::enable_shared_from_this<shared_state<T>>
 {
   friend shared_state_fn_invoke_and_assign<T>;
+  friend shared_state_converter<T>;
+  template<typename, typename, typename>
+      friend class shared_state_converter_impl;
 
  public:
   using fut_callback_fn = future_callback_functor<cb_future<T>>;
@@ -202,9 +238,11 @@ class shared_state
   cb_promise<T> as_promise() noexcept;
   cb_future<T> as_future() noexcept;
   shared_cb_future<T> as_shared_future() noexcept;
+  void do_start_deferred(bool) noexcept override;
 
  private:
   std::aligned_union_t<0, T, std::exception_ptr> storage_;
+  std::shared_ptr<shared_state_converter<T>> convert_;  // Converter.
 };
 
 template<typename T>
@@ -213,6 +251,9 @@ class shared_state<T&>
   public std::enable_shared_from_this<shared_state<T&>>
 {
   friend shared_state_fn_invoke_and_assign<T&>;
+  friend shared_state_converter<T&>;
+  template<typename, typename, typename>
+      friend class shared_state_converter_impl;
 
  public:
   using fut_callback_fn = future_callback_functor<cb_future<T&>>;
@@ -240,9 +281,11 @@ class shared_state<T&>
   cb_promise<T&> as_promise() noexcept;
   cb_future<T&> as_future() noexcept;
   shared_cb_future<T&> as_shared_future() noexcept;
+  void do_start_deferred(bool) noexcept override;
 
  private:
   std::aligned_union_t<0, T*, std::exception_ptr> storage_;
+  std::shared_ptr<shared_state_converter<T&>> convert_;  // Converter.
 };
 
 template<>
@@ -250,7 +293,10 @@ class ILIAS_ASYNC_EXPORT shared_state<void>
 : public shared_state_base,
   public std::enable_shared_from_this<shared_state<void>>
 {
+  friend shared_state_converter<void>;
   friend shared_state_fn_invoke_and_assign<void>;
+  template<typename, typename, typename>
+      friend class shared_state_converter_impl;
 
  public:
   using fut_callback_fn = future_callback_functor<cb_future<void>>;
@@ -279,10 +325,92 @@ class ILIAS_ASYNC_EXPORT shared_state<void>
   cb_promise<void> as_promise() noexcept;
   cb_future<void> as_future() noexcept;
   shared_cb_future<void> as_shared_future() noexcept;
+  void do_start_deferred(bool) noexcept override;
 
  private:
   std::aligned_union_t<0, std::exception_ptr> storage_;
+  std::shared_ptr<shared_state_converter<void>> convert_;  // Converter.
 };
+
+
+template<typename T>
+class shared_state_converter {
+ public:
+  shared_state_converter() = delete;
+  shared_state_converter(const shared_state_converter&) = delete;
+  shared_state_converter(shared_state_converter&&) = delete;
+  shared_state_converter& operator=(const shared_state_converter&) = delete;
+  shared_state_converter& operator=(shared_state_converter&&) = delete;
+
+  shared_state_converter(const std::shared_ptr<shared_state<T>>&) noexcept;
+  virtual ~shared_state_converter() noexcept;
+
+  virtual void start_deferred(bool) noexcept = 0;
+
+ protected:
+  void install_value(std::add_rvalue_reference_t<T>);
+  void install_exc(std::exception_ptr);
+
+ private:
+  std::weak_ptr<shared_state<T>> prom_;
+};
+
+template<>
+class ILIAS_ASYNC_EXPORT shared_state_converter<void> {
+ public:
+  shared_state_converter() = delete;
+  shared_state_converter(const shared_state_converter&) = delete;
+  shared_state_converter(shared_state_converter&&) = delete;
+  shared_state_converter& operator=(const shared_state_converter&) = delete;
+  shared_state_converter& operator=(shared_state_converter&&) = delete;
+
+  shared_state_converter(const std::shared_ptr<shared_state<void>>&) noexcept;
+  virtual ~shared_state_converter() noexcept;
+
+  virtual void start_deferred(bool) noexcept = 0;
+
+ protected:
+  void install_value();
+  void install_exc(std::exception_ptr);
+
+ private:
+  std::weak_ptr<shared_state<void>> prom_;
+};
+
+
+template<typename T, typename U, typename Fn>
+class shared_state_converter_impl final
+: public shared_state_converter<T>,
+  public std::enable_shared_from_this<shared_state_converter_impl<T, U, Fn>>
+{
+ public:
+  shared_state_converter_impl() = delete;
+  shared_state_converter_impl(const shared_state_converter_impl&) = delete;
+  shared_state_converter_impl(shared_state_converter_impl&&) = delete;
+  shared_state_converter_impl& operator=(const shared_state_converter_impl&) =
+      delete;
+  shared_state_converter_impl& operator=(shared_state_converter_impl&&) =
+      delete;
+
+  shared_state_converter_impl(const std::shared_ptr<shared_state<T>>&,
+                              std::shared_ptr<shared_state<U>>,
+                              Fn);
+  ~shared_state_converter_impl() noexcept override;
+
+ private:
+  void start_deferred(bool) noexcept override;
+
+ public:
+  void init_cb(const std::shared_ptr<shared_state<T>>&, bool);
+
+ private:
+  static void dependant_cb_(std::weak_ptr<void>) noexcept;
+  static void dependant_cb_shared_(std::weak_ptr<void>) noexcept;
+
+  Fn fn_;
+  std::shared_ptr<shared_state<U>> src_;
+};
+
 
 template<typename T, typename Alloc>
 class shared_state_nofn
@@ -301,6 +429,15 @@ class shared_state_nofn
   shared_state_nofn& operator=(shared_state_nofn&&) = delete;
 
   explicit shared_state_nofn(const Alloc&, bool = false);
+
+ private:
+  size_t register_dependant_begin_() override final;
+  virtual void register_dependant_commit_(size_t,
+                                          void (*)(std::weak_ptr<void>),
+                                          std::weak_ptr<void>)
+      noexcept override final;
+
+ public:
   void register_dependant(void (*)(std::weak_ptr<void>),
                           std::weak_ptr<void>) override final;
 
@@ -318,6 +455,33 @@ class shared_state_nofn
               Alloc> dependants_;
 };
 
+
+class shared_state_base::register_dependant_tx {
+  friend shared_state_base;
+
+ public:
+  register_dependant_tx() noexcept = default;
+  register_dependant_tx(const register_dependant_tx&) =
+      delete;
+  register_dependant_tx& operator=(
+      const register_dependant_tx&) = delete;
+
+  register_dependant_tx(register_dependant_tx&&) noexcept;
+  register_dependant_tx& operator=(register_dependant_tx&&)
+      noexcept;
+
+ private:
+  register_dependant_tx(shared_state_base&, size_t) noexcept;
+
+ public:
+  void commit(void (*)(std::weak_ptr<void>), std::weak_ptr<void>) noexcept;
+
+ private:
+  shared_state_base* self_ = nullptr;
+  size_t idx_;
+};
+
+
 template<typename P, typename... Q>
 constexpr std::size_t count_true_(std::size_t c, P v0, Q... v) noexcept {
   return count_true_(c + (v0 ? 1U : 0U), v...);
@@ -329,7 +493,6 @@ template<typename... P>
 constexpr std::size_t count_true(P... v) noexcept {
   return count_true_(0U, v...);
 }
-
 
 template<typename T>
 struct shared_state_fn_invoke_and_assign {
@@ -358,6 +521,8 @@ class shared_state_fn
   using deferred_type = std::tuple<std::decay_t<Fn>, std::decay_t<Args>...>;
 
  public:
+  using state_t = typename shared_state_nofn<T, Alloc>::state_t;
+
   shared_state_fn() = delete;
   shared_state_fn(const shared_state_fn&) = delete;
   shared_state_fn(shared_state_fn&&) = delete;
@@ -387,8 +552,10 @@ class shared_state_fn
                        void>;
   void init_cb_(std::index_sequence<>) noexcept { return; }
 
+ protected:
+  void do_start_deferred(bool) noexcept override;
+
  public:
-  void start_deferred(bool) noexcept override;
   virtual void invoke_deferred() noexcept;
 
  private:
@@ -411,6 +578,8 @@ class shared_state_wqjob
   public workq_job
 {
  public:
+  using state_t = typename shared_state_fn<T, Alloc, Fn, Args...>::state_t;
+
   shared_state_wqjob() = delete;
   shared_state_wqjob(const shared_state_wqjob&) = delete;
   shared_state_wqjob(shared_state_wqjob&&) = delete;
@@ -418,7 +587,10 @@ class shared_state_wqjob
   shared_state_wqjob& operator=(shared_state_wqjob&&) = delete;
   shared_state_wqjob(workq_ptr, unsigned int, const Alloc&, Fn, Args...);
 
-  void start_deferred(bool) noexcept override;
+ protected:
+  void do_start_deferred(bool) noexcept override;
+
+ public:
   void invoke_deferred() noexcept override;
   void run() noexcept override;
 
@@ -533,11 +705,34 @@ auto shared_state_base::wait_until(
   return s;
 }
 
+inline auto shared_state_base::get_start_deferred() const noexcept ->
+    std::tuple<bool, bool> {
+  return std::make_tuple(
+      start_deferred_called_.load(std::memory_order_relaxed),
+      start_deferred_value_.load(std::memory_order_relaxed));
+}
+
 inline auto shared_state_base::clear_deferred() noexcept -> bool {
   state_t expect = state_t::uninitialized_deferred;
   return state_.compare_exchange_strong(expect, state_t::uninitialized,
                                         std::memory_order_relaxed,
                                         std::memory_order_relaxed);
+}
+
+inline auto shared_state_base::clear_convert() noexcept -> bool {
+  state_t expect = state_t::uninitialized_convert;
+  return state_.compare_exchange_strong(expect, state_t::uninitialized,
+                                        std::memory_order_relaxed,
+                                        std::memory_order_relaxed);
+}
+
+inline auto shared_state_base::mark_convert_present() noexcept -> void {
+  state_t expect = state_t::uninitialized;
+  bool success = state_.compare_exchange_strong(expect,
+                                                state_t::uninitialized_convert,
+                                                std::memory_order_relaxed,
+                                                std::memory_order_relaxed);
+  assert(success);
 }
 
 
@@ -617,6 +812,15 @@ auto shared_state<T>::as_future() noexcept -> cb_future<T> {
 template<typename T>
 auto shared_state<T>::as_shared_future() noexcept -> shared_cb_future<T> {
   return shared_cb_future<T>(this->shared_from_this());
+}
+
+template<typename T>
+auto shared_state<T>::do_start_deferred(bool async) noexcept -> void {
+  if (auto converter = atomic_load_explicit(&this->convert_,
+                                            std::memory_order_relaxed))
+    converter->start_deferred(async);
+  else
+    this->shared_state_base::do_start_deferred(async);
 }
 
 
@@ -699,6 +903,15 @@ auto shared_state<T&>::as_shared_future() noexcept -> shared_cb_future<T&> {
   return shared_cb_future<T&>(this->shared_from_this());
 }
 
+template<typename T>
+auto shared_state<T&>::do_start_deferred(bool async) noexcept -> void {
+  if (auto converter = atomic_load_explicit(&this->convert_,
+                                            std::memory_order_relaxed))
+    converter->start_deferred(async);
+  else
+    this->shared_state_base::do_start_deferred(async);
+}
+
 
 inline auto shared_state<void>::as_promise() noexcept -> cb_promise<void> {
   return cb_promise<void>(this->shared_from_this());
@@ -714,12 +927,163 @@ inline auto shared_state<void>::as_shared_future() noexcept ->
 }
 
 
+template<typename T>
+shared_state_converter<T>::shared_state_converter(
+    const std::shared_ptr<shared_state<T>>& prom) noexcept
+: prom_(prom)
+{}
+
+template<typename T>
+shared_state_converter<T>::~shared_state_converter() noexcept {}
+
+template<typename T>
+auto shared_state_converter<T>::install_value(
+    std::add_rvalue_reference_t<T> v) -> void {
+  std::shared_ptr<shared_state<T>> prom = prom_.lock();
+  prom_.reset();
+  if (prom) {
+    prom->clear_convert();
+    prom->set_value(std::forward<T>(v));
+  }
+}
+
+template<typename T>
+auto shared_state_converter<T>::install_exc(std::exception_ptr e) -> void {
+  std::shared_ptr<shared_state<T>> prom = prom_.lock();
+  prom_.reset();
+  if (prom) {
+    prom->clear_convert();
+    prom->set_exc(move(e));
+  }
+}
+
+
+inline shared_state_converter<void>::shared_state_converter(
+    const std::shared_ptr<shared_state<void>>& prom) noexcept
+: prom_(prom)
+{}
+
+
+template<typename T, typename U, typename Fn>
+shared_state_converter_impl<T, U, Fn>::shared_state_converter_impl(
+    const std::shared_ptr<shared_state<T>>& prom,
+    std::shared_ptr<shared_state<U>> src,
+    Fn fn)
+: shared_state_converter<T>(prom),
+  fn_(std::move(fn)),
+  src_(std::move(src))
+{}
+
+template<typename T, typename U, typename Fn>
+shared_state_converter_impl<T, U, Fn>::~shared_state_converter_impl()
+    noexcept {}
+
+template<typename T, typename U, typename Fn>
+auto shared_state_converter_impl<T, U, Fn>::start_deferred(
+    bool async) noexcept -> void {
+  src_->start_deferred(async);
+}
+
+template<typename T, typename U, typename Fn>
+auto shared_state_converter_impl<T, U, Fn>::init_cb(
+    const std::shared_ptr<shared_state<T>>& prom, bool shared) -> void {
+  assert(src_ != nullptr);
+  assert(prom != nullptr);
+
+  auto tx = src_->register_dependant_begin();  // May throw.
+
+  std::shared_ptr<shared_state_converter<T>> this_ptr =
+      this->shared_from_this();
+  prom->mark_convert_present();
+  auto old_convert = atomic_exchange_explicit(&prom->convert_,
+                                              move(this_ptr),
+                                              std::memory_order_relaxed);
+  assert(old_convert == nullptr);
+
+  tx.commit((shared ? &dependant_cb_shared_ : &dependant_cb_),
+            this->shared_from_this());
+
+  bool start_called;
+  bool start_async;
+  std::tie(start_called, start_async) = prom->get_start_deferred();
+  if (start_called) start_deferred(start_async);
+}
+
+template<typename T, typename U, typename Fn>
+auto shared_state_converter_impl<T, U, Fn>::dependant_cb_(
+    std::weak_ptr<void> self) noexcept -> void {
+  std::shared_ptr<void> void_ptr = self.lock();
+  if (!void_ptr) return;
+  const auto self_ptr =
+      std::static_pointer_cast<shared_state_converter_impl>(self.lock());
+  auto& src_ = self_ptr->src_;
+  auto& fn_ = self_ptr->fn_;
+
+  try {
+    self_ptr->install_value(detail::invoke(std::move(fn_),
+                                           src_->as_future().get()));
+  } catch (...) {
+    self_ptr->install_exc(std::current_exception());
+  }
+  src_.reset();
+}
+
+template<typename T, typename U, typename Fn>
+auto shared_state_converter_impl<T, U, Fn>::dependant_cb_shared_(
+    std::weak_ptr<void> self) noexcept -> void {
+  std::shared_ptr<void> void_ptr = self.lock();
+  if (!void_ptr) return;
+  const auto self_ptr =
+      std::static_pointer_cast<shared_state_converter_impl>(self.lock());
+  auto& src_ = self_ptr->src_;
+  auto& fn_ = self_ptr->fn_;
+
+  self_ptr->install_value(detail::invoke(std::move(fn_),
+                                         src_->as_shared_future().get()));
+  src_.reset();
+}
+
+
 template<typename T, typename Alloc>
 shared_state_nofn<T, Alloc>::shared_state_nofn(const Alloc& alloc,
                                                bool deferred)
 : shared_state<T>(deferred),
   dependants_(alloc)
 {}
+
+template<typename T, typename Alloc>
+auto shared_state_nofn<T, Alloc>::register_dependant_begin_() ->
+    size_t {
+  std::unique_lock<std::mutex> lck{ ready_cb_mtx_ };
+
+  switch (this->get_state()) {
+  default:
+    dependants_.emplace_back(&noop_dependant, std::weak_ptr<void>());
+    return dependants_.size() - 1U;;
+  case state_t::ready_value:
+  case state_t::ready_exc:
+    return 0;
+  }
+}
+
+template<typename T, typename Alloc>
+auto shared_state_nofn<T, Alloc>::register_dependant_commit_(
+    size_t idx,
+    void (*fn)(std::weak_ptr<void>), std::weak_ptr<void> arg) noexcept ->
+    void {
+  std::unique_lock<std::mutex> lck{ ready_cb_mtx_ };
+
+  switch (this->get_state()) {
+  default:
+    dependants_[idx] = std::make_pair(std::move(fn), std::move(arg));
+    break;
+  case state_t::ready_value:
+  case state_t::ready_exc:
+    ready_cb_mtx_.unlock();
+    (*fn)(std::move(arg));
+    break;
+  }
+}
 
 template<typename T, typename Alloc>
 auto shared_state_nofn<T, Alloc>::register_dependant(
@@ -808,6 +1172,26 @@ auto shared_state_nofn<T, Alloc>::invoke_ready_cb() noexcept -> void {
   for (auto& dep : dependants)
     (*std::get<0>(std::move(dep)))(std::get<1>(std::move(dep)));
 }
+
+
+inline shared_state_base::register_dependant_tx::register_dependant_tx(
+    register_dependant_tx&& o) noexcept
+: self_(std::exchange(o.self_, nullptr)),
+  idx_(o.idx_)
+{}
+
+inline auto shared_state_base::register_dependant_tx::operator=(
+    register_dependant_tx&& o) noexcept -> register_dependant_tx& {
+  self_ = std::exchange(o.self_, nullptr);
+  idx_ = o.idx_;
+  return *this;
+}
+
+inline shared_state_base::register_dependant_tx::register_dependant_tx(
+    shared_state_base& self, size_t idx) noexcept
+: self_(&self),
+  idx_(idx)
+{}
 
 
 template<typename T>
@@ -903,7 +1287,7 @@ auto shared_state_fn<T, Alloc, Fn, Args...>::init_cb_(
 }
 
 template<typename T, typename Alloc, typename Fn, typename... Args>
-auto shared_state_fn<T, Alloc, Fn, Args...>::start_deferred(bool async)
+auto shared_state_fn<T, Alloc, Fn, Args...>::do_start_deferred(bool async)
     noexcept -> void {
   using idx_seq = std::make_index_sequence<1U + sizeof...(Args)>;
 
@@ -912,6 +1296,8 @@ auto shared_state_fn<T, Alloc, Fn, Args...>::start_deferred(bool async)
 
     if (need_resolution_.fetch_sub(1U, std::memory_order_relaxed) == 1U)
       invoke_deferred();
+  } else if (this->get_state() != state_t::uninitialized_deferred) {
+    this->shared_state_nofn<T, Alloc>::do_start_deferred(async);
   }
 }
 
@@ -970,11 +1356,15 @@ shared_state_wqjob<T, Alloc, Fn, Args...>::shared_state_wqjob(
 }
 
 template<typename T, typename Alloc, typename Fn, typename... Args>
-auto shared_state_wqjob<T, Alloc, Fn, Args...>::start_deferred(bool)
+auto shared_state_wqjob<T, Alloc, Fn, Args...>::do_start_deferred(bool async)
     noexcept -> void {
   assert(self_ == nullptr);
-  self_ = this->shared_from_this();
-  this->shared_state_fn<T, Alloc, Fn, Args...>::start_deferred(false);
+  if (this->get_state() == state_t::uninitialized_deferred) {
+    self_ = this->shared_from_this();
+    this->shared_state_fn<T, Alloc, Fn, Args...>::do_start_deferred(false);
+  } else {
+    this->shared_state_nofn<T, Alloc>::do_start_deferred(async);
+  }
 }
 
 template<typename T, typename Alloc, typename Fn, typename... Args>
@@ -1241,6 +1631,30 @@ auto async(workq_service_ptr wqs, launch l, F&& f, Args&&... args) ->
                std::forward<Args>(args)...);
 }
 
+template<typename T, typename U, typename Fn>
+auto convert(cb_promise<T> prom, cb_future<U> src, Fn&& fn) -> void {
+  using impl_t = impl::shared_state_converter_impl<T, U,
+                                                   std::decay_t<Fn>>;
+
+  if (!prom.state_ || !src.state_) impl::__throw(future_errc::no_state);
+
+  auto impl = std::make_shared<impl_t>(prom.state_, move(src.state_),
+                                       std::forward<Fn>(fn));
+  impl->init_cb(prom.state_, false);
+}
+
+template<typename T, typename U, typename Fn>
+auto convert(cb_promise<T> prom, shared_cb_future<U> src, Fn&& fn) -> void {
+  using impl_t = impl::shared_state_converter_impl<T, U,
+                                                   std::decay_t<Fn>>;
+
+  if (!prom.state_ || !src.state_) impl::__throw(future_errc::no_state);
+
+  auto impl = std::make_shared<impl_t>(prom.state_, move(src.state_),
+                                       std::forward<Fn>(fn));
+  impl->init_cb(prom.state_, true);
+}
+
 
 template<typename T>
 cb_promise_exceptor<T>::cb_promise_exceptor(cb_promise_exceptor&& e) noexcept
@@ -1269,6 +1683,7 @@ auto cb_promise_exceptor<T>::set_current_exception() noexcept -> bool {
   case state_t::uninitialized:
     break;
   case state_t::uninitialized_deferred:
+  case state_t::uninitialized_convert:
   case state_t::ready_value:
   case state_t::ready_exc:
     return false;
@@ -1493,6 +1908,7 @@ auto cb_future<R>::wait_for(const std::chrono::duration<Rep, Period>& d)
   if (state_ && d.count() == 0) {
     switch (state_->get_state()) {
     case state_t::uninitialized_deferred:
+    case state_t::uninitialized_convert:
       return future_status::deferred;
     case state_t::ready_value:
     case state_t::ready_exc:
@@ -1517,6 +1933,7 @@ auto cb_future<R>::wait_until(
 
   switch (state_->wait_until(tp)) {
   case state_t::uninitialized_deferred:
+  case state_t::uninitialized_convert:
     return future_status::deferred;
   case state_t::ready_value:
   case state_t::ready_exc:
@@ -1591,6 +2008,7 @@ auto cb_future<R&>::wait_for(const std::chrono::duration<Rep, Period>& d)
   if (state_ && d.count() == 0) {
     switch (state_->get_state()) {
     case state_t::uninitialized_deferred:
+    case state_t::uninitialized_convert:
       return future_status::deferred;
     case state_t::ready_value:
     case state_t::ready_exc:
@@ -1615,6 +2033,7 @@ auto cb_future<R&>::wait_until(
 
   switch (state_->wait_until(tp)) {
   case state_t::uninitialized_deferred:
+  case state_t::uninitialized_convert:
     return future_status::deferred;
   case state_t::ready_value:
   case state_t::ready_exc:
@@ -1659,6 +2078,7 @@ auto cb_future<void>::wait_for(const std::chrono::duration<Rep, Period>& d)
   if (state_ && d.count() == 0) {
     switch (state_->get_state()) {
     case state_t::uninitialized_deferred:
+    case state_t::uninitialized_convert:
       return future_status::deferred;
     case state_t::ready_value:
     case state_t::ready_exc:
@@ -1682,6 +2102,7 @@ auto cb_future<void>::wait_until(
 
   switch (state_->wait_until(tp)) {
   case state_t::uninitialized_deferred:
+  case state_t::uninitialized_convert:
     return future_status::deferred;
   case state_t::ready_value:
   case state_t::ready_exc:
@@ -1766,6 +2187,7 @@ auto shared_cb_future<R>::wait_for(const std::chrono::duration<Rep, Period>& d)
   if (state_ && d.count() == 0) {
     switch (state_->get_state()) {
     case state_t::uninitialized_deferred:
+    case state_t::uninitialized_convert:
       return future_status::deferred;
     case state_t::ready_value:
     case state_t::ready_exc:
@@ -1790,6 +2212,7 @@ auto shared_cb_future<R>::wait_until(
 
   switch (state_->wait_until(tp)) {
   case state_t::uninitialized_deferred:
+  case state_t::uninitialized_convert:
     return future_status::deferred;
   case state_t::ready_value:
   case state_t::ready_exc:
@@ -1876,6 +2299,7 @@ auto shared_cb_future<R&>::wait_for(
   if (state_ && d.count() == 0) {
     switch (state_->get_state()) {
     case state_t::uninitialized_deferred:
+    case state_t::uninitialized_convert:
       return future_status::deferred;
     case state_t::ready_value:
     case state_t::ready_exc:
@@ -1900,6 +2324,7 @@ auto shared_cb_future<R&>::wait_until(
 
   switch (state_->wait_until(tp)) {
   case state_t::uninitialized_deferred:
+  case state_t::uninitialized_convert:
     return future_status::deferred;
   case state_t::ready_value:
   case state_t::ready_exc:
@@ -1958,6 +2383,7 @@ auto shared_cb_future<void>::wait_for(
   if (state_ && d.count() == 0) {
     switch (state_->get_state()) {
     case state_t::uninitialized_deferred:
+    case state_t::uninitialized_convert:
       return future_status::deferred;
     case state_t::ready_value:
     case state_t::ready_exc:
@@ -1981,6 +2407,7 @@ auto shared_cb_future<void>::wait_until(
 
   switch (state_->wait_until(tp)) {
   case state_t::uninitialized_deferred:
+  case state_t::uninitialized_convert:
     return future_status::deferred;
   case state_t::ready_value:
   case state_t::ready_exc:

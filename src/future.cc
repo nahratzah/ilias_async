@@ -24,12 +24,27 @@ void __throw(std::future_errc ec) {
 }
 
 
+void noop_dependant(std::weak_ptr<void>) noexcept {}
+
+
 shared_state_base::shared_state_base(bool deferred) noexcept
-: state_(deferred ? state_t::uninitialized_deferred : state_t::uninitialized)
+: state_(deferred ? state_t::uninitialized_deferred : state_t::uninitialized),
+  lck_(false),
+  shared_(false),
+  start_deferred_called_(false),
+  start_deferred_value_(false)
 {}
 
-auto shared_state_base::start_deferred(bool) noexcept -> void {
-  assert(get_state() != state_t::uninitialized_deferred);
+auto shared_state_base::start_deferred(bool async) noexcept -> void {
+  start_deferred_called_.store(true, std::memory_order_relaxed);
+  if (async) start_deferred_value_.store(true, std::memory_order_relaxed);
+  do_start_deferred(async);
+}
+
+auto shared_state_base::do_start_deferred(bool) noexcept -> void {
+  const state_t s = get_state();
+  assert(s != state_t::uninitialized_deferred &&
+         s != state_t::uninitialized_convert);
 }
 
 auto shared_state_base::lock() noexcept -> void {
@@ -58,6 +73,15 @@ auto shared_state_base::ensure_uninitialized() const -> void {
     __throw(future_errc::promise_already_satisfied);
 }
 
+auto shared_state_base::register_dependant_begin() -> register_dependant_tx {
+  return register_dependant_tx(*this, register_dependant_begin_());
+}
+
+auto shared_state_base::register_dependant(void (*fn)(std::weak_ptr<void>),
+                                           std::weak_ptr<void> arg) -> void {
+  register_dependant_begin().commit(move(fn), move(arg));
+}
+
 auto shared_state_base::set_ready_val(
     std::unique_lock<shared_state_base> lck) noexcept -> void {
   auto old_state = state_.exchange(state_t::ready_value,
@@ -76,6 +100,27 @@ auto shared_state_base::set_ready_exc(
   lck.unlock();
 
   invoke_ready_cb();
+}
+
+
+shared_state_converter<void>::~shared_state_converter() noexcept {}
+
+auto shared_state_converter<void>::install_value() -> void {
+  auto prom = prom_.lock();
+  prom_.reset();
+  if (prom) {
+    prom->clear_convert();
+    prom->set_value();
+  }
+}
+
+auto shared_state_converter<void>::install_exc(std::exception_ptr e) -> void {
+  auto prom = prom_.lock();
+  prom_.reset();
+  if (prom) {
+    prom->clear_convert();
+    prom->set_exc(move(e));
+  }
 }
 
 
@@ -131,6 +176,25 @@ auto shared_state<void>::get() -> void {
 
   assert(false);
   for (;;);
+}
+
+auto shared_state<void>::do_start_deferred(bool async) noexcept -> void {
+  if (auto converter = atomic_load_explicit(&this->convert_,
+                                            std::memory_order_relaxed))
+    converter->start_deferred(async);
+  else
+    this->shared_state_base::do_start_deferred(async);
+}
+
+
+auto shared_state_base::register_dependant_tx::commit(
+    void (*fn)(std::weak_ptr<void>),
+    std::weak_ptr<void> arg) noexcept -> void {
+  assert(self_ != nullptr);
+
+  auto self_ptr = self_;
+  self_ = nullptr;
+  self_ptr->register_dependant_commit_(idx_, std::move(fn), std::move(arg));
 }
 
 
