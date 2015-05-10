@@ -1,10 +1,12 @@
 #ifndef _ILIAS_MONITOR_H_
 #define _ILIAS_MONITOR_H_
 
+#include <ilias/ilias_async_export.h>
 #include <ilias/future.h>
 #include <list>
 #include <forward_list>
 #include <mutex>
+#include <tuple>
 
 namespace ilias {
 
@@ -13,33 +15,38 @@ class monitor {
  public:
   enum class access {
     read,
+    upgrade,
     write
   };
 
   class token;
 
  private:
-  using w_queue_type = std::list<cb_promise<token>>;
+  using w_queue_type = std::list<std::tuple<access, cb_promise<token>>>;
   using r_queue_type = std::forward_list<cb_promise<token>>;
+  using u_queue_type = std::forward_list<cb_promise<token>>;
 
  public:
-  monitor() noexcept;
+  ILIAS_ASYNC_EXPORT monitor() noexcept;
   monitor(const monitor&) = delete;
   monitor& operator=(const monitor&) = delete;
-  ~monitor() noexcept;
+  ILIAS_ASYNC_EXPORT ~monitor() noexcept;
 
-  cb_future<token> queue(access = access::write);
-  token try_lock(access = access::write) noexcept;
+  ILIAS_ASYNC_EXPORT cb_future<token> queue(access = access::write);
+  ILIAS_ASYNC_EXPORT token try_lock(access = access::write) noexcept;
 
  private:
-  void unlock_(access) noexcept;
-  void add_(access) noexcept;
+  ILIAS_ASYNC_EXPORT void unlock_(access) noexcept;
+  ILIAS_ASYNC_EXPORT void add_(access) noexcept;
+  ILIAS_ASYNC_EXPORT cb_future<token> upgrade_to_write_();
 
   std::mutex mtx_;
   uintptr_t active_readers_ = 0;
   uintptr_t active_writers_ = 0;
+  uintptr_t upgrade_active_ = 0;
   w_queue_type w_queue_;
   r_queue_type r_queue_;
+  u_queue_type u_queue_;
 };
 
 class monitor::token {
@@ -70,6 +77,10 @@ class monitor::token {
   monitor* owner() const noexcept { return m_; }
   bool locked() const noexcept { return m_; }
   explicit operator bool() const noexcept { return locked(); }
+
+  ILIAS_ASYNC_EXPORT cb_future<token> upgrade_to_write() const;
+  ILIAS_ASYNC_EXPORT token downgrade_to_read() const;
+  ILIAS_ASYNC_EXPORT token downgrade_to_upgrade() const;
 
  private:
   monitor* m_ = nullptr;

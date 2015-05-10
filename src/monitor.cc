@@ -9,7 +9,8 @@ monitor::monitor() noexcept {};
 
 monitor::~monitor() noexcept {
   assert(active_readers_ == 0);
-  assert(!active_writers_);
+  assert(upgrade_active_ == 0);
+  assert(active_writers_ == 0);
   assert(w_queue_.empty());
   assert(r_queue_.empty());
 }
@@ -18,7 +19,7 @@ auto monitor::queue(access a) -> cb_future<token> {
   std::unique_lock<std::mutex> lck{ mtx_ };
 
   /* Read access, when immediately available. */
-  if (a == access::read && active_writers_ == 0) {
+  if (a == access::read && (active_writers_ == 0 || upgrade_active_ != 0)) {
     cb_promise<token> p;
     p.set_value(token(*this, a));
     ++active_readers_;
@@ -26,10 +27,13 @@ auto monitor::queue(access a) -> cb_future<token> {
   }
 
   /* Write access, when immediately available. */
-  if (a == access::write && active_writers_ == 0 && active_readers_ == 0) {
+  if ((a == access::write || a == access::upgrade) &&
+      active_writers_ == 0 && active_readers_ == 0) {
+    assert(upgrade_active_ == 0);
     cb_promise<token> p;
     p.set_value(token(*this, a));
     ++active_writers_;
+    if (a == access::upgrade) ++upgrade_active_;
     return p.get_future();
   }
 
@@ -39,8 +43,9 @@ auto monitor::queue(access a) -> cb_future<token> {
     r_queue_.emplace_front();
     return r_queue_.front().get_future();
   case access::write:
-    w_queue_.emplace_back();
-    return w_queue_.back().get_future();
+  case access::upgrade:
+    w_queue_.emplace_back(a, cb_promise<token>());
+    return std::get<1>(w_queue_.back()).get_future();
   }
 }
 
@@ -48,10 +53,15 @@ auto monitor::try_lock(access a) noexcept -> token {
   std::lock_guard<std::mutex> lck{ mtx_ };
 
   /* Read access, when immediately available. */
-  if (a == access::read && active_writers_ == 0) {
+  if (a == access::read && active_writers_ == upgrade_active_) {
     ++active_readers_;
+  } else if (a == access::upgrade && active_writers_ == 0) {
+    assert(upgrade_active_ == 0);
+    ++active_writers_;
+    ++upgrade_active_;
   } else if (a == access::write &&
              active_writers_ == 0 && active_readers_ == 0) {
+    assert(upgrade_active_ == 0);
     ++active_writers_;
   } else {
     return token();
@@ -66,12 +76,13 @@ auto monitor::unlock_(access a) noexcept -> void {
   case access::read:
     --active_readers_;
     break;
+  case access::upgrade:
+    --upgrade_active_;
+    /* FALLTHROUGH */
   case access::write:
     --active_writers_;
     break;
   }
-
-  if (active_readers_ != 0 || active_writers_ != 0) return;
 
   /*
    * Take an element off the queue, so we can enable it without holding a
@@ -81,18 +92,42 @@ auto monitor::unlock_(access a) noexcept -> void {
    * for instance because the future was abandoned,
    * the monitor won't deadlock.
    */
-  if (!w_queue_.empty()) {
-    /* Move unfulfilled write-token promise out of the critical section. */
-    cb_promise<token> p = std::move(w_queue_.front());
+  if (!u_queue_.empty()) {
+    if (active_readers_ == 0) {
+      u_queue_type q = std::move(u_queue_);
+      /* No need to increment active_writers_: this is done when promise
+       * is created on the queue. */
+      lck.unlock();
+
+      std::for_each(q.begin(), q.end(),
+                    [this](cb_promise<token>& p) {
+                      p.set_value(token(*this, access::write));
+                    });
+    }
+    return;
+  }
+
+  if (!w_queue_.empty() && active_writers_ == 0) {
+    /* Move unfulfilled write/upgrade-token promise
+     * out of the critical section. */
+    assert(upgrade_active_ == 0);
+    std::tuple<access, cb_promise<token>> ap;
+    ap = std::move(w_queue_.front());
     w_queue_.pop_front();
     ++active_writers_;
+    if (std::get<0>(ap) == access::upgrade) ++upgrade_active_;
     lck.unlock();
 
     /* Unblock a writer. */
-    p.set_value(token(*this, access::write));
-  } else if (!r_queue_.empty()) {
+    std::get<1>(ap).set_value(token(*this, std::get<0>(ap)));
+    if (std::get<0>(ap) == access::write) return;
+
+    lck.lock();
+  }
+
+  if (!r_queue_.empty() && active_writers_ == upgrade_active_) {
     /* Move all unfulfilled read-token promises out of the critical section. */
-    r_queue_type q = move(r_queue_);
+    r_queue_type q = std::move(r_queue_);
     active_readers_ += std::distance(q.begin(), q.end());
     lck.unlock();
 
@@ -111,10 +146,87 @@ auto monitor::add_(access a) noexcept -> void {
   case access::read:
     ++active_readers_;
     break;
+  case access::upgrade:
+    ++upgrade_active_;
+    /* FALLTHROUGH */
   case access::write:
     ++active_writers_;
     break;
   }
+}
+
+auto monitor::upgrade_to_write_() -> cb_future<token> {
+  cb_promise<token> prom;
+  cb_future<token> fut = prom.get_future();
+
+  std::lock_guard<std::mutex> lck{ mtx_ };
+
+  ++active_writers_;
+  if (active_readers_ == 0)
+    prom.set_value(token(*this, access::write));
+  else
+    u_queue_.push_front(std::move(prom));
+
+  return fut;
+}
+
+
+auto monitor_token::upgrade_to_write() const -> cb_future<token> {
+  if (m_ == nullptr)
+    throw std::invalid_argument("attempt to upgrade unlocked monitor");
+
+  switch (access_) {
+  case access::upgrade:
+    break;
+  case access::read:
+    throw std::invalid_argument("attempt to upgrade read-locked monitor");
+    break;
+  case access::write:
+    throw std::invalid_argument("attempt to upgrade write-locked monitor");
+    break;
+  }
+
+  return m_->upgrade_to_write_();
+}
+
+auto monitor_token::downgrade_to_read() const -> token {
+  if (m_ == nullptr)
+    throw std::invalid_argument("attempt to downgrade unlocked monitor");
+
+  switch (access_) {
+  case access::upgrade:
+    break;
+  case access::read:
+    throw std::invalid_argument("attempt to downgrade read-locked monitor "
+                                "to read");
+    break;
+  case access::write:
+    break;
+  }
+
+  m_->add_(access::read);
+  return monitor_token(*m_, access::read);
+}
+
+auto monitor_token::downgrade_to_upgrade() const -> token {
+  if (m_ == nullptr)
+    throw std::invalid_argument("attempt to downgrade unlocked monitor");
+
+  switch (access_) {
+  case access::upgrade:
+    throw std::invalid_argument("attempt to downgrade upgrade-locked monitor "
+                                "to upgrade");
+    break;
+  case access::read:
+    throw std::invalid_argument("attempt to downgrade read-locked monitor "
+                                "to upgrade");
+    break;
+  case access::write:
+    break;
+  }
+
+  m_->add_(access::upgrade);
+  return monitor_token(*m_, access::upgrade);
 }
 
 
