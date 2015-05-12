@@ -69,6 +69,10 @@ inline monitor::token::token(monitor& m, monitor::access a) noexcept
   access_(a)
 {}
 
+inline auto monitor::token::locked() const noexcept -> bool {
+  return m_ != nullptr && access_ != monitor::access::none;
+}
+
 
 } /* namespace ilias */
 

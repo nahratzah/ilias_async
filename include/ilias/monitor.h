@@ -14,6 +14,7 @@ namespace ilias {
 class monitor {
  public:
   enum class access {
+    none,
     read,
     upgrade,
     write
@@ -33,6 +34,11 @@ class monitor {
   ILIAS_ASYNC_EXPORT ~monitor() noexcept;
 
   ILIAS_ASYNC_EXPORT cb_future<token> queue(access = access::write);
+
+ private:
+  void queue_(cb_promise<token>, access = access::write);
+
+ public:
   ILIAS_ASYNC_EXPORT token try_lock(access = access::write) noexcept;
 
  private:
@@ -75,7 +81,7 @@ class monitor::token {
  public:
   monitor::access access() const noexcept { return access_; }
   monitor* owner() const noexcept { return m_; }
-  bool locked() const noexcept { return m_; }
+  bool locked() const noexcept;
   explicit operator bool() const noexcept { return locked(); }
 
   ILIAS_ASYNC_EXPORT cb_future<token> upgrade_to_write() const;
@@ -84,7 +90,7 @@ class monitor::token {
 
  private:
   monitor* m_ = nullptr;
-  monitor::access access_;
+  monitor::access access_ = monitor::access::none;
 };
 
 using monitor_access = monitor::access;

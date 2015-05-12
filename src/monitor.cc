@@ -1,5 +1,6 @@
 #include <ilias/monitor.h>
 #include <cassert>
+#include <functional>
 #include <iterator>
 
 namespace ilias {
@@ -16,36 +17,57 @@ monitor::~monitor() noexcept {
 }
 
 auto monitor::queue(access a) -> cb_future<token> {
+  using std::bind;
+  using std::placeholders::_1;
+  using std::placeholders::_2;
+  using std::placeholders::_3;
+
+  if (a == access::none) {
+    return async_lazy([](monitor& self) { return token(self, access::none); },
+                      std::ref(*this));
+  }
+
+  return async_lazy(pass_promise<token>(bind(&monitor::queue_, _2, _1, _3)),
+                    this, a);
+}
+
+auto monitor::queue_(cb_promise<token> p, access a) -> void {
   std::unique_lock<std::mutex> lck{ mtx_ };
 
   /* Read access, when immediately available. */
   if (a == access::read && (active_writers_ == 0 || upgrade_active_ != 0)) {
-    cb_promise<token> p;
-    p.set_value(token(*this, a));
     ++active_readers_;
-    return p.get_future();
+
+    lck.unlock();
+    p.set_value(token(*this, a));
+    return;
   }
 
   /* Write access, when immediately available. */
   if ((a == access::write || a == access::upgrade) &&
       active_writers_ == 0 && active_readers_ == 0) {
     assert(upgrade_active_ == 0);
-    cb_promise<token> p;
-    p.set_value(token(*this, a));
     ++active_writers_;
     if (a == access::upgrade) ++upgrade_active_;
-    return p.get_future();
+
+    lck.unlock();
+    p.set_value(token(*this, a));
+    return;
   }
 
   /* Delayed access. */
   switch (a) {
   case access::read:
-    r_queue_.emplace_front();
-    return r_queue_.front().get_future();
+    r_queue_.emplace_front(std::move(p));
+    return;
   case access::write:
   case access::upgrade:
-    w_queue_.emplace_back(a, cb_promise<token>());
-    return std::get<1>(w_queue_.back()).get_future();
+    w_queue_.emplace_back(a, std::move(p));
+    return;
+  case access::none:
+    lck.unlock();
+    p.set_value(token(*this, access::none));
+    return;
   }
 }
 
@@ -64,12 +86,14 @@ auto monitor::try_lock(access a) noexcept -> token {
     assert(upgrade_active_ == 0);
     ++active_writers_;
   } else {
-    return token();
+    return token(*this, access::none);
   }
   return token(*this, a);
 }
 
 auto monitor::unlock_(access a) noexcept -> void {
+  if (a == access::none) return;
+
   std::unique_lock<std::mutex> lck{ mtx_ };
 
   switch (a) {
@@ -81,6 +105,8 @@ auto monitor::unlock_(access a) noexcept -> void {
     /* FALLTHROUGH */
   case access::write:
     --active_writers_;
+    break;
+  case access::none:
     break;
   }
 
@@ -152,6 +178,8 @@ auto monitor::add_(access a) noexcept -> void {
   case access::write:
     ++active_writers_;
     break;
+  case access::none:
+    break;
   }
 }
 
@@ -184,6 +212,9 @@ auto monitor_token::upgrade_to_write() const -> cb_future<token> {
   case access::write:
     throw std::invalid_argument("attempt to upgrade write-locked monitor");
     break;
+  case access::none:
+    throw std::invalid_argument("attempt to upgrade un-locked monitor");
+    break;
   }
 
   return m_->upgrade_to_write_();
@@ -201,6 +232,10 @@ auto monitor_token::downgrade_to_read() const -> token {
                                 "to read");
     break;
   case access::write:
+    break;
+  case access::none:
+    throw std::invalid_argument("attempt to downgrade un-locked monitor "
+                                "to read");
     break;
   }
 
@@ -222,6 +257,10 @@ auto monitor_token::downgrade_to_upgrade() const -> token {
                                 "to upgrade");
     break;
   case access::write:
+    break;
+  case access::none:
+    throw std::invalid_argument("attempt to downgrade un-locked monitor "
+                                "to upgrade");
     break;
   }
 
