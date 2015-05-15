@@ -39,13 +39,23 @@ class monitor {
   void queue_(cb_promise<token>, access = access::write);
 
  public:
-  ILIAS_ASYNC_EXPORT token try_lock(access = access::write) noexcept;
+  ILIAS_ASYNC_EXPORT token try_immediate(access = access::write) noexcept;
 
  private:
   ILIAS_ASYNC_EXPORT void unlock_(access) noexcept;
   ILIAS_ASYNC_EXPORT void add_(access) noexcept;
   ILIAS_ASYNC_EXPORT cb_future<token> upgrade_to_write_();
 
+ public:
+  ILIAS_ASYNC_EXPORT bool try_lock() noexcept;
+  ILIAS_ASYNC_EXPORT void lock() noexcept;
+  ILIAS_ASYNC_EXPORT void unlock() noexcept;
+
+  ILIAS_ASYNC_EXPORT bool try_lock_shared() noexcept;
+  ILIAS_ASYNC_EXPORT void lock_shared() noexcept;
+  ILIAS_ASYNC_EXPORT void unlock_shared() noexcept;
+
+ private:
   std::mutex mtx_;
   uintptr_t active_readers_ = 0;
   uintptr_t active_writers_ = 0;
