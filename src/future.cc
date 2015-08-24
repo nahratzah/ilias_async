@@ -102,6 +102,22 @@ auto shared_state_base::set_ready_exc(
   invoke_ready_cb();
 }
 
+auto shared_state_base::add_promise_reference_() noexcept -> void {
+  promise_refcnt_.fetch_add(1U, std::memory_order_acquire);
+}
+
+auto shared_state_base::remove_promise_reference_() noexcept -> void {
+  using std::make_exception_ptr;
+  using std::future_error;
+  using std::make_error_code;
+  constexpr future_errc broken_prom = future_errc::broken_promise;
+
+  if (promise_refcnt_.fetch_sub(1U, std::memory_order_release) == 1U) {
+    if (_predict_false(get_state() == state_t::uninitialized))
+      set_exc(make_exception_ptr(future_error(make_error_code(broken_prom))));
+  }
+}
+
 
 shared_state_converter<void>::~shared_state_converter() noexcept {}
 
@@ -211,7 +227,7 @@ auto cb_promise<void>::get_future() -> cb_future<void> {
   if (!state_->mark_shared())
     impl::__throw(future_errc::future_already_retrieved);
 
-  return cb_future<void>(state_);
+  return cb_future<void>(state_.underlying_ptr());
 }
 
 auto cb_promise<void>::set_value() -> void {

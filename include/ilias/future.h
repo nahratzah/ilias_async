@@ -86,6 +86,27 @@ template<typename TArgs, typename Alloc, typename Fn>
 std::shared_ptr<shared_state_task<TArgs>> allocate_future_state_task(
     const Alloc&, Fn&&);
 
+template<typename T>
+class promise_refptr {
+ public:
+  promise_refptr() noexcept = default;
+  promise_refptr(const promise_refptr&) noexcept;
+  promise_refptr(promise_refptr&&) noexcept;
+  ~promise_refptr() noexcept;
+  explicit promise_refptr(std::shared_ptr<T>) noexcept;
+  promise_refptr& operator=(promise_refptr) noexcept;
+
+  void swap(promise_refptr&) noexcept;
+
+  T& operator*() const noexcept;
+  T* operator->() const noexcept;
+  explicit operator bool() const noexcept;
+  const std::shared_ptr<T>& underlying_ptr() const noexcept;
+
+ private:
+  std::shared_ptr<T> ptr_;
+};
+
 } /* namespace ilias::impl */
 
 
@@ -237,7 +258,7 @@ class cb_promise {
  private:
   cb_promise(std::shared_ptr<impl::shared_state<R>>) noexcept;
 
-  std::shared_ptr<impl::shared_state<R>> state_;
+  impl::promise_refptr<impl::shared_state<R>> state_;
 };
 
 template<typename R>
@@ -271,7 +292,7 @@ class cb_promise<R&> {
  private:
   cb_promise(std::shared_ptr<impl::shared_state<R&>>) noexcept;
 
-  std::shared_ptr<impl::shared_state<R&>> state_;
+  impl::promise_refptr<impl::shared_state<R&>> state_;
 };
 
 template<>
@@ -305,7 +326,7 @@ class cb_promise<void> {
  private:
   cb_promise(std::shared_ptr<impl::shared_state<void>>) noexcept;
 
-  std::shared_ptr<impl::shared_state<void>> state_;
+  impl::promise_refptr<impl::shared_state<void>> state_;
 };
 
 /*
@@ -337,7 +358,7 @@ class cb_promise_exceptor {
   bool set_current_exception() noexcept;
 
  private:
-  std::shared_ptr<impl::shared_state<T>> state_;
+  impl::promise_refptr<impl::shared_state<T>> state_;
 };
 
 
@@ -675,7 +696,7 @@ class packaged_task<R(Args...)> {
   void reset();
 
  private:
-  std::shared_ptr<impl::shared_state_task<R(Args...)>> state_;
+  impl::promise_refptr<impl::shared_state_task<R(Args...)>> state_;
 };
 
 

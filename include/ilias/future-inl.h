@@ -146,6 +146,8 @@ ILIAS_ASYNC_EXPORT void noop_dependant(std::weak_ptr<void>) noexcept;
 
 
 class ILIAS_ASYNC_EXPORT shared_state_base {
+  template<typename> friend class promise_refptr;
+
   /*
    * Allow shared_state_converter to invoke clear_convert.
    */
@@ -172,6 +174,7 @@ class ILIAS_ASYNC_EXPORT shared_state_base {
   ~shared_state_base() noexcept = default;
 
  public:
+  virtual void set_exc(std::exception_ptr) = 0;
   state_t get_state() const noexcept;
   bool mark_shared() noexcept;  // Mark ssb shared between promise and future.
   state_t wait();
@@ -210,12 +213,15 @@ class ILIAS_ASYNC_EXPORT shared_state_base {
 
  private:
   virtual void invoke_ready_cb() noexcept = 0;
+  void add_promise_reference_() noexcept;
+  void remove_promise_reference_() noexcept;
 
   std::atomic<state_t> state_;
   std::atomic<bool> lck_;
   std::atomic<bool> shared_;
   std::atomic<bool> start_deferred_called_;
   std::atomic<bool> start_deferred_value_;
+  std::atomic<uintptr_t> promise_refcnt_;
 };
 
 template<typename T>
@@ -243,7 +249,7 @@ class shared_state
 
  public:
   void set_value(T);
-  void set_exc(std::exception_ptr);
+  void set_exc(std::exception_ptr) override;
 
   T* get();
 
@@ -286,7 +292,7 @@ class shared_state<T&>
 
  public:
   void set_value(T&);
-  void set_exc(std::exception_ptr);
+  void set_exc(std::exception_ptr) override;
 
   T* get();
 
@@ -330,7 +336,7 @@ class ILIAS_ASYNC_EXPORT shared_state<void>
 
  public:
   void set_value();
-  void set_exc(std::exception_ptr);
+  void set_exc(std::exception_ptr) override;
 
   void get();
 
@@ -1562,6 +1568,64 @@ std::shared_ptr<shared_state_task<TArgs>> allocate_future_state_task(
 }
 
 
+template<typename T>
+promise_refptr<T>::promise_refptr(const promise_refptr& p) noexcept
+: ptr_(p.ptr_)
+{
+  if (ptr_) ptr_->add_promise_reference_();
+}
+
+template<typename T>
+promise_refptr<T>::promise_refptr(promise_refptr&& p) noexcept
+: ptr_(std::move(p.ptr_))
+{}
+
+template<typename T>
+promise_refptr<T>::~promise_refptr() noexcept {
+  if (ptr_) ptr_->remove_promise_reference_();
+}
+
+template<typename T>
+promise_refptr<T>::promise_refptr(std::shared_ptr<T> p) noexcept
+: ptr_(std::move(p))
+{
+  if (ptr_) ptr_->add_promise_reference_();
+}
+
+template<typename T>
+auto promise_refptr<T>::operator=(promise_refptr p) noexcept ->
+    promise_refptr& {
+  p.swap(*this);
+  return *this;
+}
+
+template<typename T>
+auto promise_refptr<T>::swap(promise_refptr& p) noexcept -> void {
+  ptr_.swap(p.ptr_);
+}
+
+template<typename T>
+auto promise_refptr<T>::operator*() const noexcept -> T& {
+  return *ptr_;
+}
+
+template<typename T>
+auto promise_refptr<T>::operator->() const noexcept -> T* {
+  return ptr_.get();
+}
+
+template<typename T>
+promise_refptr<T>::operator bool() const noexcept {
+  return bool(ptr_);
+}
+
+template<typename T>
+auto promise_refptr<T>::underlying_ptr() const noexcept ->
+    const std::shared_ptr<T>& {
+  return ptr_;
+}
+
+
 } /* namespace ilias::impl */
 
 
@@ -1764,7 +1828,7 @@ auto cb_promise<R>::get_future() -> cb_future<R> {
   if (!state_->mark_shared())
     impl::__throw(future_errc::future_already_retrieved);
 
-  return cb_future<R>(state_);
+  return cb_future<R>(state_.underlying_ptr());
 }
 
 template<typename R>
@@ -1831,7 +1895,7 @@ auto cb_promise<R&>::get_future() -> cb_future<R&> {
   if (!state_->mark_shared())
     impl::__throw(future_errc::future_already_retrieved);
 
-  return cb_future<R&>(state_);
+  return cb_future<R&>(state_.underlying_ptr());
 }
 
 template<typename R>
@@ -2493,7 +2557,7 @@ auto packaged_task<R(Args...)>::get_future() -> cb_future<R> {
   if (!state_->mark_shared())
     impl::__throw(future_errc::future_already_retrieved);
 
-  return cb_future<R>(state_);
+  return cb_future<R>(state_.underlying_ptr());
 }
 
 template<typename R, typename... Args>
