@@ -27,6 +27,22 @@ namespace ilias {
 namespace impl {
 
 
+#ifndef _predict_true
+# if defined(__GNUC__) || defined(__llvm__)
+#   define _predict_true(x)  __builtin_expect(bool(x), true)
+# else
+#   define _predict_true  /* noop */
+# endif
+#endif  // _predict_true
+#ifndef _predict_false
+# if defined(__GNUC__) || defined(__llvm__)
+#   define _predict_false(x)  __builtin_expect(bool(x), false)
+# else
+#   define _predict_false  /* noop */
+#endif
+#endif  // _predict_false
+
+
 template<typename> class shared_state_converter;
 template<typename, typename, typename> class shared_state_converter_impl;
 
@@ -422,6 +438,14 @@ class shared_state_nofn
       typename shared_state<T>::shared_fut_callback_fn;
   using state_t = typename shared_state<T>::state_t;
 
+ private:
+  using callback_element = std::pair<void (*)(std::weak_ptr<void>),
+                                     std::weak_ptr<void>>;
+  using callback_elem_alloc =
+      typename
+      std::allocator_traits<Alloc>::template rebind_alloc<callback_element>;
+
+ public:
   shared_state_nofn() = delete;
   shared_state_nofn(const shared_state_nofn&) = delete;
   shared_state_nofn(shared_state_nofn&&) = delete;
@@ -451,8 +475,7 @@ class shared_state_nofn
   std::mutex ready_cb_mtx_;
   std::unique_ptr<fut_callback_fn> ready_cb_;
   std::unique_ptr<shared_fut_callback_fn> shared_ready_cb_;
-  std::vector<std::pair<void (*)(std::weak_ptr<void>), std::weak_ptr<void>>,
-              Alloc> dependants_;
+  std::vector<callback_element, callback_elem_alloc> dependants_;
 };
 
 
@@ -1142,8 +1165,7 @@ template<typename T, typename Alloc>
 auto shared_state_nofn<T, Alloc>::invoke_ready_cb() noexcept -> void {
   std::unique_ptr<fut_callback_fn> ready_cb;
   std::unique_ptr<shared_fut_callback_fn> shared_ready_cb;
-  std::vector<std::pair<void (*)(std::weak_ptr<void>), std::weak_ptr<void>>,
-              Alloc> dependants;
+  std::vector<callback_element, callback_elem_alloc> dependants;
 
   /*
    * Copy all callbacks into local variables,
