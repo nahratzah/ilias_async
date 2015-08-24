@@ -1,14 +1,14 @@
-#include <ilias/promise.h>
+#include <ilias/future.h>
 
 int
 main()
 {
-	ilias::promise<int> p = ilias::new_promise<int>();
-	ilias::future<int> f = p;
+	ilias::cb_promise<int> p;
+	ilias::cb_future<int> f = p.get_future();
 
 	assert(!f.ready());
-	p.set(42);
-	p = ilias::new_promise<int>();
+	p.set_value(42);
+	p = ilias::cb_promise<int>();
 
 	assert(f.ready());
 	assert(f.get() == 42);

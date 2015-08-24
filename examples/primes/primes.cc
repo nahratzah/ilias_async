@@ -1,5 +1,5 @@
 #include <ilias/mq_ptr.h>
-#include <ilias/promise.h>
+#include <ilias/future.h>
 #include <ilias/workq.h>
 #include <ilias/wq_callback.h>
 #include <ilias/threadpool.h>
@@ -19,7 +19,7 @@ class prime_reader
 {
 private:
 	ilias::workq_ptr wq;
-	ilias::promise<void> prom;
+	ilias::cb_promise<void> prom;
 
 	static void
 	filter(unsigned int test,
@@ -81,8 +81,7 @@ private:
 	}
 
 	prime_reader(ilias::workq_service_ptr wqs)
-	:	wq(wqs->new_workq()),
-		prom(ilias::new_promise<void>())
+	:	wq(wqs->new_workq())
 	{
 		/* Empty body. */
 	}
@@ -90,16 +89,16 @@ private:
 public:
 	~prime_reader() noexcept
 	{
-		this->prom.set();
+		this->prom.set_value();
 	}
 
-	static std::tuple<ilias::mq_in_ptr<unsigned int>, ilias::future<void>>
+	static std::tuple<ilias::mq_in_ptr<unsigned int>, cb_future<void>>
 	create_sieve(workq_service_ptr wqs)
 	{
 		std::shared_ptr<prime_reader> pr{ new prime_reader{ std::move(wqs) }};
 		auto rv = ilias::new_mq_ptr<unsigned int>();
 		pr->install_callback(rv, pr);
-		return std::make_tuple(std::move(rv), pr->prom);
+		return std::make_tuple(std::move(rv), pr->prom.get_future());
 	}
 };
 
@@ -108,7 +107,7 @@ int
 main()
 {
 	ilias::threadpool tp;
-	future<void> completed;
+	cb_future<void> completed;
 	{
 		auto wqs = ilias::new_workq_service();
 		ilias::threadpool_attach(*wqs, tp);

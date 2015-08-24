@@ -1,15 +1,15 @@
-#include <ilias/promise.h>
+#include <ilias/future.h>
 
 int
 main()
 {
-	future<int> f = ilias::new_promise<int>();
+	ilias::cb_future<int> f = ilias::cb_promise<int>().get_future();
 	bool ok = false;
 
 	try {
 		f.get();
-	} catch (const ilias::broken_promise&) {
-		ok = true;
+	} catch (const ilias::future_error& e) {
+		ok = (e.code() == ilias::future_errc::broken_promise);
 	}
 
 	assert(ok && "promise should have been broken");
