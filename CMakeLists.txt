@@ -23,7 +23,7 @@ add_definitions (-D_REENTRANT -D_GNU_SOURCE)
 # - we require libstdc++, since gcc's stdlib on apple is simply ancient.
 if (APPLE)
 	set (CMAKE_XCODE_ATTRIBUTE_GCC_VERSION "com.apple.compilers.llvm.clang.1_0")
-	set (CMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD "c++0x")
+	set (CMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD "c++14")
 	set (CMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY "libc++")
 endif ()
 
@@ -72,13 +72,10 @@ if (PROFILE)
 	endif (PROFILE_PG)
 endif (PROFILE)
 
-# Check if the compiler can needs/handles c++11 flags.
-check_cxx_compiler_flag("-std=c++11" STD_CXX11)
-check_cxx_compiler_flag("-std=c++0x" STD_CXX0X)
+# Check if the compiler can needs/handles c++14 flags.
+check_cxx_compiler_flag("-std=c++14" STD_CXX14)
 if (STD_CXX11)
-	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-elseif (STD_CXX0X)
-	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
+	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
 endif ()
 
 # This library requires threads,
