@@ -26,8 +26,5 @@ main()
 		ok = true;
 	}
 	assert(ok && "error should cascade into this body");
-
-	assert(f.ready());
-	assert(f.is_broken());
 	return 0;
 }

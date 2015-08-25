@@ -199,7 +199,6 @@ main()
 	while (s.has_work())
 		while (s.do_work());
 
-	assert(c.result.ready());
 	assert(c.result.get());
 
 	return 0;
