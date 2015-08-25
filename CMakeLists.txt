@@ -74,7 +74,7 @@ endif (PROFILE)
 
 # Check if the compiler can needs/handles c++14 flags.
 check_cxx_compiler_flag("-std=c++14" STD_CXX14)
-if (STD_CXX11)
+if (STD_CXX14)
 	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
 endif ()
 
