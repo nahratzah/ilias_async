@@ -9,8 +9,9 @@ void
 thrfun(list* lst, int thrnum)
 {
 	unsigned int count = 0;
+	std::cerr << "start " << thrnum << std::endl;
 	lst->visit([&count](const test_obj&) { ++count; });
-	fprintf(stderr, "%d", thrnum);
+	std::cerr << "done  " << thrnum << std::endl;
 
 	if (count != COUNT) {
 		std::cerr << "Expected " << COUNT << " elements, "
