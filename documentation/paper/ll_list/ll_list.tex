@@ -34,7 +34,9 @@
     }
 
 % Declare a flag type that models the assignment stage in a Hoare triple
-\newcommand{\transformsymb}{\textbf{Transformation}:}
+\newcommand{\transformtext}{transformation}
+\newcommand{\Transformtext}{Transformation}
+\newcommand{\transformsymb}{\textbf{\Transformtext}:}
 \newcommand{\transformation}[3]{\assume{#1}{\textbf{\transformsymb}~#2}{#3}}
 
 
@@ -109,7 +111,7 @@ The notation
 \hoaretrip{P_0}{\lambda}{P_1}
 \end{equation}
 denotes the transition
-from state $P_0$ to state $P_1$, using the transformation $\lambda$.
+from state $P_0$ to state $P_1$, using the \transformtext $\lambda$.
 
 The notation
 \begin{equation}
@@ -172,10 +174,13 @@ In this paper, I will be (ab)using flag derivations to proof transitions.
 		\assume{abuse:assume-A1}
 		    {\mathcal{A}_1}
 		    {Suppose $\mathcal{A}_1$ still holds
-		      after the transition...}
+		      after the \transformtext...}
 			\step{}
 			    {\mathcal{A}_1 \land \mathcal{T}}
-			    {$\land$-intro on \ref{abuse:assume-A1} and \ref{abuse:transition}}
+			    {
+				$\land$-intro on \ref{abuse:assume-A1} and
+				\ref{abuse:transition}
+			    }
 			\skipsteps{2}{\vdots}{}
 			\step{abuse:assume-A1-false}
 			    {\mathcal{A}_1 \land \mathcal{T} \implies \false}
@@ -188,15 +193,24 @@ In this paper, I will be (ab)using flag derivations to proof transitions.
 		\assume{abuse:assume-not-A2}
 		    {\neg \mathcal{A}_2}
 		    {Suppse $\mathcal{A}_2$ no longer holds
-		      after the transition...}
+		      after the \transformtext...}
 			\step{}
 			    {\neg \mathcal{A}_2 \land \mathcal{T}}
-			    {$\land$-intro on \ref{abuse:assume-A1} and \ref{abuse:transition}}
+			    {
+				$\land$-intro on \ref{abuse:assume-A1} and
+				\ref{abuse:transition}
+			    }
 			\skipsteps{2}{\vdots}{}
 			\step{abuse:assume-not-A2-false}
-			    {\neg \mathcal{A}_2 \land \mathcal{T} \implies \false}
-			    {Only way to pull in $\mathcal{A}_2$
-			      is proof by contradiction with $\mathcal{T}$}
+			    {
+				\neg \mathcal{A}_2 \land \mathcal{T}
+				\implies
+				\false
+			    }
+			    {
+				Only way to pull in $\mathcal{A}_2$
+				is proof by contradiction with $\mathcal{T}$
+			    }
 		\conclude{}
 		    {\mathcal{A}_2}
 		    {Contradiction on \ref{abuse:assume-not-A2} and
@@ -231,33 +245,39 @@ In this paper, I will be (ab)using flag derivations to proof transitions.
     {Create Hoare triple using
       \ref{abuse:intro}, \ref{abuse:transition}, \ref{abuse:conclusion}}
 \end{flagderiv}
-Any predicate crossing into the transition boundary has to be re-evaluated
+Any predicate crossing into the \transformtext boundary has to be re-evaluated
 using proof by contradiction.
-Thus $\mathcal{T}$ acts as a filter on each predicate prior to the transition.
+Thus $\mathcal{T}$ acts as a filter on each predicate
+prior to the \transformtext.
 
 Because of this, extra care is required to ensure that $\mathcal{T}$
 is complete in describing all modifications introduced by $\lambda$.
 
 
 \subsubsection*{An example}
-As example, let us use the square root operation,
-limited to the input set $\mathbb{R}$.
+As example, let us use the square root operation.
 It's definition in a hoare triple would look like this:
 \begin{equation*}
 \hoaretrip
-    {r \in \mathbb{R}}
+    {\true}
     {s \becomes \sqrt{r}}
-    {s = \sqrt{r}}
+    {(s')^2 = r}
 \end{equation*}
 Which translates to:\\
-define a transition: $s \becomes \sqrt{r}$\\
+define a \transformtext: $s \becomes \sqrt{r}$\\
 given a pre condition: $r \in \mathbb{R}$\\
 with post condition: $s = \sqrt{r}$.
 
 To use this hoare triple, we have to start out with a state $\mathcal{S}$.
 Let's try to proof that a precondition $a = 1 \land b = 2$
 yields a postcondition $a \neq 1$
-after the transition $a \becomes \sqrt{b}$.
+after the \transformtext $a \becomes \sqrt{b}$.
+
+Note that since the pre and post conditions both use the same variable names,
+the post condition variables will have a single quote,
+to distinguish them from the pre condition variables.
+For example, $a = 1$ in the pre condition will be written as $a' = 1$ in the
+post condition.
 
 \begin{flagderiv}
 \introduce{abuseExample:intro}
@@ -266,46 +286,175 @@ after the transition $a \becomes \sqrt{b}$.
     }
     {Current state}
 	\transformation{abuseExample:transition}
-	    {a \becomes \sqrt{b} \yields a = \sqrt{b}}
+	    {a \becomes \sqrt{b} \yields \left( a' \right)^2 = b}
 	    {
 		Introduce transformation on $\mathcal{S}$
 		(substituting $a$ for $s$ and $b$ for $r$)
 	    }
-		\assume{abuseExample:pull}
+		\assume{abuseExample:pullA}
 		    {
-			\neg \left( a = 1 \land b = 2 \right)
+			a' = a
 		    }
 		    {
-			Test if $b = 2$ still holds after the transition
-			from \ref{abuseExample:intro}
+			Test if $a$ is unmodified from \ref{abuseExample:intro}
+			after the \transformtext \ref{abuseExample:transition}
 		    }
-			\step{abuseExample:pullBpost}
+			\step{abuseExample:pullA-and-intro}
 			    {
-				\neg \left( a = 1 \land b = 2 \right)
+				a' = a
 				\land
-				a = \sqrt{b}
+				\left( a' \right)^2 = b
+			    }
+			    {
+				$\land$-intro on \ref{abuseExample:pullA} and
+				\ref{abuseExample:transition}
+			    }
+			\step{abuseExample:pullA-subst}
+			    {
+				a' = 1
+				\land
+				\left( a' \right)^2 = 2
+			    }
+			    {
+				Substitute $a$ and $b$
+				using \ref{abuseExample:intro}
+				on \ref{abuseExample:pullA-and-intro}
+			    }
+			\step{abuseExample:pullA-one}
+			    {
+				a' = 1
+			    }
+			    {
+				$\land$-elimination
+				on \ref{abuseExample:pullA-subst}
+			    }
+			\step{abuseExample:pullA-sqrt-two}
+			    {
+				\left( a' \right)^2 = 2
+			    }
+			    {
+				$\land$-elimination
+				on \ref{abuseExample:pullA-subst}
+			    }
+			\step{abuseExample:pullA-equality}
+			    {
+				1^2 = 2
+			    }
+			    {
+				Substitute $a' = 1$
+				using \ref{abuseExample:pullA-one}
+				on \ref{abuseExample:pullA-sqrt-two}
+			    }
+			\step{abuseExample:pullA-false}
+			    {
+				\false
+			    }
+			    {
+				Math: contradiction
+				on \ref{abuseExample:pullA-equality}
+			    }
+		\conclude{}
+			    {a' \neq a}
+			    {
+				Contradiction
+				on \ref{abuseExample:pullA}
+				and \ref{abuseExample:pullA-false}
+			    }
+		\assume{abuseExample:pullB}
+		    {
+			b' = b
+		    }
+		    {
+			Test if $b$ is unmodified from \ref{abuseExample:intro}
+			after the \transformtext \ref{abuseExample:transition}
+		    }
+			\step{abuseExample:pullB-and-intro}
+			    {
+				b' = b
+				\land
+				\left( a' \right)^2 = b
 			    }
 			    {
 				$\land$-intro on \ref{abuseExample:pullB} and
 				\ref{abuseExample:transition}
 			    }
-		\conclude{}{}{...}
-		\assume{abuseExample:pullA}
-		    {a = 1}
-		    {Test if $a = 1$ still holds after the transition
-		      from \ref{abuseExample:intro}}
-			\step{abuseExample:tPost}
-			    {a = \sqrt{b}}
-			    {Use postcondition from
-			      \ref{abuseExample:transition}}
-			\step{abuseExample:introAndOnPullAAndTPost}
-			    {a = \sqrt{b} \land a = 1}
-			    {$\land$-intro on \ref{abuseExample:pullA}
-			      and \ref{abuseExample:tPost}}
-			\step{abuseExample:substB}
-			    {}
-			    {Substitute $b = 2$ on
-			      \ref{abuseExample:introAndOnPullAAndTPost}}
+			\step{abuseExample:pullB-subst}
+			    {
+				b' = 2
+				\land
+				\left( a' \right)^2 = 2
+			    }
+			    {
+				Substitute $a$ and $b$
+				using \ref{abuseExample:intro}
+				on \ref{abuseExample:pullB-and-intro}
+			    }
+			\step{}
+			    {
+				b' = 2
+			    }
+			    {
+				$\land$-elimination
+				on \ref{abuseExample:pullB-subst}
+			    }
+		\conclude{}{}{Proof by contradiction fails}
+		\assume{abuseExample:disproveB}
+		    {
+			b' \neq b
+		    }
+		    {
+			Test if $b$ is modified from \ref{abuseExample:intro}
+			after the \transformtext \ref{abuseExample:transition}
+		    }
+			\step{abuseExample:disproveB-and-intro}
+			    {
+				b' \neq b \land \left( a' \right)^2 = b
+			    }
+			    {
+				$\land$-intro on \ref{abuseExample:disproveB}
+				and \ref{abuseExample:transition}
+			    }
+			\step{abuseExample:disproveB-subst}
+			    {
+				b' \neq 2 \land \left( a' \right)^2 = 2
+			    }
+			    {
+				Substitute $a$ and $b$
+				using \ref{abuseExample:intro}
+				on \ref{abuseExample:disproveB-and-intro}
+			    }
+			\step{}
+			    {
+				b' \neq 2
+			    }
+			    {
+				$\land$-elimination
+				on \ref{abuseExample:disproveB-subst}
+			    }
+		\conclude{}{}{Proof by contradiction fails}
+		\step{abuseExample:transition-repeat}
+		    {
+			\left( a' \right)^2 = b
+		    }
+		    {
+			Repeat \transformtext \ref{abuseExample:transition}
+		    }
+		\step{abuseExample:a-eq-sqrt-b}
+		    {
+			a' = \sqrt{b}
+		    }
+		    {
+			Math on \ref{abuseExample:transition-repeat}
+		    }
+		\step{abuseExample:a-eq-sqrt-2}
+		    {
+			a' = \sqrt{2}
+		    }
+		    {
+			Substitute $a$ and $b$
+			using \ref{abuseExample:intro}
+			on \ref{abuseExample:a-eq-sqrt-b}
+		    }
 \conclude[2]{}
     {
 	\hoaretrip
@@ -319,7 +468,12 @@ after the transition $a \becomes \sqrt{b}$.
 		a = \sqrt{2} \land b = 2
 	    }
     }
-    {Hoare triple using \ref{abuseExample:intro}, \ref{abuseExample:transition}, ...}
+    {
+	Hoare triple using
+	\ref{abuseExample:intro},
+	\ref{abuseExample:transition},
+	\ref{abuseExample:a-eq-sqrt-2}
+    }
 \end{flagderiv}
 
 
