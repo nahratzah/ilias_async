@@ -5,6 +5,8 @@
 #include <atomic>
 #include <cstdint>
 #include <iterator>
+#include <tuple>
+#include <utility>
 #include <ilias/llptr.h>
 
 namespace ilias {
@@ -140,6 +142,8 @@ class list {
 
   bool link_front(elem&) noexcept;
   bool link_back(elem&) noexcept;
+  tuple<elem_ptr, bool> link_after(const position&, elem&, position*);
+  tuple<elem_ptr, bool> link_before(const position&, elem&, position*);
 
  private:
   elem data_;

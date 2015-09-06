@@ -216,7 +216,7 @@ auto ll_smartptr_list<T, Tag, AcqRel>::link_front(pointer p) ->
     bool {
   if (p == nullptr) throw std::invalid_argument("null element");
   bool rv = data_.link_front(this->as_elem_(p));
-  if (rv) release_pointer_(move(p));
+  if (rv) this->release_pointer_(move(p));
   return rv;
 }
 
@@ -225,7 +225,103 @@ auto ll_smartptr_list<T, Tag, AcqRel>::link_back(pointer p) ->
     bool {
   if (p == nullptr) throw std::invalid_argument("null element");
   bool rv = data_.link_back(this->as_elem_(p));
-  if (rv) release_pointer_(move(p));
+  if (rv) this->release_pointer_(move(p));
+  return rv;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::link_after(const const_iterator& i,
+                                                  pointer p) ->
+    std::pair<iterator, bool> {
+  using std::get;
+  std::pair<iterator, bool> result;
+
+  if (p == nullptr) throw std::invalid_argument("null element");
+  auto link_result =
+      data_.link_after(i.pos_, this->as_elem_(p), &result.first.pos_);
+
+  result.first = this->as_type_(get<0>(link_result));
+  result.second = get<1>(link_result);
+  if (get<1>(link_result)) this->release_pointer_(move(p));
+  return result;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::link_after(const iterator& i,
+                                                  pointer p) ->
+    std::pair<iterator, bool> {
+  using std::get;
+  std::pair<iterator, bool> result;
+
+  if (p == nullptr) throw std::invalid_argument("null element");
+  auto link_result =
+      data_.link_after(i.pos_, this->as_elem_(p), &get<0>(result).pos_);
+
+  result.first = this->as_type_(get<0>(link_result));
+  result.second = get<1>(link_result);
+  if (get<1>(link_result)) this->release_pointer_(move(p));
+  return result;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::link_before(const const_iterator& i,
+                                                   pointer p) ->
+    std::pair<iterator, bool> {
+  using std::get;
+  std::pair<iterator, bool> result;
+
+  if (p == nullptr) throw std::invalid_argument("null element");
+  auto link_result =
+      data_.link_before(i.pos_, this->as_elem_(p), &get<0>(result).pos_);
+
+  result.first = this->as_type_(get<0>(link_result));
+  result.second = get<1>(link_result);
+  if (get<1>(link_result)) this->release_pointer_(move(p));
+  return result;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::link_before(const iterator& i,
+                                                   pointer p) ->
+    std::pair<iterator, bool> {
+  using std::get;
+  std::pair<iterator, bool> result;
+
+  if (p == nullptr) throw std::invalid_argument("null element");
+  auto link_result =
+      data_.link_before(i.pos_, this->as_elem_(p), &get<0>(result).pos_);
+
+  result.first = this->as_type_(get<0>(link_result));
+  result.second = get<1>(link_result);
+  if (get<1>(link_result)) this->release_pointer_(move(p));
+  return result;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::link(const const_iterator& i,
+                                            pointer p) -> iterator {
+  iterator rv;
+  rv.pos_ = i.pos_;
+  rv.ptr_ = i.ptr_;
+
+  bool link_success;
+  tie(std::ignore, link_success) =
+      data_.link_before(i.pos_, this->as_elem_(p), nullptr);
+  if (link_success) this->release_pointer_(move(p));
+  return rv;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::link(const iterator& i,
+                                            pointer p) -> iterator {
+  iterator rv;
+  rv.pos_ = i.pos_;
+  rv.ptr_ = i.ptr_;
+
+  bool link_success;
+  tie(std::ignore, link_success) =
+      data_.link_before(i.pos_, this->as_elem_(p), nullptr);
+  if (link_success) this->release_pointer_(move(p));
   return rv;
 }
 

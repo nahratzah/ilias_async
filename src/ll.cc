@@ -1,7 +1,5 @@
 #include <ilias/detail/ll.h>
 #include <thread>
-#include <tuple>
-#include <utility>
 
 namespace ilias {
 namespace ll_detail {
@@ -519,6 +517,72 @@ auto list::link_back(elem& e) noexcept -> bool {
     break;
   }
   return rs == LINK_OK;
+}
+
+auto list::link_after(const position& p, elem& e, position* out) ->
+    tuple<elem_ptr, bool> {
+  link_result lr;
+  position dummy;
+
+  if (&p == out) {
+    throw invalid_argument("input and output iterator may not be the same "
+                           "(use a temporary!)");
+  }
+  if (out == nullptr)
+    out = &dummy;
+  else
+    out->unlink();
+
+  lr = link_after_(p.front_(), out->back_());
+  assert(lr == LINK_OK);
+  lr = link_after_(out->back_(), out->front_());
+  assert(lr == LINK_OK);
+
+  elem_ptr e_ptr = &e;
+  lr = link_after_(out->back_(), e);
+  switch (lr) {
+  case LINK_OK:
+    return make_tuple(e_ptr, true);
+  case LINK_LOST:
+    throw std::invalid_argument("unlinked position");
+  case LINK_TWICE:
+    out->unlink();
+    return make_tuple(nullptr, false);
+  }
+  /* UNREACHABLE */
+}
+
+auto list::link_before(const position& p, elem& e, position* out) ->
+    tuple<elem_ptr, bool> {
+  link_result lr;
+  position dummy;
+
+  if (&p == out) {
+    throw invalid_argument("input and output iterator may not be the same "
+                           "(use a temporary!)");
+  }
+  if (out == nullptr)
+    out = &dummy;
+  else
+    out->unlink();
+
+  lr = link_before_(p.back_(), out->front_());
+  assert(lr == LINK_OK);
+  lr = link_before_(out->front_(), out->back_());
+  assert(lr == LINK_OK);
+
+  elem_ptr e_ptr = &e;
+  lr = link_before_(out->front_(), e);
+  switch (lr) {
+  case LINK_OK:
+    return make_tuple(e_ptr, true);
+  case LINK_LOST:
+    throw std::invalid_argument("unlinked position");
+  case LINK_TWICE:
+    out->unlink();
+    return make_tuple(nullptr, false);
+  }
+  /* UNREACHABLE */
 }
 
 
