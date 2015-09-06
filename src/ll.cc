@@ -7,135 +7,346 @@ namespace ilias {
 namespace ll_detail {
 
 
-auto list::succ_(elem& x) noexcept -> elem_ptr {
-  auto x_succ = x.succ_.load(memory_order_acquire);
+/*
+ * Terminology:
+ * - successor: a following item in the sequence
+ * - predecessor: a previous item in the sequence
+ * - direct successor/predecessor:
+ *     a successor/predecessor
+ *     with no items between
+ * - indirect successor/predecessor:
+ *     a successor/predecessor with 0 or more items between
+ * - marked: the pointer flag is set
+ * - unmarked: the pointer flag is cleared
+ * - head: the item denoting the list
+ * - iterator: an item owned by a stack, indicating a position
+ * - link count:
+ *     reference counter for how many references an item has,
+ *     originating from within the list or its algorithms
+ * - reference count:
+ *     reference counter used outside the list, by application code
+ *     the list will maintain a single reference if the item is linked
+ *     the list does not depend on this reference count
+ *
+ * Invariants:
+ * - a.succ == b  ==>  b is the direct successor of a
+ * - b.pred == a  ==>  a is an indirect predecessor of b
+ * - x.pred == nil  ==>  x.succ == nil
+ * - x.succ != nil  ==>  x.pred != nil
+ * - x.pred is marked OR x.pred == nil  ==>  x is unlinked
+ * - x.pred == (a, marked)  ==>  a.succ == (x, marked) OR a.succ != x
+ * - reachable(a, b) AND reachable(b, x)  ==>  reachable(a, x)
+ * - a.succ == (b, unmarked)  ==>  reachable(a, b)
+ * - head is owned  (NOTE: enforced by user of algorithm)
+ * - x.link_count == sum(a.succ == x, a.pred == x, link references on stack)
+ * - x.link_count > 0  ==>  single reference count held
+ * - x.pred == (b, marked)  ==>  b is direct predecessor of unlinked x
+ *
+ * Rules:
+ * - only the creator of an iterator may link/unlink it
+ * - traversal of the list always happens from a iterator that is owned
+ * - when an element that is to be deleted is encounter,
+ *   the algorithm will aid in deletion
+ */
 
-  while (get<1>(x_succ) != elem_succ_t::flags_type()) {
-    auto x_sp = get<0>(x_succ)->pred_.load_no_acquire(memory_order_acquire);
-    if (get<1>(x_sp) != elem_pred_t::flags_type()) {
-      /* SKIP */
-    } else if (get<0>(x_sp) != &x) {
-      const auto new_xsp_val = make_tuple(&x, elem_pred_t::flags_type(1));
-      if (!get<0>(x_succ)->pred_.compare_exchange_weak(move(x_sp),
-                                                       move(new_xsp_val),
-                                                       memory_order_relaxed,
-                                                       memory_order_relaxed) &&
-          get<1>(x_sp) != elem_pred_t::flags_type()) {
-        x_succ = x.succ_.load(memory_order_acquire);
+
+list::list() noexcept
+: data_(elem_type::head)
+{
+  auto p = elem_ptr(&data_);
+  data_.succ_.store(make_tuple(p, UNMARKED), memory_order_release);
+  data_.pred_.store(make_tuple(p, UNMARKED), memory_order_release);
+}
+
+list::~list() noexcept {
+  assert(succ_(data_) == &data_);
+  assert(pred_(data_) == &data_);
+  wait_link0(data_, 2);
+  data_.succ_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
+  data_.pred_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
+}
+
+auto list::succ_(elem& x) noexcept -> elem_ptr {
+  auto s = x.succ_.load(memory_order_acquire);
+  while (get<0>(s) != nullptr && get<1>(s) == MARKED) {
+    s = unlink_aid_(x, *get<0>(s));
+    if (get<0>(s) == nullptr) s = x.succ_.load(memory_order_acquire);
+  }
+  return get<0>(s);
+}
+
+auto list::pred_(elem& x) noexcept -> elem_ptr {
+  /*
+   * Predecessor of x.
+   *
+   * x has no predecessor if:
+   *   x.pred == nil
+   * p is a direct predecessor of x if:
+   *   p.succ == x
+   *   OR
+   *   x.pred == (p, MARKED)
+   * p is an unlinked predecessor of x if:
+   *   p.pred is unmarked and p.pred != nil
+   */
+
+  auto p = x.pred_.load(memory_order_acquire);
+  while (get<0>(p) != nullptr) {
+    if (get<1>(p) == UNMARKED) {
+      /*
+       * x.pred == (a, unmarked)  ==>  a may be indirect predecessor of x
+       */
+      auto ps = get<0>(p)->succ_.load(memory_order_acquire);
+
+      if (get<0>(ps) != nullptr && get<0>(ps) != &x && get<1>(ps) == MARKED)
+        ps = unlink_aid_(*get<0>(p), *get<0>(ps));
+      if (get<0>(ps) == nullptr) {
+        /*
+         * p was unlinked from under us or
+         * unlink_aid_ couldn't figure out successor
+         */
+        auto pp = get<0>(p)->pred_.load(memory_order_acquire);
+        assert(get<0>(pp) != nullptr);  // linked element with reference
+        get<1>(pp) = get<1>(p);  // Don't modify x.pred_ flags.
+        x.pred_.compare_exchange_weak(p, pp,
+                                      memory_order_acq_rel,
+                                      memory_order_acquire);
+        continue;
+      }
+      if (get<0>(ps) != &x) {
+        get<1>(ps) = get<1>(p);  // Don't change the flags.
+        x.pred_.compare_exchange_weak(p,
+                                      make_tuple(get<0>(move(ps)), UNMARKED),
+                                      memory_order_acq_rel,
+                                      memory_order_acquire);
         continue;
       }
     }
 
-    auto new_successor = get<0>(x_succ)->succ_.load(memory_order_acquire);
-    if (x.succ_.compare_exchange_weak(x_succ, new_successor,
-                                      memory_order_acquire,
-                                      memory_order_relaxed))
-      x_succ = move(new_successor);
-  }
-
-  auto rv = get<0>(move(x_succ));
-  return rv;
-}
-
-auto list::pred_(elem& x) noexcept -> elem_ptr {
-  auto x_pred = x.pred_.load(memory_order_acquire);
-
-  for (;;) {
-    if (get<1>(x_pred) == elem_pred_t::flags_type()) {
-      auto x_ps = get<0>(x_pred)->succ_.load(memory_order_acquire);
-      if (get<0>(x_ps) == &x) break;  // GUARD
-      if (get<1>(x_ps) == elem_succ_t::flags_type()) {
-        auto new_predecessor = make_tuple(get<0>(move(x_ps)),
-                                          elem_pred_t::flags_type());
-        if (x.pred_.compare_exchange_weak(x_pred, new_predecessor,
-                                          memory_order_acquire,
-                                          memory_order_acquire))
-          x_pred = move(new_predecessor);
-      } else {
-        auto new_predecessor =
-            get<0>(x_pred)->pred_.load(memory_order_acquire);
-        if (x.pred_.compare_exchange_weak(x_pred, new_predecessor,
-                                          memory_order_acquire,
-                                          memory_order_acquire))
-          x_pred = move(new_predecessor);
-      }
-    } else {
-      auto x_pp = get<0>(x_pred)->pred_.load(memory_order_acquire);
-      if (get<1>(x_pp) != elem_pred_t::flags_type()) {
-        assert(get<1>(x_pred) == get<1>(x_pp));
-        if (x.pred_.compare_exchange_weak(x_pred, x_pp,
-            memory_order_acquire,
-            memory_order_relaxed))
-          x_pred = move(x_pp);
-      } else {
-        break;
-      }
+    /*
+     * p is a direct predecessor of x
+     *
+     * p.pred is unmarked and p.pred != nil  ==>  p is linked predecessor of x
+     */
+    auto pp = get<0>(p)->pred_.load(memory_order_acquire);
+    assert(get<0>(pp) != nullptr);  // linked element with reference
+    if (get<1>(pp) == MARKED) {
+      get<1>(pp) = get<1>(p);  // Don't modify x.pred_ flags.
+      x.pred_.compare_exchange_weak(p, move(pp),
+                                    memory_order_acq_rel,
+                                    memory_order_acquire);
+      continue;
     }
+
+    return get<0>(p);
   }
 
-  auto rv = get<0>(move(x_pred));
-  return rv;
+  return nullptr;
 }
 
-auto list::link_axb(elem& a, elem& x, elem& b) noexcept -> bool {
-  assert(x.succ_.load_no_acquire() ==
-         make_tuple(nullptr, elem_succ_t::flags_type()));
-  assert(x.pred_.load_no_acquire() ==
-         make_tuple(nullptr, elem_pred_t::flags_type()));
-  x.succ_.store(make_tuple(&b, elem_succ_t::flags_type()),
-                memory_order_release);
-  x.pred_.store(make_tuple(&a, elem_pred_t::flags_type()),
-                memory_order_release);
-
-  auto as_expect = make_tuple(&b, elem_succ_t::flags_type());
-  auto as_assign = make_tuple(elem_ptr(&x), elem_succ_t::flags_type());
-  if (!a.succ_.compare_exchange_weak(move(as_expect), move(as_assign),
-                                     memory_order_release,
-                                     memory_order_relaxed)) {
-    auto bp_expect = make_tuple(&a, elem_pred_t::flags_type());
-    auto bp_assign = make_tuple(elem_ptr(&x), elem_pred_t::flags_type());
-    if (!b.pred_.compare_exchange_strong(move(bp_expect), move(bp_assign),
-                                         memory_order_release,
-                                         memory_order_relaxed))
-      pred_(b);
-
-    return true;
-  }
-
-  x.succ_.store(make_tuple(nullptr, elem_succ_t::flags_type()),
-                memory_order_release);
-  x.pred_.store(make_tuple(nullptr, elem_pred_t::flags_type()),
-                memory_order_release);
-  return false;
-}
-
-auto list::unlink_axb(elem& x) noexcept -> bool {
-  assert(get<0>(x.succ_.load_no_acquire()) != nullptr);
-  assert(get<0>(x.pred_.load_no_acquire()) != nullptr);
-
-  const auto unlink_assign = make_tuple(elem_ptr(&x),
-                                        elem_succ_t::flags_type(1));
-  for (;;) {
-    const elem_ptr a = pred_(x);
-    auto as_expect = make_tuple(&x, elem_succ_t::flags_type());
-    if (a->succ_.compare_exchange_weak(as_expect, unlink_assign,
+auto list::link_(elem& a, elem& x, elem& b) noexcept -> axb_link_result {
+  /*
+   * Link a and b from x.
+   */
+  if (!x.pred_.compare_exchange_strong(elem_llptr::no_acquire_t(nullptr,
+                                                                UNMARKED),
+                                       make_tuple(elem_ptr(&a), UNMARKED),
                                        memory_order_acq_rel,
-                                       memory_order_relaxed)) {
-      elem_pred_t::no_acquire_t xp_expect;
-      const auto xp_assign = make_tuple(a, elem_pred_t::flags_type(1));
-      do {
-        xp_expect = make_tuple(a.get(), elem_pred_t::flags_type());
-      } while (!x.pred_.compare_exchange_weak(xp_expect, xp_assign,
-                                              memory_order_acq_rel,
-                                              memory_order_acquire) &&
-               get<1>(xp_expect) == elem_pred_t::flags_type());
+                                       memory_order_acquire))
+    return XLINK_TWICE;
+  {
+    auto x_orig_succ = x.succ_.exchange(make_tuple(elem_ptr(&b), UNMARKED),
+                                        memory_order_acq_rel);
+    assert(x_orig_succ == make_tuple(nullptr, UNMARKED));
+  }
 
-      pred_(x);
-      succ_(x);
-      pred_(*succ_(*a));
-      return true;
+  /*
+   * Link x from a.
+   */
+  auto as_expect = make_tuple(&b, UNMARKED);
+  if (a.succ_.compare_exchange_strong(as_expect,
+                                      make_tuple(elem_ptr(&x), UNMARKED),
+                                      memory_order_acq_rel,
+                                      memory_order_acquire)) {
+    /*
+     * Fix b.pred to point at x.
+     */
+    auto bp_expect = make_tuple(&a, UNMARKED);
+    if (!b.pred_.compare_exchange_strong(bp_expect,
+                                         make_tuple(elem_ptr(&x), UNMARKED),
+                                         memory_order_acq_rel,
+                                         memory_order_acquire)) {
+      if (bp_expect == make_tuple(&a, MARKED) &&
+          b.pred_.compare_exchange_strong(bp_expect,
+                                          make_tuple(elem_ptr(&x), MARKED),
+                                          memory_order_acq_rel,
+                                          memory_order_acquire)) {
+        /* SKIP */
+      } else {
+        pred_(b);
+      }
     }
-    if (as_expect == unlink_assign) return false;
+    return XLINK_OK;
+  }
+
+  axb_link_result error;
+  if (get<0>(as_expect) == nullptr) {
+    auto bp = b.pred_.load_no_acquire(memory_order_relaxed);
+    if (get<1>(bp) == MARKED)
+      error = XLINK_LOST_AB;
+    else
+      error = XLINK_LOST_A;
+  } else if (get<0>(as_expect) != &b) {
+    error = XLINK_RETRY;
+  } else /* if (get<1>(as_expect) == MARKED) */ {
+    auto ap = a.pred_.load_no_acquire(memory_order_relaxed);
+    if (get<1>(ap) == MARKED)
+      error = XLINK_LOST_AB;
+    else
+      error = XLINK_LOST_B;
+  }
+
+  x.succ_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
+  x.pred_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
+  return error;
+}
+
+auto list::unlink_(elem& a, elem& x, size_t expect) noexcept -> unlink_result {
+  {
+    /*
+     * Extra scope, to hold references to x
+     * without caring about affecting 'expect' value.
+     */
+    auto as_expect = make_tuple(&x, UNMARKED);
+    const auto as_assign = make_tuple(elem_ptr(&x), MARKED);
+    if (!a.succ_.compare_exchange_strong(as_expect, as_assign,
+                                         memory_order_acquire,
+                                         memory_order_relaxed)) {
+      if (as_expect == as_assign) return UNLINK_FAIL;
+      if (get<1>(x.pred_.load_no_acquire(memory_order_relaxed)) == MARKED)
+        return UNLINK_FAIL;
+      return UNLINK_RETRY;
+    }
+  }
+
+  elem_ptr b;
+  tie(b, ignore) = unlink_aid_(a, x);
+
+  auto lc = x.link_count_.load(memory_order_acquire);
+  while (lc > expect) {
+    if (b == nullptr) b = &a;
+    const auto b_succ = b->succ_.load_no_acquire(memory_order_acquire);
+    if (get<0>(b_succ) == &x) pred_(*b);
+    lc = x.link_count_.load(memory_order_acquire);
+    if (get_elem_type(*b) == elem_type::head) break;
+    b = succ_(*b);
+  }
+
+  if (lc > expect) wait_link0(x, expect);
+  x.pred_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
+
+  return UNLINK_OK;
+}
+
+auto list::unlink_aid_(elem& a, elem& x) noexcept ->
+    tuple<elem_ptr, elem_flags> {
+  tuple<elem_ptr, elem_flags> b_ptr;
+
+  auto xp_expect = make_tuple(elem_ptr(&a), UNMARKED);
+  while (!x.pred_.compare_exchange_weak(xp_expect,
+                                        make_tuple(elem_ptr(&a), MARKED),
+                                        memory_order_acq_rel,
+                                        memory_order_acquire) &&
+         get<1>(xp_expect) != MARKED) {
+    if (get<0>(xp_expect) == nullptr) return b_ptr;
+  }
+  const elem_ptr a_ptr = get<0>(move(xp_expect));
+
+  auto x_succ = x.succ_.load(memory_order_acquire);
+  if (get<0>(x_succ) == nullptr) return b_ptr;
+  auto as_expect = make_tuple(elem_ptr(&x), MARKED);
+  if (a_ptr->succ_.compare_exchange_strong(as_expect, x_succ,
+                                           memory_order_acq_rel,
+                                           memory_order_relaxed)) {
+    b_ptr = move(x_succ);
+    auto bp_expect = make_tuple(&x, UNMARKED);
+    auto bp_assign = make_tuple(a_ptr, UNMARKED);
+    if (!get<0>(b_ptr)->pred_.compare_exchange_strong(bp_expect,
+                                                      move(bp_assign),
+                                                      memory_order_release,
+                                                      memory_order_relaxed) &&
+        bp_expect == make_tuple(&x, MARKED)) {
+      bp_assign = make_tuple(a_ptr, MARKED);
+      get<0>(b_ptr)->pred_.compare_exchange_strong(bp_expect,
+                                                   move(bp_assign),
+                                                   memory_order_release,
+                                                   memory_order_relaxed);
+    }
+  } else {
+    b_ptr = move(as_expect);
+  }
+
+  x.succ_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
+
+  return b_ptr;
+}
+
+auto list::succ_elem_(elem& x) noexcept -> elem_ptr {
+  elem_ptr s = succ_(x);
+  if (s != nullptr) {
+    while (get_elem_type(*s) == elem_type::iterator) {
+      s = succ_(x);
+      if (s == nullptr) s = succ_(x);
+      if (s == nullptr) return s;
+    }
+  }
+  return s;
+}
+
+auto list::pred_elem_(elem& x) noexcept -> elem_ptr {
+  elem_ptr p = pred_(x);
+  if (p != nullptr) {
+    while (get_elem_type(*p) == elem_type::iterator) {
+      p = pred_(x);
+      if (p == nullptr) p = pred_(x);
+      if (p == nullptr) return p;
+    }
+  }
+  return p;
+}
+
+auto list::link_after_(elem& a, elem& x) noexcept -> link_result {
+  for (;;) {
+    elem_ptr b = succ_(a);
+    switch (link_(a, x, *b)) {
+    case XLINK_OK:
+      return LINK_OK;
+    case XLINK_TWICE:
+      return LINK_TWICE;
+    case XLINK_RETRY:
+    case XLINK_LOST_B:
+      break;
+    case XLINK_LOST_A:
+    case XLINK_LOST_AB:
+      return LINK_LOST;
+    }
+  }
+}
+
+auto list::link_before_(elem& b, elem& x) noexcept -> link_result {
+  for (;;) {
+    elem_ptr a = pred_(b);
+    switch (link_(*a, x, b)) {
+    case XLINK_OK:
+      return LINK_OK;
+    case XLINK_TWICE:
+      return LINK_TWICE;
+    case XLINK_RETRY:
+    case XLINK_LOST_A:
+      break;
+    case XLINK_LOST_B:
+    case XLINK_LOST_AB:
+      return LINK_LOST;
+    }
   }
 }
 
@@ -168,18 +379,10 @@ inline void spinwait(unsigned int& spin) noexcept {
 
 auto list::wait_link0(elem& x, size_t expect) noexcept -> void {
   unsigned int spin = SPIN;
+  assert(is_unlinked_(x));
 
   auto lc = x.link_count_.load(memory_order_acquire);
-  if (lc <= expect) return;
-  for (auto i = succ_(x);
-       lc > expect && i != &data_;
-       i = succ_(*i)) {
-    pred_(*i);
-    lc = x.link_count_.load(memory_order_acquire);
-  }
   while (lc > expect) {
-    pred_(x);
-    succ_(x);
     spinwait(spin);
     lc = x.link_count_.load(memory_order_acquire);
   }
