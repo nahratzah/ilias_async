@@ -1,6 +1,7 @@
 #ifndef _ILIAS_ASYNC_LL_H_
 #define _ILIAS_ASYNC_LL_H_
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <ilias/llptr.h>
@@ -9,6 +10,7 @@ namespace ilias {
 
 
 struct no_acqrel {};
+template<typename = void> class ll_list_hook;
 
 
 namespace ll_detail {
@@ -64,19 +66,29 @@ class list {
   friend class iter_link;
 
  public:
-  enum unlink_result {
+  using size_type = size_t;
+  using difference_type = ptrdiff_t;
+  class position;
+
+  enum class unlink_result : unsigned char {
     UNLINK_OK,  // unlink operation succeeded
     UNLINK_RETRY,  // unlink operation failed, because a.succ != x
     UNLINK_FAIL  // unlink operation failed, because x is not linked
   };
+  static constexpr unlink_result UNLINK_OK = unlink_result::UNLINK_OK;
+  static constexpr unlink_result UNLINK_RETRY = unlink_result::UNLINK_RETRY;
+  static constexpr unlink_result UNLINK_FAIL = unlink_result::UNLINK_FAIL;
 
-  enum link_result {
+  enum class link_result : unsigned char {
     LINK_OK,  // link operation succeeded
     LINK_LOST,  // sibling is not linked
     LINK_TWICE,  // x was already linked
   };
+  static constexpr link_result LINK_OK = link_result::LINK_OK;
+  static constexpr link_result LINK_LOST = link_result::LINK_LOST;
+  static constexpr link_result LINK_TWICE = link_result::LINK_TWICE;
 
-  enum axb_link_result {
+  enum class axb_link_result : unsigned char {
     XLINK_OK,  // link operation succeeded
     XLINK_RETRY,  // a and b are no longer direct successors
     XLINK_TWICE,  // x was already linked
@@ -84,11 +96,23 @@ class list {
     XLINK_LOST_B,  // b is not linked
     XLINK_LOST_AB  // neither a nor b are linked
   };
+  static constexpr axb_link_result XLINK_OK = axb_link_result::XLINK_OK;
+  static constexpr axb_link_result XLINK_RETRY = axb_link_result::XLINK_RETRY;
+  static constexpr axb_link_result XLINK_TWICE = axb_link_result::XLINK_TWICE;
+  static constexpr axb_link_result XLINK_LOST_A =
+      axb_link_result::XLINK_LOST_A;
+  static constexpr axb_link_result XLINK_LOST_B =
+      axb_link_result::XLINK_LOST_B;
+  static constexpr axb_link_result XLINK_LOST_AB =
+      axb_link_result::XLINK_LOST_AB;
 
   list() noexcept;
   list(const list&) = delete;
   list& operator=(const list&) = delete;
   ~list() noexcept;
+
+  bool empty() const noexcept;
+  size_type size() const noexcept;
 
  private:
   static bool is_unlinked_(const elem&) noexcept;
@@ -106,6 +130,11 @@ class list {
 
   static void wait_link0(elem&, size_t) noexcept;
 
+ public:
+  elem_ptr pop_front() noexcept;
+  elem_ptr pop_back() noexcept;
+
+ private:
   elem data_;
 };
 
@@ -118,6 +147,23 @@ class iter_link final
   ~iter_link() noexcept;
 };
 
+class list::position {
+ public:
+  void unlink() noexcept;
+  bool link_around(elem&) noexcept;
+  elem_ptr step_forward() noexcept;
+  elem_ptr step_backward() noexcept;
+  bool operator==(const position&) const noexcept;
+
+ private:
+  static bool unlink_iter_(iter_link&) noexcept;
+  iter_link& front_() const noexcept { return pos_[swap_]; }
+  iter_link& back_() const noexcept { return pos_[swap_ ^ 1U]; }
+
+  mutable array<iter_link, 2> pos_;
+  unsigned int swap_ : 1;
+};
+
 
 template<typename T, typename Tag, typename AcqRel>
 class ll_list_transformations {
@@ -127,6 +173,17 @@ class ll_list_transformations {
   using const_pointer = refpointer<const value_type, AcqRel>;
   using reference = value_type&;
   using const_reference = const value_type&;
+
+ private:
+  using hook_type = ll_list_hook<Tag>;
+
+ protected:
+  static elem_ptr as_elem_(const pointer&) noexcept;
+  static elem_ptr as_elem_(const const_pointer&) noexcept;
+  static pointer as_type_(const elem_ptr&) noexcept;
+  static pointer as_type_unlinked_(const elem_ptr&) noexcept;
+  static void release_pointer_(pointer&&) noexcept;
+  static void release_pointer_(const_pointer&&) noexcept;
 };
 
 template<typename T, typename Tag>
@@ -137,23 +194,37 @@ class ll_list_transformations<T, Tag, no_acqrel> {
   using const_pointer = const value_type*;
   using reference = value_type&;
   using const_reference = const value_type&;
+
+ private:
+  using hook_type = ll_list_hook<Tag>;
+
+ protected:
+  static elem_ptr as_elem_(const pointer&) noexcept;
+  static elem_ptr as_elem_(const const_pointer&) noexcept;
+  static pointer as_type_(const elem_ptr&) noexcept;
+  static pointer as_type_unlinked_(const elem_ptr&) noexcept;
+  static void release_pointer_(pointer&&) noexcept;
+  static void release_pointer_(const_pointer&&) noexcept;
 };
 
 
 } /* namespace ilias::ll_detail */
 
 
-template<typename Tag = void>
+template<typename Tag>
 class ll_list_hook
 : private ll_detail::elem
 {
   template<typename, typename, typename>
       friend class ll_detail::ll_list_transformations;
+
+ protected:
+  ll_list_hook& operator=(const ll_list_hook&) noexcept { return *this; }
 };
 
 template<typename T, typename Tag = void,
          typename AcqRel = default_refcount_mgr<T>>
-class ll_list
+class ll_smartptr_list
 : private ll_detail::ll_list_transformations<T, Tag, AcqRel>
 {
  private:
@@ -161,20 +232,20 @@ class ll_list
       ll_detail::ll_list_transformations<T, Tag, AcqRel>;
 
  public:
-  using value_type = T;
-  using pointer = value_type*;
-  using const_pointer = const value_type*;
-  using reference = value_type&;
-  using const_reference = const value_type&;
-  using size_type = size_t;
-  using difference_type = ptrdiff_t;
+  using value_type = typename transformations_type::value_type;
+  using pointer = typename transformations_type::pointer;
+  using const_pointer = typename transformations_type::const_pointer;
+  using reference = typename transformations_type::reference;
+  using const_reference = typename transformations_type::const_reference;
+  using size_type = ll_detail::list::size_type;
+  using difference_type = ll_detail::list::difference_type;
   class iterator;
   class const_iterator;
 
-  ll_list() noexcept = default;
-  ll_list(const ll_list&) = delete;
-  ll_list& operator=(const ll_list&) = delete;
-  ~ll_list() noexcept;
+  ll_smartptr_list() noexcept = default;
+  ll_smartptr_list(const ll_smartptr_list&) = delete;
+  ll_smartptr_list& operator=(const ll_smartptr_list&) = delete;
+  ~ll_smartptr_list() noexcept;
 
   bool empty() const noexcept;
   size_type size() const noexcept;

@@ -50,6 +50,22 @@ namespace ll_detail {
  */
 
 
+constexpr list::unlink_result list::UNLINK_OK;
+constexpr list::unlink_result list::UNLINK_RETRY;
+constexpr list::unlink_result list::UNLINK_FAIL;
+
+constexpr list::link_result list::LINK_OK;
+constexpr list::link_result list::LINK_LOST;
+constexpr list::link_result list::LINK_TWICE;
+
+constexpr list::axb_link_result list::XLINK_OK;
+constexpr list::axb_link_result list::XLINK_RETRY;
+constexpr list::axb_link_result list::XLINK_TWICE;
+constexpr list::axb_link_result list::XLINK_LOST_A;
+constexpr list::axb_link_result list::XLINK_LOST_B;
+constexpr list::axb_link_result list::XLINK_LOST_AB;
+
+
 list::list() noexcept
 : data_(elem_type::head)
 {
@@ -59,11 +75,29 @@ list::list() noexcept
 }
 
 list::~list() noexcept {
+  assert(empty());
   assert(succ_(data_) == &data_);
   assert(pred_(data_) == &data_);
   wait_link0(data_, 2);
   data_.succ_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
   data_.pred_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
+}
+
+auto list::empty() const noexcept -> bool {
+  return (get_elem_type(*succ_elem_(const_cast<elem&>(data_))) ==
+          elem_type::head);
+}
+
+auto list::size() const noexcept -> size_type {
+  for (;;) {
+    size_type sz = 0;
+    elem_ptr i;
+    for (i = succ_elem_(const_cast<elem&>(data_));
+         i != nullptr && get_elem_type(*i) != elem_type::head;
+         i = succ_elem_(*i))
+      ++sz;
+    if (i != nullptr) return sz;
+  }
 }
 
 auto list::succ_(elem& x) noexcept -> elem_ptr {
@@ -385,6 +419,165 @@ auto list::wait_link0(elem& x, size_t expect) noexcept -> void {
   while (lc > expect) {
     spinwait(spin);
     lc = x.link_count_.load(memory_order_acquire);
+  }
+}
+
+auto list::pop_front() noexcept -> elem_ptr {
+  elem_ptr e = succ_elem_(data_);
+  if (get_elem_type(*e) == elem_type::head) return nullptr;
+
+  for (;;) {
+    switch (unlink_(*pred_(*e), *e, 1)) {
+    case UNLINK_OK:
+      return e;
+    case UNLINK_RETRY:
+      break;
+    case UNLINK_FAIL:
+      e = succ_elem_(data_);
+      if (get_elem_type(*e) == elem_type::head) return nullptr;
+      break;
+    }
+  }
+}
+
+auto list::pop_back() noexcept -> elem_ptr {
+  elem_ptr e = pred_elem_(data_);
+  if (get_elem_type(*e) == elem_type::head) return nullptr;
+
+  for (;;) {
+    switch (unlink_(*pred_(*e), *e, 1)) {
+    case UNLINK_OK:
+      return e;
+    case UNLINK_RETRY:
+      break;
+    case UNLINK_FAIL:
+      e = pred_elem_(data_);
+      if (get_elem_type(*e) == elem_type::head) return nullptr;
+      break;
+    }
+  }
+}
+
+
+auto list::position::unlink() noexcept -> void {
+  for (iter_link& i : pos_)
+    unlink_iter_(i);
+}
+
+auto list::position::link_around(elem& x) noexcept -> bool {
+  link_result rs;
+
+  unlink();
+
+  rs = link_after_(x, front_());
+  switch (rs) {
+  case LINK_OK:
+    break;
+  case LINK_LOST:
+    return false;
+  case LINK_TWICE:
+    assert(rs != LINK_TWICE);
+    break;
+  }
+
+  rs = link_before_(x, back_());
+  switch (rs) {
+  case LINK_OK:
+    break;
+  case LINK_LOST:
+    unlink();
+    return false;
+  case LINK_TWICE:
+    assert(rs != LINK_TWICE);
+    break;
+  }
+
+  return true;
+}
+
+auto list::position::step_forward() noexcept -> elem_ptr {
+  link_result rs;
+
+  if (!unlink_iter_(back_())) return nullptr;  // Not linked.
+
+  for (;;) {
+    elem_ptr e = succ_elem_(front_());
+    rs = link_after_(*e, back_());
+    switch (rs) {
+    case LINK_OK:
+      swap_ ^= 1U;
+      return e;
+    case LINK_LOST:
+      break;
+    case LINK_TWICE:
+      assert(rs != LINK_TWICE);
+    }
+  }
+}
+
+auto list::position::step_backward() noexcept -> elem_ptr {
+  link_result rs;
+
+  if (!unlink_iter_(front_())) return nullptr;  // Not linked.
+
+  for (;;) {
+    elem_ptr e = pred_elem_(back_());
+    rs = link_before_(*e, front_());
+    switch (rs) {
+    case LINK_OK:
+      swap_ ^= 1U;
+      return e;
+    case LINK_LOST:
+      break;
+    case LINK_TWICE:
+      assert(rs != LINK_TWICE);
+    }
+  }
+}
+
+auto list::position::operator==(const position& o) const noexcept -> bool {
+  if (is_unlinked_(front_()) && is_unlinked_(o.front_())) return true;
+  if (is_unlinked_(front_()) || is_unlinked_(o.front_())) return false;
+
+  elem_ptr s1 = succ_(front_()),
+           s2 = succ_(o.front_());
+  while (get_elem_type(*s1) == elem_type::iterator &&
+         get_elem_type(*s2) == elem_type::iterator) {
+    if (s1 == &o.front_() || s2 == &front_()) return true;
+
+    s1 = succ_(*s1);
+    if (s1 == nullptr) s1 = succ_(front_());
+    s2 = succ_(*s2);
+    if (s2 == nullptr) s2 = succ_(o.front_());
+  }
+
+  while (get_elem_type(*s1) == elem_type::iterator) {
+    if (s1 == &o.front_()) return true;
+
+    s1 = succ_(*s1);
+    if (s1 == nullptr) s1 = succ_(front_());
+  }
+
+  while (get_elem_type(*s2) == elem_type::iterator) {
+    if (s2 == &front_()) return true;
+
+    s2 = succ_(*s2);
+    if (s2 == nullptr) s2 = succ_(front_());
+  }
+
+  return false;
+}
+
+auto list::position::unlink_iter_(iter_link& i) noexcept -> bool {
+  for (;;) {
+    switch (unlink_(*pred_(i), i, 0)) {
+    case UNLINK_OK:
+      return true;
+    case UNLINK_FAIL:
+      return false;
+    case UNLINK_RETRY:
+      break;
+    }
   }
 }
 
