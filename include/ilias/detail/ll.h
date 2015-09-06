@@ -144,6 +144,7 @@ class list {
   bool link_back(elem&) noexcept;
   tuple<elem_ptr, bool> link_after(const position&, elem&, position*);
   tuple<elem_ptr, bool> link_before(const position&, elem&, position*);
+  tuple<elem_ptr, bool> unlink(elem&, position*, size_t);
 
  private:
   elem data_;

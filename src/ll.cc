@@ -585,6 +585,43 @@ auto list::link_before(const position& p, elem& e, position* out) ->
   /* UNREACHABLE */
 }
 
+auto list::unlink(elem& e, position* out, size_t expect) ->
+    tuple<elem_ptr, bool> {
+  unlink_result ur;
+  link_result lr;
+  position dummy;
+
+  if (out == nullptr)
+    out = &dummy;
+  else
+    out->unlink();
+
+  elem_ptr e_ptr = &e;  // expect + 1
+  lr = link_after_(e, out->front_());
+  if (lr == LINK_LOST) return make_tuple(nullptr, false);
+  assert(lr == LINK_OK);
+
+  for (;;) {
+    lr = link_before_(e, out->back_());
+    if (lr == LINK_LOST) return make_tuple(nullptr, false);
+    assert(lr == LINK_OK);
+
+    ur = unlink_(out->back_(), e, expect + 1U);
+    switch (ur) {
+    case UNLINK_OK:
+      return make_tuple(e_ptr, true);
+    case UNLINK_RETRY:
+      break;
+    case UNLINK_FAIL:
+      out->unlink();
+      return make_tuple(nullptr, false);
+    }
+
+    out->unlink();
+  }
+  /* UNREACHABLE */
+}
+
 
 auto list::position::unlink() noexcept -> void {
   for (iter_link& i : pos_)

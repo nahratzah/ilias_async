@@ -325,6 +325,79 @@ auto ll_smartptr_list<T, Tag, AcqRel>::link(const iterator& i,
   return rv;
 }
 
+template<typename T, typename Tag, typename AcqRel>
+template<typename Disposer>
+auto ll_smartptr_list<T, Tag, AcqRel>::clear_and_dispose(Disposer disp)
+    noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer>()))) ->
+    void {
+  while (pointer p = pop_front())
+    disp(move(p));
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::clear()
+    noexcept -> void {
+  clear_and_dispose([](const pointer&) {});
+}
+
+template<typename T, typename Tag, typename AcqRel>
+template<typename Disposer>
+auto ll_smartptr_list<T, Tag, AcqRel>::erase_and_dispose(
+    const const_iterator& i, Disposer disp)
+    noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer>()))) ->
+    iterator {
+  using std::tie;
+
+  const auto& i_ptr = i.get();
+  if (!i_ptr) throw std::invalid_argument("invalid iterator");
+  iterator out;
+
+  ll_detail::elem& ep = *this->as_elem_(i_ptr);  // expect = 0
+  bool unlink_success;
+  tie(ep, unlink_success) = data_.unlink(ep, out, 0);
+  if (unlink_success)
+    disp(this->as_type_unlinked_(ep));
+  else
+    out.pos_ = i.pos_;
+  ++out;
+  return out;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+template<typename Disposer>
+auto ll_smartptr_list<T, Tag, AcqRel>::erase_and_dispose(
+    const iterator& i, Disposer disp)
+    noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer>()))) ->
+    iterator {
+  using std::tie;
+
+  const auto& i_ptr = i.get();
+  if (!i_ptr) throw std::invalid_argument("invalid iterator");
+  iterator out;
+
+  ll_detail::elem& ep = *this->as_elem_(i_ptr);  // expect = 0
+  bool unlink_success;
+  tie(ep, unlink_success) = data_.unlink(ep, out, 0);
+  if (unlink_success)
+    disp(this->as_type_unlinked_(ep));
+  else
+    out.pos_ = i.pos_;
+  ++out;
+  return out;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::erase(const const_iterator& i)
+    noexcept -> iterator {
+  return erase_and_dispose(i, [](const pointer&) {});
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::erase(const iterator& i)
+    noexcept-> iterator {
+  return erase_and_dispose(i, [](const pointer&) {});
+}
+
 
 template<typename T, typename Tag, typename AcqRel>
 auto ll_smartptr_list<T, Tag, AcqRel>::iterator::get() const noexcept ->
