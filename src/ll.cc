@@ -100,6 +100,43 @@ auto list::size() const noexcept -> size_type {
   }
 }
 
+auto list::init_begin(position& pos) const noexcept -> elem_ptr {
+  link_result rs;
+
+  pos.unlink();
+
+  elem_ptr rv = succ_elem_(const_cast<elem&>(data_));
+  for (;;) {
+    rs = link_after_(*rv, pos.front_());
+    switch (rs) {
+    case LINK_OK:
+      rs = link_after_(const_cast<elem&>(data_), pos.back_());
+      assert(rs == LINK_OK);
+      return rv;
+    case LINK_LOST:
+      rv = succ_elem_(const_cast<elem&>(data_));
+      break;
+    case LINK_TWICE:
+      assert(rs != LINK_TWICE);
+      break;
+    }
+  }
+  /* UNREACHABLE */
+}
+
+auto list::init_end(position& pos) const noexcept -> elem_ptr {
+  link_result rs;
+  elem_ptr rv = const_cast<elem*>(&data_);
+
+  pos.unlink();
+
+  rs = link_before_(*rv, pos.back_());
+  assert(rs == LINK_OK);
+  rs = link_after_(*rv, pos.front_());
+  assert(rs == LINK_OK);
+  return rv;
+}
+
 auto list::succ_(elem& x) noexcept -> elem_ptr {
   auto s = x.succ_.load(memory_order_acquire);
   while (get<0>(s) != nullptr && get<1>(s) == MARKED) {
@@ -456,6 +493,32 @@ auto list::pop_back() noexcept -> elem_ptr {
       break;
     }
   }
+}
+
+auto list::link_front(elem& e) noexcept -> bool {
+  link_result rs = link_after_(const_cast<elem&>(data_), e);
+  switch (rs) {
+  case LINK_OK:
+  case LINK_TWICE:
+    break;
+  case LINK_LOST:
+    assert(rs != LINK_LOST);
+    break;
+  }
+  return rs == LINK_OK;
+}
+
+auto list::link_back(elem& e) noexcept -> bool {
+  link_result rs = link_before_(const_cast<elem&>(data_), e);
+  switch (rs) {
+  case LINK_OK:
+  case LINK_TWICE:
+    break;
+  case LINK_LOST:
+    assert(rs != LINK_LOST);
+    break;
+  }
+  return rs == LINK_OK;
 }
 
 

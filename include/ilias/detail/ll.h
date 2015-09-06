@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <iterator>
 #include <ilias/llptr.h>
 
 namespace ilias {
@@ -114,6 +115,9 @@ class list {
   bool empty() const noexcept;
   size_type size() const noexcept;
 
+  elem_ptr init_begin(position&) const noexcept;
+  elem_ptr init_end(position&) const noexcept;
+
  private:
   static bool is_unlinked_(const elem&) noexcept;
   static elem_ptr succ_(elem&) noexcept;
@@ -134,6 +138,9 @@ class list {
   elem_ptr pop_front() noexcept;
   elem_ptr pop_back() noexcept;
 
+  bool link_front(elem&) noexcept;
+  bool link_back(elem&) noexcept;
+
  private:
   elem data_;
 };
@@ -148,6 +155,8 @@ class iter_link final
 };
 
 class list::position {
+  friend list;
+
  public:
   void unlink() noexcept;
   bool link_around(elem&) noexcept;
@@ -262,18 +271,18 @@ class ll_smartptr_list
   iterator end() noexcept;
   const_iterator begin() const noexcept;
   const_iterator end() const noexcept;
-  const_iterator cbegin() const noexcept;
-  const_iterator cend() const noexcept;
+  const_iterator cbegin() const noexcept { return begin(); }
+  const_iterator cend() const noexcept { return begin(); }
 
-  inline bool link_back(pointer);
-  inline bool link_front(pointer);
-  inline std::pair<iterator, bool> link_after(const const_iterator&, pointer);
-  inline std::pair<iterator, bool> link_after(const iterator&, pointer);
-  inline std::pair<iterator, bool> link_before(const const_iterator&, pointer);
-  inline std::pair<iterator, bool> link_before(const iterator&, pointer);
+  bool link_front(pointer);
+  bool link_back(pointer);
+  std::pair<iterator, bool> link_after(const const_iterator&, pointer);
+  std::pair<iterator, bool> link_after(const iterator&, pointer);
+  std::pair<iterator, bool> link_before(const const_iterator&, pointer);
+  std::pair<iterator, bool> link_before(const iterator&, pointer);
 
-  inline iterator link(const const_iterator&, pointer);
-  inline iterator link(const iterator&, pointer);
+  iterator link(const const_iterator&, pointer);
+  iterator link(const iterator&, pointer);
 
   template<typename Disposer> void clear_and_dispose(Disposer)
       noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer>())));
@@ -327,6 +336,95 @@ class ll_smartptr_list
 
  private:
   mutable ll_detail::list data_;
+};
+
+
+template<typename T, typename Tag, typename AcqRel>
+class ll_smartptr_list<T, Tag, AcqRel>::iterator
+: private ll_detail::ll_list_transformations<T, Tag, AcqRel>,
+  public std::iterator<
+      std::bidirectional_iterator_tag,
+      typename ll_detail::
+          template ll_list_transformations<T, Tag, AcqRel>::value_type,
+      typename ll_detail::
+          template ll_list_transformations<T, Tag, AcqRel>::difference_type,
+      typename ll_detail::
+          template ll_list_transformations<T, Tag, AcqRel>::pointer,
+      typename ll_detail::
+          template ll_list_transformations<T, Tag, AcqRel>::reference>
+{
+ private:
+  using transformations_type =
+      ll_detail::ll_list_transformations<T, Tag, AcqRel>;
+
+ public:
+  using pointer = typename transformations_type::pointer;
+  using reference = typename transformations_type::reference;
+
+  iterator() noexcept = default;
+  iterator(const iterator&) noexcept = default;
+  iterator& operator=(const iterator&) noexcept = default;
+  bool operator==(const iterator&) const noexcept;
+
+  const pointer& get() const noexcept;
+  const pointer& operator->() const noexcept;
+  reference operator*() const noexcept;
+  operator pointer() const noexcept;
+  pointer release() noexcept;
+
+  iterator& operator++() noexcept;
+  iterator operator++(int) noexcept;
+  iterator& operator--() noexcept;
+  iterator operator--(int) noexcept;
+
+ private:
+  ll_detail::list::position pos_;
+  typename transformations_type::pointer ptr_;
+};
+
+
+template<typename T, typename Tag, typename AcqRel>
+class ll_smartptr_list<T, Tag, AcqRel>::const_iterator
+: private ll_detail::ll_list_transformations<T, Tag, AcqRel>,
+  public std::iterator<
+      std::bidirectional_iterator_tag,
+      const typename ll_detail::
+          template ll_list_transformations<T, Tag, AcqRel>::value_type,
+      typename ll_detail::
+          template ll_list_transformations<T, Tag, AcqRel>::difference_type,
+      typename ll_detail::
+          template ll_list_transformations<T, Tag, AcqRel>::const_pointer,
+      typename ll_detail::
+          template ll_list_transformations<T, Tag, AcqRel>::const_reference>
+{
+ private:
+  using transformations_type =
+      ll_detail::ll_list_transformations<T, Tag, AcqRel>;
+
+ public:
+  using pointer = typename transformations_type::const_pointer;
+  using reference = typename transformations_type::const_reference;
+
+  const_iterator() noexcept = default;
+  const_iterator(const iterator&) noexcept;
+  const_iterator(const const_iterator&) noexcept = default;
+  const_iterator& operator=(const const_iterator&) noexcept = default;
+  bool operator==(const const_iterator&) const noexcept;
+
+  const pointer& get() const noexcept;
+  const pointer& operator->() const noexcept;
+  reference operator*() const noexcept;
+  operator pointer() const noexcept;
+  pointer release() noexcept;
+
+  const_iterator& operator++() noexcept;
+  const_iterator operator++(int) noexcept;
+  const_iterator& operator--() noexcept;
+  const_iterator operator--(int) noexcept;
+
+ private:
+  ll_detail::list::position pos_;
+  typename transformations_type::pointer ptr_;
 };
 
 
