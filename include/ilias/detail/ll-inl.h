@@ -398,6 +398,60 @@ auto ll_smartptr_list<T, Tag, AcqRel>::erase(const iterator& i)
   return erase_and_dispose(i, [](const pointer&) {});
 }
 
+template<typename T, typename Tag, typename AcqRel>
+template<typename Disposer>
+auto ll_smartptr_list<T, Tag, AcqRel>::erase_and_dispose(
+    const const_iterator& b, const const_iterator& e, Disposer disp)
+    noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer>()))) ->
+    iterator {
+  iterator i;
+  i.pos_ = b.pos_;
+  i.ptr_ = const_pointer_cast<value_type>(b.ptr_);
+
+  while (i != e) {
+    bool fired = false;
+    i = erase(i, [&fired, &disp](pointer&& p) {
+                   disp(p);
+                   fired = true;
+                 });
+    if (!fired && i != e) ++i;
+  }
+  return i;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+template<typename Disposer>
+auto ll_smartptr_list<T, Tag, AcqRel>::erase_and_dispose(
+    const iterator& b, const iterator& e, Disposer disp)
+    noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer>()))) ->
+    iterator {
+  iterator i;
+  i.pos_ = b.pos_;
+  i.ptr_ = b.ptr_;
+
+  while (i != e) {
+    bool fired = false;
+    i = erase(i, [&fired, &disp](pointer&& p) {
+                   disp(p);
+                   fired = true;
+                 });
+    if (!fired && i != e) ++i;
+  }
+  return i;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::erase(
+    const const_iterator& b, const const_iterator& e) noexcept -> iterator {
+  return erase_and_dispose(b, e, [](const pointer&) {});
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::erase(
+    const iterator& b, const iterator& e) noexcept -> iterator {
+  return erase_and_dispose(b, e, [](const pointer&) {});
+}
+
 
 template<typename T, typename Tag, typename AcqRel>
 auto ll_smartptr_list<T, Tag, AcqRel>::iterator::get() const noexcept ->
