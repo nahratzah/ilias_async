@@ -74,7 +74,7 @@ template<typename T, typename Tag, typename AcqRel>
 auto ll_list_transformations<T, Tag, AcqRel>::as_type_(const elem_ptr& p)
     noexcept -> pointer {
   if (p == nullptr) return nullptr;
-  assert(get_elem_type(*p) == elem_type::element);
+  assert(list::get_elem_type(*p) == elem_type::element);
   hook_type& hook = static_cast<hook_type&>(*p);
   reference v = static_cast<reference>(hook);
   return pointer(&v);
@@ -84,7 +84,7 @@ template<typename T, typename Tag, typename AcqRel>
 auto ll_list_transformations<T, Tag, AcqRel>::as_type_unlinked_(
     const elem_ptr& p) noexcept -> pointer {
   if (p == nullptr) return nullptr;
-  assert(get_elem_type(*p) == elem_type::element);
+  assert(list::get_elem_type(*p) == elem_type::element);
   hook_type& hook = static_cast<hook_type&>(*p);
   reference v = static_cast<reference>(hook);
   return pointer(v, false);
@@ -123,7 +123,7 @@ template<typename T, typename Tag>
 auto ll_list_transformations<T, Tag, no_acqrel>::as_type_(
     const elem_ptr& p) noexcept -> pointer {
   if (p == nullptr) return nullptr;
-  assert(get_elem_type(*p) == elem_type::element);
+  assert(list::get_elem_type(*p) == elem_type::element);
   hook_type& hook = static_cast<hook_type&>(*p);
   reference v = static_cast<reference>(hook);
   return &v;
@@ -133,7 +133,7 @@ template<typename T, typename Tag>
 auto ll_list_transformations<T, Tag, no_acqrel>::as_type_unlinked_(
     const elem_ptr& p) noexcept -> pointer {
   if (p == nullptr) return nullptr;
-  assert(get_elem_type(*p) == elem_type::element);
+  assert(list::get_elem_type(*p) == elem_type::element);
   hook_type& hook = static_cast<hook_type&>(*p);
   reference v = static_cast<reference>(hook);
   return &v;
@@ -191,7 +191,7 @@ template<typename T, typename Tag, typename AcqRel>
 auto ll_smartptr_list<T, Tag, AcqRel>::end() noexcept -> iterator {
   iterator rv;
   auto head = this->as_type_(data_.init_begin(rv.pos_));
-  assert(ll_detail::list::get_elem_type(*head) == element_type::head);
+  assert(ll_detail::list::get_elem_type(*head) == ll_detail::elem_type::head);
   return rv;
 }
 
@@ -207,7 +207,7 @@ template<typename T, typename Tag, typename AcqRel>
 auto ll_smartptr_list<T, Tag, AcqRel>::end() const noexcept -> const_iterator {
   const_iterator rv;
   auto head = this->as_type_(data_.init_begin(rv.pos_));
-  assert(ll_detail::list::get_elem_type(*head) == element_type::head);
+  assert(ll_detail::list::get_elem_type(*head) == ll_detail::elem_type::head);
   return rv;
 }
 
