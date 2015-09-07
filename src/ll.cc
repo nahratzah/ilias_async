@@ -700,33 +700,33 @@ auto list::position::step_backward() noexcept -> elem_ptr {
 }
 
 auto list::position::operator==(const position& o) const noexcept -> bool {
-  if (is_unlinked_(front_()) && is_unlinked_(o.front_())) return true;
-  if (is_unlinked_(front_()) || is_unlinked_(o.front_())) return false;
+  if (is_unlinked_(back_()) && is_unlinked_(o.back_())) return true;
+  if (is_unlinked_(back_()) || is_unlinked_(o.back_())) return false;
 
-  elem_ptr s1 = succ_(front_()),
-           s2 = succ_(o.front_());
+  elem_ptr s1 = succ_(back_()),
+           s2 = succ_(o.back_());
   while (get_elem_type(*s1) == elem_type::iterator &&
          get_elem_type(*s2) == elem_type::iterator) {
-    if (s1 == &o.front_() || s2 == &front_()) return true;
+    if (s1 == &o.back_() || s2 == &back_()) return true;
 
     s1 = succ_(*s1);
-    if (s1 == nullptr) s1 = succ_(front_());
+    if (s1 == nullptr) s1 = succ_(back_());
     s2 = succ_(*s2);
-    if (s2 == nullptr) s2 = succ_(o.front_());
+    if (s2 == nullptr) s2 = succ_(o.back_());
   }
 
   while (get_elem_type(*s1) == elem_type::iterator) {
-    if (s1 == &o.front_()) return true;
+    if (s1 == &o.back_()) return true;
 
     s1 = succ_(*s1);
-    if (s1 == nullptr) s1 = succ_(front_());
+    if (s1 == nullptr) s1 = succ_(back_());
   }
 
   while (get_elem_type(*s2) == elem_type::iterator) {
-    if (s2 == &front_()) return true;
+    if (s2 == &back_()) return true;
 
     s2 = succ_(*s2);
-    if (s2 == nullptr) s2 = succ_(front_());
+    if (s2 == nullptr) s2 = succ_(back_());
   }
 
   return false;
