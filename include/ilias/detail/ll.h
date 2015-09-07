@@ -370,6 +370,7 @@ class ll_smartptr_list<T, Tag, AcqRel>::iterator
   iterator(const iterator&) noexcept = default;
   iterator& operator=(const iterator&) noexcept = default;
   bool operator==(const iterator&) const noexcept;
+  bool operator!=(const iterator&) const noexcept;
 
   const pointer& get() const noexcept;
   const pointer& operator->() const noexcept;
@@ -415,6 +416,7 @@ class ll_smartptr_list<T, Tag, AcqRel>::const_iterator
   const_iterator(const const_iterator&) noexcept = default;
   const_iterator& operator=(const const_iterator&) noexcept = default;
   bool operator==(const const_iterator&) const noexcept;
+  bool operator!=(const const_iterator&) const noexcept;
 
   const pointer& get() const noexcept;
   const pointer& operator->() const noexcept;

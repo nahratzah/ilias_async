@@ -411,7 +411,7 @@ auto ll_smartptr_list<T, Tag, AcqRel>::erase_and_dispose(
   while (i != e) {
     bool fired = false;
     i = erase(i, [&fired, &disp](pointer&& p) {
-                   disp(p);
+                   disp(move(p));
                    fired = true;
                  });
     if (!fired && i != e) ++i;
@@ -432,7 +432,7 @@ auto ll_smartptr_list<T, Tag, AcqRel>::erase_and_dispose(
   while (i != e) {
     bool fired = false;
     i = erase(i, [&fired, &disp](pointer&& p) {
-                   disp(p);
+                   disp(move(p));
                    fired = true;
                  });
     if (!fired && i != e) ++i;
@@ -452,6 +452,89 @@ auto ll_smartptr_list<T, Tag, AcqRel>::erase(
   return erase_and_dispose(b, e, [](const pointer&) {});
 }
 
+template<typename T, typename Tag, typename AcqRel>
+template<typename Predicate, typename Disposer>
+auto ll_smartptr_list<T, Tag, AcqRel>::remove_and_dispose_if(Predicate pred,
+                                                             Disposer disp)
+    noexcept(noexcept(std::declval<Predicate&>()(
+                          std::declval<const_reference>())) &&
+             noexcept(std::declval<Disposer&>()(std::declval<pointer>()))) ->
+    void {
+  iterator i = begin(), e = end();
+  while (i != e) {
+    bool fired = false;
+    if (pred(*i)) {
+      i = erase_and_dispose(i, [&fired, &disp](pointer&& p) {
+                                 disp(move(p));
+                                 fired = true;
+                               });
+    }
+    if (!fired) ++i;
+  }
+}
+
+template<typename T, typename Tag, typename AcqRel>
+template<typename Disposer>
+auto ll_smartptr_list<T, Tag, AcqRel>::remove_and_dispose(const_reference v,
+                                                          Disposer disp)
+    noexcept(noexcept(std::declval<const_reference>() ==
+                          std::declval<const_reference>()) &&
+             noexcept(std::declval<Disposer&>()(std::declval<pointer>()))) ->
+    void {
+  return erase_and_dispose_if([&v](const_reference& x) { return x == v; },
+                              move(disp));
+}
+
+template<typename T, typename Tag, typename AcqRel>
+template<typename Predicate>
+auto ll_smartptr_list<T, Tag, AcqRel>::remove_if(Predicate pred)
+    noexcept(noexcept(std::declval<Predicate&>()(
+                          std::declval<const_reference>()))) ->
+    void {
+  return erase_and_dispose_if(move(pred), [](const pointer&) {});
+}
+
+template<typename T, typename Tag, typename AcqRel>
+template<typename Predicate>
+auto ll_smartptr_list<T, Tag, AcqRel>::remove(const_reference v)
+    noexcept(noexcept(std::declval<Predicate&>()(
+                          std::declval<const_reference>()))) ->
+    void {
+  return erase_and_dispose_if([&v](const_reference& x) { return x == v; },
+                              [](const pointer&) {});
+}
+
+template<typename T, typename Tag, typename AcqRel>
+template<typename Functor>
+auto ll_smartptr_list<T, Tag, AcqRel>::visit(Functor fn)
+    noexcept(noexcept(std::declval<Functor&>()(std::declval<reference>()))) ->
+    Functor {
+  for (reference i : *this) fn(i);
+  return fn;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+template<typename Functor>
+auto ll_smartptr_list<T, Tag, AcqRel>::visit(Functor fn)
+    const
+    noexcept(noexcept(std::declval<Functor&>()(std::declval<reference>()))) ->
+    Functor {
+  for (const_reference i : *this) fn(i);
+  return fn;
+}
+
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator::operator==(
+    const iterator& o) const noexcept -> bool {
+  return pos_ == o.pos_;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator::operator!=(
+    const iterator& o) const noexcept -> bool {
+  return !(*this == o);
+}
 
 template<typename T, typename Tag, typename AcqRel>
 auto ll_smartptr_list<T, Tag, AcqRel>::iterator::get() const noexcept ->
@@ -527,6 +610,18 @@ auto ll_smartptr_list<T, Tag, AcqRel>::iterator::operator--(int)
   return clone;
 }
 
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::const_iterator::operator==(
+    const const_iterator& o) const noexcept -> bool {
+  return pos_ == o.pos_;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::const_iterator::operator!=(
+    const const_iterator& o) const noexcept -> bool {
+  return !(*this == o);
+}
 
 template<typename T, typename Tag, typename AcqRel>
 ll_smartptr_list<T, Tag, AcqRel>::const_iterator::const_iterator(
