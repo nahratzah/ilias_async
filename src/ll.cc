@@ -64,6 +64,15 @@ constexpr list::axb_link_result list::XLINK_LOST_B;
 constexpr list::axb_link_result list::XLINK_LOST_AB;
 
 
+elem::elem() noexcept {}
+
+elem::elem(elem_type type) noexcept
+: type_(type)
+{}
+
+elem::~elem() noexcept {}
+
+
 list::list() noexcept
 : data_(elem_type::head)
 {
