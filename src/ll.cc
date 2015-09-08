@@ -632,6 +632,21 @@ auto list::unlink(elem& e, position* out, size_t expect) ->
 }
 
 
+list::position::position() noexcept {}
+
+list::position::position(const position& o) noexcept
+: pos_(o.pos_),
+  swap_(o.swap_)
+{}
+
+auto list::position::operator=(const position& o) noexcept -> position& {
+  pos_ = o.pos_;
+  swap_ = o.swap_;
+  return *this;
+}
+
+list::position::~position() noexcept {}
+
 auto list::position::unlink() noexcept -> void {
   for (iter_link& i : pos_)
     unlink_iter_(i);

@@ -180,6 +180,11 @@ class list::position {
   friend list;
 
  public:
+  ILIAS_ASYNC_EXPORT position() noexcept;
+  ILIAS_ASYNC_EXPORT position(const position&) noexcept;
+  ILIAS_ASYNC_EXPORT position& operator=(const position&) noexcept;
+  ILIAS_ASYNC_EXPORT ~position() noexcept;
+
   ILIAS_ASYNC_EXPORT void unlink() noexcept;
   ILIAS_ASYNC_EXPORT bool link_around(elem&) noexcept;
   ILIAS_ASYNC_EXPORT elem_ptr step_forward() noexcept;
