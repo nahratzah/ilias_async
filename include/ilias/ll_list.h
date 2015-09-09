@@ -64,9 +64,9 @@ class elem {
 
   mutable elem_llptr succ_;
   mutable elem_llptr pred_;
-  mutable atomic<size_t> link_count_;
+  mutable atomic<size_t> link_count_{ 0U };
   const elem_type type_ = elem_type::element;
-  mutable atomic<bool> linking_;
+  mutable atomic<bool> linking_{ false };
 };
 
 class list {
