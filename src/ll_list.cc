@@ -108,7 +108,7 @@ class elem_linking_lock {
 
 
 inline elem_linking_lock::elem_linking_lock(const elem& e) noexcept {
-  if (e.linking_.exchange(true, memory_order_acquire))
+  if (!e.linking_.exchange(true, memory_order_acquire))
     locked_ = &e;
 }
 
