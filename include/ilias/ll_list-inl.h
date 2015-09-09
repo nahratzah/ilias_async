@@ -40,7 +40,13 @@ inline iter_link::iter_link(const iter_link& o) noexcept
 }
 
 inline auto iter_link::operator=(const iter_link& o) noexcept -> iter_link& {
-  while (list::unlink_(*list::pred_(*this), *this, 0) == list::UNLINK_RETRY);
+  {
+    list::unlink_result ur;
+    do {
+      elem_ptr p = list::pred_(*this);
+      ur = (p ? list::unlink_(*p, *this, 0) : list::UNLINK_FAIL);
+    } while (ur == list::UNLINK_RETRY);
+  }
 
   if (!list::is_unlinked_(o)) {
     list::link_result rv = list::link_after_(const_cast<iter_link&>(o), *this);
@@ -50,7 +56,12 @@ inline auto iter_link::operator=(const iter_link& o) noexcept -> iter_link& {
 }
 
 inline iter_link::~iter_link() noexcept {
-  while (list::unlink_(*list::pred_(*this), *this, 0) == list::UNLINK_RETRY);
+  list::unlink_result ur;
+  do {
+    elem_ptr p = list::pred_(*this);
+    if (!p) return;
+    ur = list::unlink_(*p, *this, 0);
+  } while (ur == list::UNLINK_RETRY);
 }
 
 
@@ -254,7 +265,7 @@ auto ll_smartptr_list<T, Tag, AcqRel>::begin() noexcept -> iterator {
 template<typename T, typename Tag, typename AcqRel>
 auto ll_smartptr_list<T, Tag, AcqRel>::end() noexcept -> iterator {
   iterator rv;
-  auto head = data_.init_begin(rv.pos_);
+  auto head = data_.init_end(rv.pos_);
   assert(ll_list_detail::list::get_elem_type(*head) ==
          ll_list_detail::elem_type::head);
   return rv;
@@ -271,7 +282,7 @@ auto ll_smartptr_list<T, Tag, AcqRel>::begin() const noexcept ->
 template<typename T, typename Tag, typename AcqRel>
 auto ll_smartptr_list<T, Tag, AcqRel>::end() const noexcept -> const_iterator {
   const_iterator rv;
-  auto head = data_.init_begin(rv.pos_);
+  auto head = data_.init_end(rv.pos_);
   assert(ll_list_detail::list::get_elem_type(*head) ==
          ll_list_detail::elem_type::head);
   return rv;
