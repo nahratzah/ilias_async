@@ -17,7 +17,7 @@ inline auto elem_acqrel::acquire(const elem& e, size_t nrefs) noexcept ->
 
 inline auto elem_acqrel::release(const elem& e, size_t nrefs) noexcept ->
     void {
-  size_t old = e.link_count_.fetch_add(nrefs, memory_order_acquire);
+  size_t old = e.link_count_.fetch_sub(nrefs, memory_order_release);
   assert(old >= nrefs);  // Insufficient references.
 }
 

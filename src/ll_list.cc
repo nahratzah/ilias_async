@@ -48,6 +48,33 @@ namespace ll_list_detail {
  */
 
 
+namespace {
+
+constexpr unsigned int SPIN = 100;
+
+inline void spinwait(unsigned int& spin) noexcept {
+  if (spin-- != 0) {
+#if defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64))
+    /* MS-compiler x86/x86_64 assembly. */
+    __asm {
+      __asm pause
+    };
+#elif (defined(__GNUC__) || defined(__clang__)) &&                      \
+      (defined(__amd64__) || defined(__x86_64__) ||                     \
+       defined(__i386__) || defined(__ia64__))
+    /* GCC/clang assembly. */
+    __asm __volatile("pause":::"memory");
+#else
+    this_thread::yield();
+#endif
+  } else {
+    spin = SPIN;
+    this_thread::yield();
+  }
+}
+
+} /* namespace ilias::ll_list_detail::<unnamed> */
+
 constexpr list::unlink_result list::UNLINK_OK;
 constexpr list::unlink_result list::UNLINK_RETRY;
 constexpr list::unlink_result list::UNLINK_FAIL;
@@ -111,16 +138,30 @@ elem::~elem() noexcept {}
 list::list() noexcept
 : data_(elem_type::head)
 {
-  auto p = elem_ptr(&data_);
-  data_.succ_.store(make_tuple(p, UNMARKED), memory_order_release);
-  data_.pred_.store(make_tuple(p, UNMARKED), memory_order_release);
+  {
+    auto p = elem_ptr(&data_);
+    data_.succ_.store(make_tuple(p, UNMARKED), memory_order_release);
+    data_.pred_.store(make_tuple(p, UNMARKED), memory_order_release);
+  }
+  assert(data_.link_count_.load() == 2);
 }
 
 list::~list() noexcept {
   assert(empty());
+
+  {
+    unsigned int spin = SPIN;
+
+    auto lc = data_.link_count_.load(memory_order_acquire);
+    while (lc > 2 || succ_(data_) != &data_) {
+      spinwait(spin);
+      lc = data_.link_count_.load(memory_order_acquire);
+    }
+  }
+
   assert(succ_(data_) == &data_);
   assert(pred_(data_) == &data_);
-  wait_link0(data_, 2);
+
   data_.succ_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
   data_.pred_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
 }
@@ -465,33 +506,6 @@ auto list::link_before_(elem& b, elem& x) noexcept -> link_result {
     }
   }
 }
-
-namespace {
-
-constexpr unsigned int SPIN = 100;
-
-inline void spinwait(unsigned int& spin) noexcept {
-  if (spin-- != 0) {
-#if defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64))
-    /* MS-compiler x86/x86_64 assembly. */
-    __asm {
-      __asm pause
-    };
-#elif (defined(__GNUC__) || defined(__clang__)) &&                      \
-      (defined(__amd64__) || defined(__x86_64__) ||                     \
-       defined(__i386__) || defined(__ia64__))
-    /* GCC/clang assembly. */
-    __asm __volatile("pause":::"memory");
-#else
-    this_thread::yield();
-#endif
-  } else {
-    spin = SPIN;
-    this_thread::yield();
-  }
-}
-
-} /* namespace ilias::ll_list_detail::<unnamed> */
 
 auto list::wait_link0(elem& x, size_t expect) noexcept -> void {
   unsigned int spin = SPIN;
