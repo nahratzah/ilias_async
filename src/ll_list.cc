@@ -451,7 +451,7 @@ auto list::succ_elem_(elem& x) noexcept -> elem_ptr {
   elem_ptr s = succ_(x);
   if (s != nullptr) {
     while (get_elem_type(*s) == elem_type::iterator) {
-      s = succ_(x);
+      s = succ_(*s);
       if (s == nullptr) s = succ_(x);
       if (s == nullptr) return s;
     }
@@ -463,7 +463,7 @@ auto list::pred_elem_(elem& x) noexcept -> elem_ptr {
   elem_ptr p = pred_(x);
   if (p != nullptr) {
     while (get_elem_type(*p) == elem_type::iterator) {
-      p = pred_(x);
+      p = pred_(*p);
       if (p == nullptr) p = pred_(x);
       if (p == nullptr) return p;
     }
@@ -474,6 +474,7 @@ auto list::pred_elem_(elem& x) noexcept -> elem_ptr {
 auto list::link_after_(elem& a, elem& x) noexcept -> link_result {
   for (;;) {
     elem_ptr b = succ_(a);
+    if (!b) return LINK_LOST;
     switch (link_(a, x, *b)) {
     case XLINK_OK:
       return LINK_OK;
@@ -492,6 +493,7 @@ auto list::link_after_(elem& a, elem& x) noexcept -> link_result {
 auto list::link_before_(elem& b, elem& x) noexcept -> link_result {
   for (;;) {
     elem_ptr a = pred_(b);
+    if (!a) return LINK_LOST;
     switch (link_(*a, x, b)) {
     case XLINK_OK:
       return LINK_OK;
