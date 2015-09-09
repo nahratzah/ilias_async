@@ -2,7 +2,7 @@
 #include <thread>
 
 namespace ilias {
-namespace ll_detail {
+namespace ll_list_detail {
 
 
 /*
@@ -453,7 +453,7 @@ inline void spinwait(unsigned int& spin) noexcept {
   }
 }
 
-} /* namespace ilias::ll_detail::<unnamed> */
+} /* namespace ilias::ll_list_detail::<unnamed> */
 
 auto list::wait_link0(elem& x, size_t expect) noexcept -> void {
   unsigned int spin = SPIN;
@@ -770,4 +770,4 @@ auto list::position::unlink_iter_(iter_link& i) noexcept -> bool {
 }
 
 
-}} /* namespace ilias::ll_detail */
+}} /* namespace ilias::ll_list_detail */

@@ -17,7 +17,7 @@ struct no_acqrel {};
 template<typename = void> class ll_list_hook;
 
 
-namespace ll_detail {
+namespace ll_list_detail {
 
 
 using namespace std;
@@ -244,15 +244,15 @@ class ll_list_transformations<T, Tag, no_acqrel> {
 };
 
 
-} /* namespace ilias::ll_detail */
+} /* namespace ilias::ll_list_detail */
 
 
 template<typename Tag>
 class ll_list_hook
-: private ll_detail::elem
+: private ll_list_detail::elem
 {
   template<typename, typename, typename>
-      friend class ll_detail::ll_list_transformations;
+      friend class ll_list_detail::ll_list_transformations;
 
  protected:
   ll_list_hook& operator=(const ll_list_hook&) noexcept { return *this; }
@@ -261,11 +261,11 @@ class ll_list_hook
 template<typename T, typename Tag = void,
          typename AcqRel = default_refcount_mgr<T>>
 class ll_smartptr_list
-: private ll_detail::ll_list_transformations<T, Tag, AcqRel>
+: private ll_list_detail::ll_list_transformations<T, Tag, AcqRel>
 {
  private:
   using transformations_type =
-      ll_detail::ll_list_transformations<T, Tag, AcqRel>;
+      ll_list_detail::ll_list_transformations<T, Tag, AcqRel>;
 
  public:
   using value_type = typename transformations_type::value_type;
@@ -273,8 +273,8 @@ class ll_smartptr_list
   using const_pointer = typename transformations_type::const_pointer;
   using reference = typename transformations_type::reference;
   using const_reference = typename transformations_type::const_reference;
-  using size_type = ll_detail::list::size_type;
-  using difference_type = ll_detail::list::difference_type;
+  using size_type = ll_list_detail::list::size_type;
+  using difference_type = ll_list_detail::list::difference_type;
   class iterator;
   class const_iterator;
 
@@ -362,27 +362,27 @@ class ll_smartptr_list
                             std::declval<const_reference>())));
 
  private:
-  mutable ll_detail::list data_;
+  mutable ll_list_detail::list data_;
 };
 
 
 template<typename T, typename Tag, typename AcqRel>
 class ll_smartptr_list<T, Tag, AcqRel>::iterator
-: private ll_detail::ll_list_transformations<T, Tag, AcqRel>,
+: private ll_list_detail::ll_list_transformations<T, Tag, AcqRel>,
   public std::iterator<
       std::bidirectional_iterator_tag,
-      typename ll_detail::
+      typename ll_list_detail::
           template ll_list_transformations<T, Tag, AcqRel>::value_type,
-      typename ll_detail::
+      typename ll_list_detail::
           template ll_list_transformations<T, Tag, AcqRel>::difference_type,
-      typename ll_detail::
+      typename ll_list_detail::
           template ll_list_transformations<T, Tag, AcqRel>::pointer,
-      typename ll_detail::
+      typename ll_list_detail::
           template ll_list_transformations<T, Tag, AcqRel>::reference>
 {
  private:
   using transformations_type =
-      ll_detail::ll_list_transformations<T, Tag, AcqRel>;
+      ll_list_detail::ll_list_transformations<T, Tag, AcqRel>;
 
  public:
   using pointer = typename transformations_type::pointer;
@@ -406,28 +406,28 @@ class ll_smartptr_list<T, Tag, AcqRel>::iterator
   iterator operator--(int) noexcept;
 
  private:
-  ll_detail::list::position pos_;
+  ll_list_detail::list::position pos_;
   typename transformations_type::pointer ptr_;
 };
 
 
 template<typename T, typename Tag, typename AcqRel>
 class ll_smartptr_list<T, Tag, AcqRel>::const_iterator
-: private ll_detail::ll_list_transformations<T, Tag, AcqRel>,
+: private ll_list_detail::ll_list_transformations<T, Tag, AcqRel>,
   public std::iterator<
       std::bidirectional_iterator_tag,
-      const typename ll_detail::
+      const typename ll_list_detail::
           template ll_list_transformations<T, Tag, AcqRel>::value_type,
-      typename ll_detail::
+      typename ll_list_detail::
           template ll_list_transformations<T, Tag, AcqRel>::difference_type,
-      typename ll_detail::
+      typename ll_list_detail::
           template ll_list_transformations<T, Tag, AcqRel>::const_pointer,
-      typename ll_detail::
+      typename ll_list_detail::
           template ll_list_transformations<T, Tag, AcqRel>::const_reference>
 {
  private:
   using transformations_type =
-      ll_detail::ll_list_transformations<T, Tag, AcqRel>;
+      ll_list_detail::ll_list_transformations<T, Tag, AcqRel>;
 
  public:
   using pointer = typename transformations_type::const_pointer;
@@ -452,7 +452,7 @@ class ll_smartptr_list<T, Tag, AcqRel>::const_iterator
   const_iterator operator--(int) noexcept;
 
  private:
-  ll_detail::list::position pos_;
+  ll_list_detail::list::position pos_;
   typename transformations_type::pointer ptr_;
 };
 

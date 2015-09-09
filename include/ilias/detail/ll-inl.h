@@ -6,7 +6,7 @@
 #include <stdexcept>
 
 namespace ilias {
-namespace ll_detail {
+namespace ll_list_detail {
 
 
 inline auto elem_acqrel::acquire(const elem& e, size_t nrefs) noexcept ->
@@ -152,7 +152,7 @@ auto ll_list_transformations<T, Tag, no_acqrel>::release_pointer_(
 }
 
 
-} /* namespace ilias::ll_detail */
+} /* namespace ilias::ll_list_detail */
 
 
 template<typename T, typename Tag, typename AcqRel>
@@ -191,7 +191,8 @@ template<typename T, typename Tag, typename AcqRel>
 auto ll_smartptr_list<T, Tag, AcqRel>::end() noexcept -> iterator {
   iterator rv;
   auto head = this->as_type_(data_.init_begin(rv.pos_));
-  assert(ll_detail::list::get_elem_type(*head) == ll_detail::elem_type::head);
+  assert(ll_list_detail::list::get_elem_type(*head) ==
+         ll_list_detail::elem_type::head);
   return rv;
 }
 
@@ -207,7 +208,8 @@ template<typename T, typename Tag, typename AcqRel>
 auto ll_smartptr_list<T, Tag, AcqRel>::end() const noexcept -> const_iterator {
   const_iterator rv;
   auto head = this->as_type_(data_.init_begin(rv.pos_));
-  assert(ll_detail::list::get_elem_type(*head) == ll_detail::elem_type::head);
+  assert(ll_list_detail::list::get_elem_type(*head) ==
+         ll_list_detail::elem_type::head);
   return rv;
 }
 
@@ -352,7 +354,7 @@ auto ll_smartptr_list<T, Tag, AcqRel>::erase_and_dispose(
   if (!i_ptr) throw std::invalid_argument("invalid iterator");
   iterator out;
 
-  ll_detail::elem& ep = *this->as_elem_(i_ptr);  // expect = 0
+  ll_list_detail::elem& ep = *this->as_elem_(i_ptr);  // expect = 0
   bool unlink_success;
   tie(ep, unlink_success) = data_.unlink(ep, out, 0);
   if (unlink_success)
@@ -375,7 +377,7 @@ auto ll_smartptr_list<T, Tag, AcqRel>::erase_and_dispose(
   if (!i_ptr) throw std::invalid_argument("invalid iterator");
   iterator out;
 
-  ll_detail::elem& ep = *this->as_elem_(i_ptr);  // expect = 0
+  ll_list_detail::elem& ep = *this->as_elem_(i_ptr);  // expect = 0
   bool unlink_success;
   tie(ep, unlink_success) = data_.unlink(ep, out, 0);
   if (unlink_success)
@@ -573,7 +575,8 @@ auto ll_smartptr_list<T, Tag, AcqRel>::iterator::operator++()
     noexcept -> iterator& {
   auto e = pos_.step_forward();
   if (e == nullptr ||
-      ll_detail::list::get_elem_type(*e) == ll_detail::elem_type::head) {
+      (ll_list_detail::list::get_elem_type(*e) ==
+       ll_list_detail::elem_type::head)) {
     ptr_ = nullptr;
   } else {
     ptr_ = this->as_type_(e);
@@ -594,7 +597,8 @@ auto ll_smartptr_list<T, Tag, AcqRel>::iterator::operator--()
     noexcept -> iterator& {
   auto e = pos_.step_backward();
   if (e == nullptr ||
-      ll_detail::list::get_elem_type(*e) == ll_detail::elem_type::head) {
+      (ll_list_detail::list::get_elem_type(*e) ==
+       ll_list_detail::elem_type::head)) {
     ptr_ = nullptr;
   } else {
     ptr_ = this->as_type_(e);
@@ -668,7 +672,8 @@ auto ll_smartptr_list<T, Tag, AcqRel>::const_iterator::operator++()
     noexcept -> const_iterator& {
   auto e = pos_.step_forward();
   if (e == nullptr ||
-      ll_detail::list::get_elem_type(*e) == ll_detail::elem_type::head) {
+      (ll_list_detail::list::get_elem_type(*e) ==
+       ll_list_detail::elem_type::head)) {
     ptr_ = nullptr;
   } else {
     ptr_ = this->as_type_(e);
@@ -689,7 +694,8 @@ auto ll_smartptr_list<T, Tag, AcqRel>::const_iterator::operator--()
     noexcept -> const_iterator& {
   auto e = pos_.step_backward();
   if (e == nullptr ||
-      ll_detail::list::get_elem_type(*e) == ll_detail::elem_type::head) {
+      (ll_list_detail::list::get_elem_type(*e) ==
+       ll_list_detail::elem_type::head)) {
     ptr_ = nullptr;
   } else {
     ptr_ = this->as_type_(e);
