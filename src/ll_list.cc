@@ -848,7 +848,7 @@ auto list::position::operator==(const position& o) const noexcept -> bool {
     if (s2 == &back_()) return true;
 
     s2 = succ_(*s2);
-    if (s2 == nullptr) s2 = succ_(back_());
+    if (s2 == nullptr) s2 = succ_(o.back_());
   }
 
   return false;
