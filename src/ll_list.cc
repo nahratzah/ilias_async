@@ -854,7 +854,10 @@ auto list::position::operator==(const position& o) const noexcept -> bool {
 
 auto list::position::unlink_iter_(iter_link& i) noexcept -> bool {
   for (;;) {
-    switch (unlink_(*pred_(i), i, 0)) {
+    elem_ptr p = pred_(i);
+    if (!p) return false;
+
+    switch (unlink_(*p, i, 0)) {
     case UNLINK_OK:
       return true;
     case UNLINK_FAIL:
