@@ -177,7 +177,7 @@ tp_service_multiplexer::threadpool_service::~threadpool_service() noexcept
 void
 tp_service_multiplexer::threadpool_service::activate() noexcept
 {
-	this->m_self.m_active.push_back(this);
+	this->m_self.m_active.link_back(this);
 }
 
 bool
@@ -289,7 +289,7 @@ tp_service_multiplexer::threadpool_service::wakeup(unsigned int n) noexcept
 	}
 
 	if (c == work_avail::NO)
-		this->m_self.m_active.push_back(this);
+		this->m_self.m_active.link_back(this);
 
 	auto impl = atomic_load(&this->m_self.m_impl);
 	return (impl ? impl->wakeup(n) : 0U);
@@ -304,7 +304,7 @@ tp_service_multiplexer::threadpool_service::on_client_detach() noexcept
 		return;
 
 	this->m_work_avail.store(work_avail::DETACHED);
-	this->m_self.m_active.push_back(this);
+	this->m_self.m_active.link_back(this);
 }
 
 bool
@@ -351,8 +351,8 @@ tp_service_multiplexer::attach(threadpool_service_ptr<threadpool_service> p)
 	}
 
 	do_noexcept([&]() {
-		this->m_data.push_back(p);
-		this->m_active.push_back(p);
+		this->m_data.link_back(p);
+		this->m_active.link_back(p);
 		p->wakeup(threadpool_client_intf::WAKE_ALL);
 	    });
 }
@@ -441,7 +441,7 @@ tp_client_multiplexer::attach(threadpool_client_ptr<threadpool_client> p)
 		    "null threadpool client");
 	}
 
-	this->m_data.push_back(std::move(p));
+	this->m_data.link_back(std::move(p));
 }
 
 void

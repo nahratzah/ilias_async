@@ -5,6 +5,6 @@ test()
 {
 	list lst;
 
-	lst.push_back(new_test_obj());
+	lst.link_back(new_test_obj());
 	test_obj::ensure_count(1);
 }

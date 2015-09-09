@@ -5,7 +5,7 @@ test()
 {
 	list lst;
 
-	lst.push_front(new_test_obj());
-	lst.push_front(new_test_obj());
+	lst.link_front(new_test_obj());
+	lst.link_front(new_test_obj());
 	test_obj::ensure_count(2);
 }

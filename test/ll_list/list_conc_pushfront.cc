@@ -6,7 +6,7 @@ void
 push_front(list* lst, int n)
 {
 	while (n-- > 0)
-		lst->push_front(new_test_obj());
+		lst->link_front(new_test_obj());
 }
 
 

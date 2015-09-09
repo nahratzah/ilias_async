@@ -6,7 +6,7 @@ void
 push_back(list* lst, int n)
 {
 	while (n-- > 0)
-		lst->push_back(new_test_obj());
+		lst->link_back(new_test_obj());
 }
 
 

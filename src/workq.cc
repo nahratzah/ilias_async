@@ -483,7 +483,7 @@ wq_run_lock::lock(workq_service& wqs) noexcept
 			 * we just did.
 			 */
 			if (this->lock(*wq)) {
-				wqs.m_wq_runq.insert(runq_iter, std::move(wq));
+				wqs.m_wq_runq.link(runq_iter, std::move(wq));
 				wqs.wakeup();
 				break;
 			}
@@ -768,9 +768,9 @@ workq::job_to_runq(workq_detail::workq_intref<workq_job> j) noexcept
 {
 	bool activate = false;
 	if ((j->m_type & workq_job::TYPE_PARALLEL) &&
-	    this->m_p_runq.push_back(j))
+	    this->m_p_runq.link_back(j))
 		activate = true;
-	if (this->m_runq.push_back(std::move(j)))
+	if (this->m_runq.link_back(std::move(j)))
 		activate = true;
 
 	if (activate)
@@ -927,7 +927,7 @@ workq_service::wq_to_runq(workq_detail::workq_intref<workq> wq) noexcept
 {
 	/* Load insert position suitable for this thread. */
 	auto ipos = this->get_runq_iterpos();
-	this->m_wq_runq.insert(++ipos, wq);
+	this->m_wq_runq.link(++ipos, wq);
 	this->wakeup();
 }
 
@@ -937,7 +937,7 @@ workq_service::co_to_runq(
     std::size_t max_threads) noexcept
 {
 	assert(max_threads > 0);
-	const bool pushback_succeeded = this->m_co_runq.push_back(co);
+	const bool pushback_succeeded = this->m_co_runq.link_back(co);
 	assert(pushback_succeeded);
 	this->wakeup(max_threads);
 }

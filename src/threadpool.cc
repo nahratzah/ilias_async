@@ -576,7 +576,7 @@ threadpool::impl::worker::do_sleep() noexcept
 			 * less chance of all data to have been flushed
 			 * from the cpu caches.
 			 */
-			this->tp.m_idle.push_front(&this->self);
+			this->tp.m_idle.link_front(&this->self);
 		}
 
 		~idle_set_guard() noexcept
@@ -732,7 +732,7 @@ threadpool::impl::worker::_run() noexcept
 			 *
 			 * Push on collector queue.
 			 */
-			this->tp.m_dead.push_back(this);
+			this->tp.m_dead.link_back(this);
 		} else {
 			/*
 			 * This thread will survive the destruction of threadpool,

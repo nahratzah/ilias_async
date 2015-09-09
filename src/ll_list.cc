@@ -1,354 +1,772 @@
 #include <ilias/ll_list.h>
-
+#include <thread>
 
 namespace ilias {
 namespace ll_list_detail {
 
 
-basic_list::size_type
-basic_list::size() const noexcept
+/*
+ * Terminology:
+ * - successor: a following item in the sequence
+ * - predecessor: a previous item in the sequence
+ * - direct successor/predecessor:
+ *     a successor/predecessor
+ *     with no items between
+ * - indirect successor/predecessor:
+ *     a successor/predecessor with 0 or more items between
+ * - marked: the pointer flag is set
+ * - unmarked: the pointer flag is cleared
+ * - head: the item denoting the list
+ * - iterator: an item owned by a stack, indicating a position
+ * - link count:
+ *     reference counter for how many references an item has,
+ *     originating from within the list or its algorithms
+ * - reference count:
+ *     reference counter used outside the list, by application code
+ *     the list will maintain a single reference if the item is linked
+ *     the list does not depend on this reference count
+ *
+ * Invariants:
+ * - a.succ == b  ==>  b is the direct successor of a
+ * - b.pred == a  ==>  a is an indirect predecessor of b
+ * - x.pred == nil  ==>  x.succ == nil
+ * - x.succ != nil  ==>  x.pred != nil
+ * - x.pred is marked OR x.pred == nil  ==>  x is unlinked
+ * - x.pred == (a, marked)  ==>  a.succ == (x, marked) OR a.succ != x
+ * - reachable(a, b) AND reachable(b, x)  ==>  reachable(a, x)
+ * - a.succ == (b, unmarked)  ==>  reachable(a, b)
+ * - head is owned  (NOTE: enforced by user of algorithm)
+ * - x.link_count == sum(a.succ == x, a.pred == x, link references on stack)
+ * - x.link_count > 0  ==>  single reference count held
+ * - x.pred == (b, marked)  ==>  b is direct predecessor of unlinked x
+ *
+ * Rules:
+ * - only the creator of an iterator may link/unlink it
+ * - traversal of the list always happens from a iterator that is owned
+ * - when an element that is to be deleted is encounter,
+ *   the algorithm will aid in deletion
+ */
+
+
+constexpr list::unlink_result list::UNLINK_OK;
+constexpr list::unlink_result list::UNLINK_RETRY;
+constexpr list::unlink_result list::UNLINK_FAIL;
+
+constexpr list::link_result list::LINK_OK;
+constexpr list::link_result list::LINK_LOST;
+constexpr list::link_result list::LINK_TWICE;
+
+constexpr list::axb_link_result list::XLINK_OK;
+constexpr list::axb_link_result list::XLINK_RETRY;
+constexpr list::axb_link_result list::XLINK_TWICE;
+constexpr list::axb_link_result list::XLINK_LOST_A;
+constexpr list::axb_link_result list::XLINK_LOST_B;
+constexpr list::axb_link_result list::XLINK_LOST_AB;
+
+
+elem::elem() noexcept {}
+
+elem::elem(elem_type type) noexcept
+: type_(type)
+{}
+
+elem::~elem() noexcept {}
+
+
+list::list() noexcept
+: data_(elem_type::head)
 {
-	size_type count = 0;
-	for (elem_ptr i = this->head_.succ();
-	    !i->is_head();
-	    i = i->succ()) {
-		if (i->is_elem())
-			++count;
-	}
-	return count;
+  auto p = elem_ptr(&data_);
+  data_.succ_.store(make_tuple(p, UNMARKED), memory_order_release);
+  data_.pred_.store(make_tuple(p, UNMARKED), memory_order_release);
 }
 
-bool
-basic_list::empty() const noexcept
-{
-	elem_ptr i;
-	for (i = this->head_.succ();
-	    !i->is_head() && !i->is_elem();
-	    i = i->succ());
-	return i->is_head();
+list::~list() noexcept {
+  assert(empty());
+  assert(succ_(data_) == &data_);
+  assert(pred_(data_) == &data_);
+  wait_link0(data_, 2);
+  data_.succ_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
+  data_.pred_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
 }
 
-elem_ptr
-basic_list::pop_front() noexcept
-{
-	constexpr std::array<elem_type, 2> types{{
-		elem_type::HEAD,
-		elem_type::ELEM
-	    }};
-
-	elem_ptr i_next;
-	for (elem_ptr i = this->head_.succ(types);
-	    i->is_elem();
-	    i = std::move(i_next)) {
-		i_next = i->succ(types);
-		if (unlink(i))
-			return i;
-	}
-	return nullptr;
+auto list::empty() const noexcept -> bool {
+  return (get_elem_type(*succ_elem_(const_cast<elem&>(data_))) ==
+          elem_type::head);
 }
 
-elem_ptr
-basic_list::pop_back() noexcept
-{
-	constexpr std::array<elem_type, 2> types{{
-		elem_type::HEAD,
-		elem_type::ELEM
-	    }};
-
-	elem_ptr i_next;
-	for (elem_ptr i = this->head_.pred(types);
-	    i->is_elem();
-	    i = std::move(i_next)) {
-		i_next = i->pred(types);
-		if (unlink(i))
-			return i;
-	}
-	return nullptr;
+auto list::size() const noexcept -> size_type {
+  for (;;) {
+    size_type sz = 0;
+    elem_ptr i;
+    for (i = succ_elem_(const_cast<elem&>(data_));
+         i != nullptr && get_elem_type(*i) != elem_type::head;
+         i = succ_elem_(*i))
+      ++sz;
+    if (i != nullptr) return sz;
+  }
 }
 
-bool
-basic_list::insert_after_(elem* ins, const_elem_ptr pos, basic_iter* out_iter)
-noexcept
-{
-	assert(ins != nullptr && ins->is_elem());
-	assert(pos != nullptr && pos->is_forw_iter());
-	assert(out_iter == nullptr ||
-	    (pos != &out_iter->forw_ && pos != &out_iter->back_));
+auto list::init_begin(position& pos) const noexcept -> elem_ptr {
+  link_result rs;
 
-	std::tuple<elem_ptr, elem_ptr> pos_tpl{
-		const_pointer_cast<elem>(pos),
-		nullptr
-	    };
-	ll_simple_list::link_result lr;
-	if (out_iter)
-		out_iter->unlink();
+  pos.unlink();
 
-	/* Insert the element. */
-	do {
-		/* Fix pos_tpl to hold both ends of the insertion point. */
-		std::get<1>(pos_tpl) = std::get<0>(pos_tpl)->succ();
-		while (std::get<1>(pos_tpl)->is_forw_iter()) {
-			std::get<0>(pos_tpl) = std::move(std::get<1>(pos_tpl));
-			std::get<1>(pos_tpl) = std::get<0>(pos_tpl)->succ();
-		}
-
-		/* Validate pos_tpl. */
-		assert(!std::get<0>(pos_tpl)->is_back_iter());
-		assert(!std::get<1>(pos_tpl)->is_forw_iter());
-
-		lr = elem::link_between(ins, pos_tpl);
-	} while (lr == ll_simple_list::link_result::INVALID_POS);
-
-	/* Return failure. */
-	if (lr != ll_simple_list::link_result::SUCCESS)
-		return false;
-
-	/* Update out_iter. */
-	if (out_iter)
-		out_iter->link_post_insert_(this, std::move(pos_tpl));
-
-	return true;
+  elem_ptr rv = succ_elem_(const_cast<elem&>(data_));
+  for (;;) {
+    rs = link_after_(*rv, pos.front_());
+    switch (rs) {
+    case LINK_OK:
+      rs = link_after_(const_cast<elem&>(data_), pos.back_());
+      assert(rs == LINK_OK);
+      return rv;
+    case LINK_LOST:
+      rv = succ_elem_(const_cast<elem&>(data_));
+      break;
+    case LINK_TWICE:
+      assert(rs != LINK_TWICE);
+      break;
+    }
+  }
+  /* UNREACHABLE */
 }
 
-bool
-basic_list::insert_before_(elem* ins, const_elem_ptr pos, basic_iter* out_iter)
-noexcept
-{
-	assert(ins != nullptr && ins->is_elem());
-	assert(pos != nullptr && pos->is_back_iter());
-	assert(out_iter == nullptr ||
-	    (pos != &out_iter->forw_ && pos != &out_iter->back_));
+auto list::init_end(position& pos) const noexcept -> elem_ptr {
+  link_result rs;
+  elem_ptr rv = const_cast<elem*>(&data_);
 
-	std::tuple<elem_ptr, elem_ptr> pos_tpl{
-		nullptr,
-		const_pointer_cast<elem>(pos),
-	    };
-	ll_simple_list::link_result lr;
-	if (out_iter)
-		out_iter->unlink();
+  pos.unlink();
 
-	/* Insert the element. */
-	do {
-		/* Fix pos_tpl to hold both ends of the insertion point. */
-		std::get<0>(pos_tpl) = std::get<1>(pos_tpl)->pred();
-		while (std::get<0>(pos_tpl)->is_back_iter()) {
-			std::get<1>(pos_tpl) = std::move(std::get<0>(pos_tpl));
-			std::get<0>(pos_tpl) = std::get<1>(pos_tpl)->pred();
-		}
+  rs = link_before_(*rv, pos.back_());
+  assert(rs == LINK_OK);
+  rs = link_after_(*rv, pos.front_());
+  assert(rs == LINK_OK);
+  return rv;
+}
 
-		/* Validate pos_tpl. */
-		assert(!std::get<0>(pos_tpl)->is_back_iter());
-		assert(!std::get<1>(pos_tpl)->is_forw_iter());
+auto list::succ_(elem& x) noexcept -> elem_ptr {
+  auto s = x.succ_.load(memory_order_acquire);
+  while (get<0>(s) != nullptr && get<1>(s) == MARKED) {
+    s = unlink_aid_(x, *get<0>(s));
+    if (get<0>(s) == nullptr) s = x.succ_.load(memory_order_acquire);
+  }
+  return get<0>(s);
+}
 
-		lr = elem::link_between(ins, pos_tpl);
-	} while (lr == ll_simple_list::link_result::INVALID_POS);
+auto list::pred_(elem& x) noexcept -> elem_ptr {
+  /*
+   * Predecessor of x.
+   *
+   * x has no predecessor if:
+   *   x.pred == nil
+   * p is a direct predecessor of x if:
+   *   p.succ == x
+   *   OR
+   *   x.pred == (p, MARKED)
+   * p is an unlinked predecessor of x if:
+   *   p.pred is unmarked and p.pred != nil
+   */
 
-	/* Return failure. */
-	if (lr != ll_simple_list::link_result::SUCCESS)
-		return false;
+  auto p = x.pred_.load(memory_order_acquire);
+  while (get<0>(p) != nullptr) {
+    if (get<1>(p) == UNMARKED) {
+      /*
+       * x.pred == (a, unmarked)  ==>  a may be indirect predecessor of x
+       */
+      auto ps = get<0>(p)->succ_.load(memory_order_acquire);
 
-	/* Update out_iter. */
-	if (out_iter)
-		out_iter->link_post_insert_(this, std::move(pos_tpl));
+      if (get<0>(ps) != nullptr && get<0>(ps) != &x && get<1>(ps) == MARKED)
+        ps = unlink_aid_(*get<0>(p), *get<0>(ps));
+      if (get<0>(ps) == nullptr) {
+        /*
+         * p was unlinked from under us or
+         * unlink_aid_ couldn't figure out successor
+         */
+        auto pp = get<0>(p)->pred_.load(memory_order_acquire);
+        assert(get<0>(pp) != nullptr);  // linked element with reference
+        get<1>(pp) = get<1>(p);  // Don't modify x.pred_ flags.
+        x.pred_.compare_exchange_weak(p, pp,
+                                      memory_order_acq_rel,
+                                      memory_order_acquire);
+        continue;
+      }
+      if (get<0>(ps) != &x) {
+        get<1>(ps) = get<1>(p);  // Don't change the flags.
+        x.pred_.compare_exchange_weak(p,
+                                      make_tuple(get<0>(move(ps)), UNMARKED),
+                                      memory_order_acq_rel,
+                                      memory_order_acquire);
+        continue;
+      }
+    }
 
-	return true;
+    /*
+     * p is a direct predecessor of x
+     *
+     * p.pred is unmarked and p.pred != nil  ==>  p is linked predecessor of x
+     */
+    auto pp = get<0>(p)->pred_.load(memory_order_acquire);
+    assert(get<0>(pp) != nullptr);  // linked element with reference
+    if (get<1>(pp) == MARKED) {
+      get<1>(pp) = get<1>(p);  // Don't modify x.pred_ flags.
+      x.pred_.compare_exchange_weak(p, move(pp),
+                                    memory_order_acq_rel,
+                                    memory_order_acquire);
+      continue;
+    }
+
+    return get<0>(p);
+  }
+
+  return nullptr;
+}
+
+auto list::link_(elem& a, elem& x, elem& b) noexcept -> axb_link_result {
+  /*
+   * Link a and b from x.
+   */
+  if (!x.pred_.compare_exchange_strong(elem_llptr::no_acquire_t(nullptr,
+                                                                UNMARKED),
+                                       make_tuple(elem_ptr(&a), UNMARKED),
+                                       memory_order_acq_rel,
+                                       memory_order_acquire))
+    return XLINK_TWICE;
+  {
+    auto x_orig_succ = x.succ_.exchange(make_tuple(elem_ptr(&b), UNMARKED),
+                                        memory_order_acq_rel);
+    assert(x_orig_succ == make_tuple(nullptr, UNMARKED));
+  }
+
+  /*
+   * Link x from a.
+   */
+  auto as_expect = make_tuple(&b, UNMARKED);
+  if (a.succ_.compare_exchange_strong(as_expect,
+                                      make_tuple(elem_ptr(&x), UNMARKED),
+                                      memory_order_acq_rel,
+                                      memory_order_acquire)) {
+    /*
+     * Fix b.pred to point at x.
+     */
+    auto bp_expect = make_tuple(&a, UNMARKED);
+    if (!b.pred_.compare_exchange_strong(bp_expect,
+                                         make_tuple(elem_ptr(&x), UNMARKED),
+                                         memory_order_acq_rel,
+                                         memory_order_acquire)) {
+      if (bp_expect == make_tuple(&a, MARKED) &&
+          b.pred_.compare_exchange_strong(bp_expect,
+                                          make_tuple(elem_ptr(&x), MARKED),
+                                          memory_order_acq_rel,
+                                          memory_order_acquire)) {
+        /* SKIP */
+      } else {
+        pred_(b);
+      }
+    }
+    return XLINK_OK;
+  }
+
+  axb_link_result error;
+  if (get<0>(as_expect) == nullptr) {
+    auto bp = b.pred_.load_no_acquire(memory_order_relaxed);
+    if (get<1>(bp) == MARKED)
+      error = XLINK_LOST_AB;
+    else
+      error = XLINK_LOST_A;
+  } else if (get<0>(as_expect) != &b) {
+    error = XLINK_RETRY;
+  } else /* if (get<1>(as_expect) == MARKED) */ {
+    auto ap = a.pred_.load_no_acquire(memory_order_relaxed);
+    if (get<1>(ap) == MARKED)
+      error = XLINK_LOST_AB;
+    else
+      error = XLINK_LOST_B;
+  }
+
+  x.succ_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
+  x.pred_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
+  return error;
+}
+
+auto list::unlink_(elem& a, elem& x, size_t expect) noexcept -> unlink_result {
+  {
+    /*
+     * Extra scope, to hold references to x
+     * without caring about affecting 'expect' value.
+     */
+    auto as_expect = make_tuple(&x, UNMARKED);
+    const auto as_assign = make_tuple(elem_ptr(&x), MARKED);
+    if (!a.succ_.compare_exchange_strong(as_expect, as_assign,
+                                         memory_order_acquire,
+                                         memory_order_relaxed)) {
+      if (as_expect == as_assign) return UNLINK_FAIL;
+      if (get<1>(x.pred_.load_no_acquire(memory_order_relaxed)) == MARKED)
+        return UNLINK_FAIL;
+      return UNLINK_RETRY;
+    }
+  }
+
+  elem_ptr b;
+  tie(b, ignore) = unlink_aid_(a, x);
+
+  auto lc = x.link_count_.load(memory_order_acquire);
+  while (lc > expect) {
+    if (b == nullptr) b = &a;
+    const auto b_succ = b->succ_.load_no_acquire(memory_order_acquire);
+    if (get<0>(b_succ) == &x) pred_(*b);
+    lc = x.link_count_.load(memory_order_acquire);
+    if (get_elem_type(*b) == elem_type::head) break;
+    b = succ_(*b);
+  }
+
+  if (lc > expect) wait_link0(x, expect);
+  x.pred_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
+
+  return UNLINK_OK;
+}
+
+auto list::unlink_aid_(elem& a, elem& x) noexcept ->
+    tuple<elem_ptr, elem_flags> {
+  tuple<elem_ptr, elem_flags> b_ptr;
+
+  auto xp_expect = make_tuple(elem_ptr(&a), UNMARKED);
+  while (!x.pred_.compare_exchange_weak(xp_expect,
+                                        make_tuple(elem_ptr(&a), MARKED),
+                                        memory_order_acq_rel,
+                                        memory_order_acquire) &&
+         get<1>(xp_expect) != MARKED) {
+    if (get<0>(xp_expect) == nullptr) return b_ptr;
+  }
+  const elem_ptr a_ptr = get<0>(move(xp_expect));
+
+  auto x_succ = x.succ_.load(memory_order_acquire);
+  if (get<0>(x_succ) == nullptr) return b_ptr;
+  auto as_expect = make_tuple(elem_ptr(&x), MARKED);
+  if (a_ptr->succ_.compare_exchange_strong(as_expect, x_succ,
+                                           memory_order_acq_rel,
+                                           memory_order_relaxed)) {
+    b_ptr = move(x_succ);
+    auto bp_expect = make_tuple(&x, UNMARKED);
+    auto bp_assign = make_tuple(a_ptr, UNMARKED);
+    if (!get<0>(b_ptr)->pred_.compare_exchange_strong(bp_expect,
+                                                      move(bp_assign),
+                                                      memory_order_release,
+                                                      memory_order_relaxed) &&
+        bp_expect == make_tuple(&x, MARKED)) {
+      bp_assign = make_tuple(a_ptr, MARKED);
+      get<0>(b_ptr)->pred_.compare_exchange_strong(bp_expect,
+                                                   move(bp_assign),
+                                                   memory_order_release,
+                                                   memory_order_relaxed);
+    }
+  } else {
+    b_ptr = move(as_expect);
+  }
+
+  x.succ_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
+
+  return b_ptr;
+}
+
+auto list::succ_elem_(elem& x) noexcept -> elem_ptr {
+  elem_ptr s = succ_(x);
+  if (s != nullptr) {
+    while (get_elem_type(*s) == elem_type::iterator) {
+      s = succ_(x);
+      if (s == nullptr) s = succ_(x);
+      if (s == nullptr) return s;
+    }
+  }
+  return s;
+}
+
+auto list::pred_elem_(elem& x) noexcept -> elem_ptr {
+  elem_ptr p = pred_(x);
+  if (p != nullptr) {
+    while (get_elem_type(*p) == elem_type::iterator) {
+      p = pred_(x);
+      if (p == nullptr) p = pred_(x);
+      if (p == nullptr) return p;
+    }
+  }
+  return p;
+}
+
+auto list::link_after_(elem& a, elem& x) noexcept -> link_result {
+  for (;;) {
+    elem_ptr b = succ_(a);
+    switch (link_(a, x, *b)) {
+    case XLINK_OK:
+      return LINK_OK;
+    case XLINK_TWICE:
+      return LINK_TWICE;
+    case XLINK_RETRY:
+    case XLINK_LOST_B:
+      break;
+    case XLINK_LOST_A:
+    case XLINK_LOST_AB:
+      return LINK_LOST;
+    }
+  }
+}
+
+auto list::link_before_(elem& b, elem& x) noexcept -> link_result {
+  for (;;) {
+    elem_ptr a = pred_(b);
+    switch (link_(*a, x, b)) {
+    case XLINK_OK:
+      return LINK_OK;
+    case XLINK_TWICE:
+      return LINK_TWICE;
+    case XLINK_RETRY:
+    case XLINK_LOST_A:
+      break;
+    case XLINK_LOST_B:
+    case XLINK_LOST_AB:
+      return LINK_LOST;
+    }
+  }
+}
+
+namespace {
+
+constexpr unsigned int SPIN = 100;
+
+inline void spinwait(unsigned int& spin) noexcept {
+  if (spin-- != 0) {
+#if defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64))
+    /* MS-compiler x86/x86_64 assembly. */
+    __asm {
+      __asm pause
+    };
+#elif (defined(__GNUC__) || defined(__clang__)) &&                      \
+      (defined(__amd64__) || defined(__x86_64__) ||                     \
+       defined(__i386__) || defined(__ia64__))
+    /* GCC/clang assembly. */
+    __asm __volatile("pause":::"memory");
+#else
+    this_thread::yield();
+#endif
+  } else {
+    spin = SPIN;
+    this_thread::yield();
+  }
+}
+
+} /* namespace ilias::ll_list_detail::<unnamed> */
+
+auto list::wait_link0(elem& x, size_t expect) noexcept -> void {
+  unsigned int spin = SPIN;
+  assert(is_unlinked_(x));
+
+  auto lc = x.link_count_.load(memory_order_acquire);
+  while (lc > expect) {
+    spinwait(spin);
+    lc = x.link_count_.load(memory_order_acquire);
+  }
+}
+
+auto list::pop_front() noexcept -> elem_ptr {
+  elem_ptr e = succ_elem_(data_);
+  if (get_elem_type(*e) == elem_type::head) return nullptr;
+
+  for (;;) {
+    switch (unlink_(*pred_(*e), *e, 1)) {
+    case UNLINK_OK:
+      return e;
+    case UNLINK_RETRY:
+      break;
+    case UNLINK_FAIL:
+      e = succ_elem_(data_);
+      if (get_elem_type(*e) == elem_type::head) return nullptr;
+      break;
+    }
+  }
+}
+
+auto list::pop_back() noexcept -> elem_ptr {
+  elem_ptr e = pred_elem_(data_);
+  if (get_elem_type(*e) == elem_type::head) return nullptr;
+
+  for (;;) {
+    switch (unlink_(*pred_(*e), *e, 1)) {
+    case UNLINK_OK:
+      return e;
+    case UNLINK_RETRY:
+      break;
+    case UNLINK_FAIL:
+      e = pred_elem_(data_);
+      if (get_elem_type(*e) == elem_type::head) return nullptr;
+      break;
+    }
+  }
+}
+
+auto list::link_front(elem& e) noexcept -> bool {
+  link_result rs = link_after_(const_cast<elem&>(data_), e);
+  switch (rs) {
+  case LINK_OK:
+  case LINK_TWICE:
+    break;
+  case LINK_LOST:
+    assert(rs != LINK_LOST);
+    break;
+  }
+  return rs == LINK_OK;
+}
+
+auto list::link_back(elem& e) noexcept -> bool {
+  link_result rs = link_before_(const_cast<elem&>(data_), e);
+  switch (rs) {
+  case LINK_OK:
+  case LINK_TWICE:
+    break;
+  case LINK_LOST:
+    assert(rs != LINK_LOST);
+    break;
+  }
+  return rs == LINK_OK;
+}
+
+auto list::link_after(const position& p, elem& e, position* out) ->
+    tuple<elem_ptr, bool> {
+  link_result lr;
+  position dummy;
+
+  if (&p == out) {
+    throw invalid_argument("input and output iterator may not be the same "
+                           "(use a temporary!)");
+  }
+  if (out == nullptr)
+    out = &dummy;
+  else
+    out->unlink();
+
+  lr = link_after_(p.front_(), out->back_());
+  assert(lr == LINK_OK);
+  lr = link_after_(out->back_(), out->front_());
+  assert(lr == LINK_OK);
+
+  elem_ptr e_ptr = &e;
+  lr = link_after_(out->back_(), e);
+  switch (lr) {
+  case LINK_OK:
+    return make_tuple(e_ptr, true);
+  case LINK_LOST:
+    throw std::invalid_argument("unlinked position");
+  case LINK_TWICE:
+    out->unlink();
+    return make_tuple(nullptr, false);
+  }
+  /* UNREACHABLE */
+}
+
+auto list::link_before(const position& p, elem& e, position* out) ->
+    tuple<elem_ptr, bool> {
+  link_result lr;
+  position dummy;
+
+  if (&p == out) {
+    throw invalid_argument("input and output iterator may not be the same "
+                           "(use a temporary!)");
+  }
+  if (out == nullptr)
+    out = &dummy;
+  else
+    out->unlink();
+
+  lr = link_before_(p.back_(), out->front_());
+  assert(lr == LINK_OK);
+  lr = link_before_(out->front_(), out->back_());
+  assert(lr == LINK_OK);
+
+  elem_ptr e_ptr = &e;
+  lr = link_before_(out->front_(), e);
+  switch (lr) {
+  case LINK_OK:
+    return make_tuple(e_ptr, true);
+  case LINK_LOST:
+    throw std::invalid_argument("unlinked position");
+  case LINK_TWICE:
+    out->unlink();
+    return make_tuple(nullptr, false);
+  }
+  /* UNREACHABLE */
+}
+
+auto list::unlink(elem& e, position* out, size_t expect) ->
+    tuple<elem_ptr, bool> {
+  unlink_result ur;
+  link_result lr;
+  position dummy;
+
+  if (out == nullptr)
+    out = &dummy;
+  else
+    out->unlink();
+
+  elem_ptr e_ptr = &e;  // expect + 1
+  lr = link_after_(e, out->front_());
+  if (lr == LINK_LOST) return make_tuple(nullptr, false);
+  assert(lr == LINK_OK);
+
+  for (;;) {
+    lr = link_before_(e, out->back_());
+    if (lr == LINK_LOST) return make_tuple(nullptr, false);
+    assert(lr == LINK_OK);
+
+    ur = unlink_(out->back_(), e, expect + 1U);
+    switch (ur) {
+    case UNLINK_OK:
+      return make_tuple(e_ptr, true);
+    case UNLINK_RETRY:
+      break;
+    case UNLINK_FAIL:
+      out->unlink();
+      return make_tuple(nullptr, false);
+    }
+
+    out->unlink();
+  }
+  /* UNREACHABLE */
 }
 
 
-elem_ptr
-basic_iter::next(basic_list::size_type n) noexcept
-{
-	assert(n > 0);
-	if (this->owner_ == nullptr)
-		return nullptr;
-	assert(this->forw_.is_linked() && this->back_.is_linked());
+list::position::position() noexcept {}
 
-	constexpr std::array<elem_type, 2> types{{
-		elem_type::HEAD,
-		elem_type::ELEM
-	    }};
+list::position::position(const position& o) noexcept
+: pos_(o.pos_),
+  swap_(o.swap_)
+{}
 
-	basic_list*const owner = this->owner_;
-	/* Step n items. */
-	elem_ptr i = this->forw_.succ(types);
-	for (basic_list::size_type n_ = 1; n_ < n; ++n)
-		i = i->succ(types);
-
-	/* Try to link. */
-	while (!this->link_at(owner, i))
-		i = i->succ(types);
-	return i;
+auto list::position::operator=(const position& o) noexcept -> position& {
+  pos_ = o.pos_;
+  swap_ = o.swap_;
+  return *this;
 }
 
-elem_ptr
-basic_iter::prev(basic_list::size_type n) noexcept
-{
-	assert(n > 0);
-	if (this->owner_ == nullptr)
-		return nullptr;
-	assert(this->forw_.is_linked() && this->back_.is_linked());
+list::position::~position() noexcept {}
 
-	constexpr std::array<elem_type, 2> types{{
-		elem_type::HEAD,
-		elem_type::ELEM
-	    }};
-
-	basic_list*const owner = this->owner_;
-	/* Step n items. */
-	elem_ptr i = this->back_.pred(types);
-	for (basic_list::size_type n_ = 1; n_ < n; ++n)
-		i = i->pred(types);
-
-	/* Try to link. */
-	while (!this->link_at(owner, i))
-		i = i->pred(types);
-	return i;
+auto list::position::unlink() noexcept -> void {
+  for (iter_link& i : pos_)
+    unlink_iter_(i);
 }
 
-void
-basic_iter::link_post_insert_(basic_list* list,
-    std::tuple<elem_ptr, elem_ptr> between) noexcept
-{
-	assert(this->owner_ == nullptr);
-	assert(!this->forw_.is_linked() && !this->back_.is_linked());
-	assert(!std::get<0>(between)->is_back_iter());
-	assert(!std::get<1>(between)->is_forw_iter());
+auto list::position::link_around(elem& x) noexcept -> bool {
+  link_result rs;
 
-	this->owner_ = list;
+  unlink();
 
-	std::tuple<elem_ptr, elem_ptr> back_pos{
-		std::move(std::get<0>(between)),
-		nullptr
-	    };
-	for (;;) {
-		std::get<1>(back_pos) = std::get<0>(back_pos)->succ();
-		while (std::get<1>(back_pos)->is_forw_iter()) {
-			std::get<0>(back_pos) =
-			    std::move(std::get<1>(back_pos));
-			std::get<1>(back_pos) =
-			    std::get<0>(back_pos)->succ();
-		}
-		auto lr = elem::link_between(&this->back_, back_pos);
-		if (lr == ll_simple_list::link_result::SUCCESS)
-			break;	/* GUARD */
+  rs = link_after_(x, front_());
+  switch (rs) {
+  case LINK_OK:
+    break;
+  case LINK_LOST:
+    return false;
+  case LINK_TWICE:
+    assert(rs != LINK_TWICE);
+    break;
+  }
 
-		assert(lr == ll_simple_list::link_result::INVALID_POS);
-		/*
-		 * We don't own get<0>(back_pos), so the owner can freely
-		 * unlink it.  If that happens, acquire a new position.
-		 */
-		if (!std::get<0>(back_pos)->is_linked())
-			std::get<0>(back_pos) = std::get<0>(back_pos)->pred();
-	}
+  rs = link_before_(x, back_());
+  switch (rs) {
+  case LINK_OK:
+    break;
+  case LINK_LOST:
+    unlink();
+    return false;
+  case LINK_TWICE:
+    assert(rs != LINK_TWICE);
+    break;
+  }
 
-	std::tuple<elem_ptr, elem_ptr> forw_pos{
-		nullptr,
-		std::move(std::get<1>(between))
-	    };
-	for (;;) {
-		std::get<0>(forw_pos) = std::get<1>(forw_pos)->pred();
-		while (std::get<0>(forw_pos)->is_back_iter()) {
-			std::get<1>(forw_pos) =
-			    std::move(std::get<0>(forw_pos));
-			std::get<0>(forw_pos) =
-			    std::get<1>(forw_pos)->pred();
-		}
-		auto lr = elem::link_between(&this->forw_, forw_pos);
-		if (lr == ll_simple_list::link_result::SUCCESS)
-			break;	/* GUARD */
-
-		assert(lr == ll_simple_list::link_result::INVALID_POS);
-		/*
-		 * We don't own get<1>(forw_pos), so the owner can freely
-		 * unlink it.  If that happens, acquire a new position.
-		 */
-		if (!std::get<1>(forw_pos)->is_linked())
-			std::get<1>(forw_pos) = std::get<1>(forw_pos)->succ();
-	}
+  return true;
 }
 
-bool
-basic_iter::link_at_(basic_list* list, elem_ptr pos) noexcept
-{
-	assert(list != nullptr && pos != nullptr);
-	assert(pos->is_head() || pos->is_elem());
-	const bool check_pos_validity = pos->is_elem();
+auto list::position::step_forward() noexcept -> elem_ptr {
+  link_result rs;
 
-	this->unlink();
-	this->owner_ = list;
+  if (!unlink_iter_(back_())) return nullptr;  // Not linked.
 
-	const auto rv_forw = ll_simple_list::elem::link_after(
-	    &this->forw_, pos, check_pos_validity);
-	assert(rv_forw != ll_simple_list::link_result::INS0_LINKED &&
-	    rv_forw != ll_simple_list::link_result::INS1_LINKED);
-
-	const auto rv_back = ll_simple_list::elem::link_before(
-	    &this->back_, pos, check_pos_validity);
-	assert(rv_back != ll_simple_list::link_result::INS0_LINKED &&
-	    rv_back != ll_simple_list::link_result::INS1_LINKED);
-
-	if (rv_forw == ll_simple_list::link_result::SUCCESS &&
-	    rv_back == ll_simple_list::link_result::SUCCESS)
-		return true;
-
-	this->unlink();
-	return false;
+  for (;;) {
+    elem_ptr e = succ_elem_(front_());
+    rs = link_after_(*e, back_());
+    switch (rs) {
+    case LINK_OK:
+      swap_ ^= 1U;
+      return e;
+    case LINK_LOST:
+      break;
+    case LINK_TWICE:
+      assert(rs != LINK_TWICE);
+    }
+  }
 }
 
-bool
-forw_equal(const basic_iter& a, const basic_iter& b) noexcept
-{
-	if (a.owner_ != b.owner_)
-		return false;
-	if (!a.owner_)
-		return true;
+auto list::position::step_backward() noexcept -> elem_ptr {
+  link_result rs;
 
-	assert(a.forw_.is_linked());
-	assert(b.forw_.is_linked());
+  if (!unlink_iter_(front_())) return nullptr;  // Not linked.
 
-	for (const_elem_ptr a_i{ &a.forw_ };
-	    a_i->is_iter();
-	    a_i = a_i->succ()) {
-		if (a_i == &b.forw_)
-			return true;
-	}
-
-	for (const_elem_ptr b_i{ &b.forw_ };
-	    b_i->is_iter();
-	    b_i = b_i->succ()) {
-		if (b_i == &a.forw_)
-			return true;
-	}
-
-	return false;
+  for (;;) {
+    elem_ptr e = pred_elem_(back_());
+    rs = link_before_(*e, front_());
+    switch (rs) {
+    case LINK_OK:
+      swap_ ^= 1U;
+      return e;
+    case LINK_LOST:
+      break;
+    case LINK_TWICE:
+      assert(rs != LINK_TWICE);
+    }
+  }
 }
 
-bool
-back_equal(const basic_iter& a, const basic_iter& b) noexcept
-{
-	if (a.owner_ != b.owner_)
-		return false;
-	if (!a.owner_)
-		return true;
+auto list::position::operator==(const position& o) const noexcept -> bool {
+  if (is_unlinked_(back_()) && is_unlinked_(o.back_())) return true;
+  if (is_unlinked_(back_()) || is_unlinked_(o.back_())) return false;
 
-	assert(a.back_.is_linked());
-	assert(b.back_.is_linked());
+  elem_ptr s1 = succ_(back_()),
+           s2 = succ_(o.back_());
+  while (get_elem_type(*s1) == elem_type::iterator &&
+         get_elem_type(*s2) == elem_type::iterator) {
+    if (s1 == &o.back_() || s2 == &back_()) return true;
 
-	for (const_elem_ptr a_i{ &a.back_ };
-	    a_i->is_iter();
-	    a_i = a_i->succ()) {
-		if (a_i == &b.back_)
-			return true;
-	}
+    s1 = succ_(*s1);
+    if (s1 == nullptr) s1 = succ_(back_());
+    s2 = succ_(*s2);
+    if (s2 == nullptr) s2 = succ_(o.back_());
+  }
 
-	for (const_elem_ptr b_i{ &b.back_ };
-	    b_i->is_iter();
-	    b_i = b_i->succ()) {
-		if (b_i == &a.back_)
-			return true;
-	}
+  while (get_elem_type(*s1) == elem_type::iterator) {
+    if (s1 == &o.back_()) return true;
 
-	return false;
+    s1 = succ_(*s1);
+    if (s1 == nullptr) s1 = succ_(back_());
+  }
+
+  while (get_elem_type(*s2) == elem_type::iterator) {
+    if (s2 == &back_()) return true;
+
+    s2 = succ_(*s2);
+    if (s2 == nullptr) s2 = succ_(back_());
+  }
+
+  return false;
+}
+
+auto list::position::unlink_iter_(iter_link& i) noexcept -> bool {
+  for (;;) {
+    switch (unlink_(*pred_(i), i, 0)) {
+    case UNLINK_OK:
+      return true;
+    case UNLINK_FAIL:
+      return false;
+    case UNLINK_RETRY:
+      break;
+    }
+  }
 }
 
 

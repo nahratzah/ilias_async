@@ -1,1362 +1,719 @@
-#ifndef ILIAS_LL_LIST_INL
-#define ILIAS_LL_LIST_INL
+#ifndef _ILIAS_ASYNC_LL_INL_H_
+#define _ILIAS_ASYNC_LL_INL_H_
 
-#include <ilias/util.h>
+#include "ll_list.h"
 #include <cassert>
 #include <stdexcept>
 
 namespace ilias {
-
-
-template<typename Tag>
-inline std::size_t
-ll_list_hook<Tag>::_elem_offset() noexcept
-{
-	/*
-	 * Calculate offset of elem_ member
-	 * (since offsetof is technically undefined behaviour and
-	 * triggers compiler warnings). :(
-	 */
-	constexpr std::uintptr_t ADDR = 0x1000;
-	return reinterpret_cast<std::uintptr_t>(
-	    &reinterpret_cast<ll_list_hook*>(ADDR)->elem_) - ADDR;
-}
-
-
 namespace ll_list_detail {
 
 
-inline bool
-unlink(const elem_ptr& p) noexcept
-{
-	ll_simple_list::elem_ptr p_{ p.get(), false };	// Share ownership.
-	const auto rv = ll_simple_list::unlink(p_);
-	p_.release();  // Unshare ownership.
-	return rv;
+inline auto elem_acqrel::acquire(const elem& e, size_t nrefs) noexcept ->
+    void {
+  size_t old = e.link_count_.fetch_add(nrefs, memory_order_acquire);
+  assert(old + nrefs >= old);  // Wrap-around.
 }
 
-inline elem::elem(elem_type et) noexcept
-:	type_{ et }
-{
-	/* Empty body. */
-}
-
-inline elem_ptr
-elem::succ() const noexcept
-{
-	return static_pointer_cast<elem>(this->ll_simple_list::elem::succ());
-}
-
-inline elem_ptr
-elem::pred() const noexcept
-{
-	return static_pointer_cast<elem>(this->ll_simple_list::elem::pred());
-}
-
-template<std::size_t N>
-elem_ptr
-elem::succ(const std::array<elem_type, N>& types) const noexcept
-{
-	using std::begin;
-	using std::end;
-
-	elem_ptr i = this->succ();
-	while (std::find(begin(types), end(types), i->get_type()) ==
-	    end(types))
-		i = i->succ();
-	return i;
-}
-
-template<std::size_t N>
-elem_ptr
-elem::pred(const std::array<elem_type, N>& types) const noexcept
-{
-	using std::begin;
-	using std::end;
-
-	elem_ptr i = this->pred();
-	while (std::find(begin(types), end(types), i->get_type()) ==
-	    end(types))
-		i = i->pred();
-	return i;
-}
-
-inline bool
-elem::is_head() const noexcept
-{
-	return (this->get_type() == elem_type::HEAD);
-}
-
-inline bool
-elem::is_elem() const noexcept
-{
-	return (this->get_type() == elem_type::ELEM);
-}
-
-inline bool
-elem::is_iter() const noexcept
-{
-	return (this->is_forw_iter() || this->is_back_iter());
-}
-
-inline bool
-elem::is_forw_iter() const noexcept
-{
-	return (this->get_type() == elem_type::ITER_FORW);
-}
-
-inline bool
-elem::is_back_iter() const noexcept
-{
-	return (this->get_type() == elem_type::ITER_BACK);
-}
-
-inline elem_type
-elem::get_type() const noexcept
-{
-	return this->type_;
+inline auto elem_acqrel::release(const elem& e, size_t nrefs) noexcept ->
+    void {
+  size_t old = e.link_count_.fetch_add(nrefs, memory_order_acquire);
+  assert(old >= nrefs);  // Insufficient references.
 }
 
 
-inline basic_list::basic_list() noexcept
-:	head_{ elem_type::HEAD }
-{
-	/* Empty body. */
+inline auto list::is_unlinked_(const elem& e) noexcept -> bool {
+  const auto e_p = e.pred_.load_no_acquire(memory_order_acquire);
+  return get<0>(e_p) == nullptr || get<1>(e_p) == MARKED;
 }
 
-inline bool
-basic_list::push_front(elem* e)
-{
-	if (e == nullptr)
-		throw std::invalid_argument("null element");
-
-	return do_noexcept([&]() {
-		auto rv = elem::link_after(e,
-		    elem_ptr{ &this->head_ }, false);
-		assert(rv != ll_simple_list::link_result::INVALID_POS);
-		return (rv == ll_simple_list::link_result::SUCCESS);
-	    });
-}
-
-inline bool
-basic_list::push_back(elem* e)
-{
-	if (e == nullptr)
-		throw std::invalid_argument("null element");
-
-	return do_noexcept([&]() {
-		auto rv = elem::link_before(e,
-		    elem_ptr{ &this->head_ }, false);
-		assert(rv != ll_simple_list::link_result::INVALID_POS);
-		return (rv == ll_simple_list::link_result::SUCCESS);
-	    });
-}
-
-inline bool
-basic_list::insert_after(elem* ins, const basic_iter& pos, basic_iter* out)
-{
-	if (ins == nullptr)
-		throw std::invalid_argument("null insertion");
-	if (pos.owner_ != this)
-		throw std::invalid_argument("invalid iterator");
-	if (out == &pos) {
-		throw std::invalid_argument("insert position and output "
-		    "iterator may not be the same (use a temporary!)");
-	}
-
-	return this->insert_after_(ins, &pos.forw_, out);
-}
-
-inline bool
-basic_list::insert_before(elem* ins, const basic_iter& pos, basic_iter* out)
-{
-	if (ins == nullptr)
-		throw std::invalid_argument("null insertion");
-	if (pos.owner_ != this)
-		throw std::invalid_argument("invalid iterator");
-	if (out == &pos) {
-		throw std::invalid_argument("insert position and output "
-		    "iterator may not be the same (use a temporary!)");
-	}
-
-	return this->insert_before_(ins, &pos.back_, out);
+inline auto list::get_elem_type(const elem& e) noexcept -> elem_type {
+  return e.type_;
 }
 
 
-inline basic_iter::basic_iter() noexcept
-:	owner_{ nullptr },
-	forw_{ elem_type::ITER_FORW },
-	back_{ elem_type::ITER_BACK }
+inline iter_link::iter_link(const iter_link& o) noexcept
+: iter_link()
 {
-	/* Empty body. */
+  list::link_result rv = list::link_after_(const_cast<iter_link&>(o), *this);
+  assert(rv == list::LINK_OK);  // Fail and Twice are not possible.
 }
 
-inline basic_iter::basic_iter(const basic_iter& other) noexcept
-:	basic_iter{}
-{
-	if ((this->owner_ = other.owner_) != nullptr) {
-		auto forw_rv = ll_simple_list::elem::link_after(&this->forw_,
-		    elem_ptr{ const_cast<elem*>(&other.forw_) }, true);
-		auto back_rv = ll_simple_list::elem::link_before(&this->back_,
-		    elem_ptr{ const_cast<elem*>(&other.back_) }, true);
-		assert(forw_rv == ll_simple_list::link_result::SUCCESS &&
-		    back_rv == ll_simple_list::link_result::SUCCESS);
-	}
+inline auto iter_link::operator=(const iter_link& o) noexcept -> iter_link& {
+  while (list::unlink_(*list::pred_(*this), *this, 0) == list::UNLINK_RETRY);
+
+  if (!list::is_unlinked_(o)) {
+    list::link_result rv = list::link_after_(const_cast<iter_link&>(o), *this);
+    assert(rv == list::LINK_OK);  // Fail and Twice are not possible.
+  }
+  return *this;
 }
 
-inline basic_iter::basic_iter(basic_iter&& other) noexcept
-:	basic_iter{}
-{
-	if ((this->owner_ = other.owner_) != nullptr) {
-		auto forw_rv = ll_simple_list::elem::link_after(&this->forw_,
-		    elem_ptr{ &other.forw_ }, true);
-		auto back_rv = ll_simple_list::elem::link_before(&this->back_,
-		    elem_ptr{ &other.back_ }, true);
-		assert(forw_rv == ll_simple_list::link_result::SUCCESS &&
-		    back_rv == ll_simple_list::link_result::SUCCESS);
-		other.unlink();
-	}
-}
-
-inline basic_iter::~basic_iter() noexcept
-{
-	this->unlink();
-}
-
-inline basic_iter&
-basic_iter::operator=(const basic_iter& other) noexcept
-{
-	if (&other == this)
-		return *this;
-
-	this->unlink();
-
-	if ((this->owner_ = other.owner_) != nullptr) {
-		auto forw_rv = ll_simple_list::elem::link_after(&this->forw_,
-		    elem_ptr{ const_cast<elem*>(&other.forw_) }, true);
-		auto back_rv = ll_simple_list::elem::link_before(&this->back_,
-		    elem_ptr{ const_cast<elem*>(&other.back_) }, true);
-		assert(forw_rv == ll_simple_list::link_result::SUCCESS &&
-		    back_rv == ll_simple_list::link_result::SUCCESS);
-	}
-
-	return *this;
-}
-
-inline basic_iter&
-basic_iter::operator=(basic_iter&& other) noexcept
-{
-	if (&other == this)
-		return *this;
-
-	this->unlink();
-
-	if ((this->owner_ = other.owner_) != nullptr) {
-		auto forw_rv = ll_simple_list::elem::link_after(&this->forw_,
-		    elem_ptr{ const_cast<elem*>(&other.forw_) }, true);
-		auto back_rv = ll_simple_list::elem::link_before(&this->back_,
-		    elem_ptr{ const_cast<elem*>(&other.back_) }, true);
-		assert(forw_rv == ll_simple_list::link_result::SUCCESS &&
-		    back_rv == ll_simple_list::link_result::SUCCESS);
-		other.unlink();
-	}
-
-	return *this;
-}
-
-inline elem_ptr
-basic_iter::link_at(basic_list* list, tag where)
-{
-	constexpr std::array<elem_type, 2> types{{
-		elem_type::HEAD,
-		elem_type::ELEM
-	    }};
-
-	elem_ptr f;
-	switch (where) {
-	case tag::first:
-		f = list->head_.succ(types);
-		break;
-	case tag::last:
-		f = list->head_.pred(types);
-		break;
-	case tag::head:
-		f = &list->head_;
-		break;
-	}
-
-	while (!this->link_at(list, f)) {
-		switch (where) {
-		case tag::first:
-			f = f->succ(types);
-			break;
-		case tag::last:
-			f = f->pred(types);
-			break;
-		case tag::head:
-			/* Retry at head. */
-			break;
-		}
-	}
-
-	return f;
-}
-
-inline bool
-basic_iter::link_at(basic_list* list, elem_ptr pos)
-{
-	if (list == nullptr)
-		throw std::invalid_argument("null list");
-	if (pos == nullptr)
-		throw std::invalid_argument("null position");
-
-	return this->link_at_(list, std::move(pos));
-}
-
-inline bool
-basic_iter::unlink() noexcept
-{
-	if (this->owner_ != nullptr) {
-		ll_list_detail::unlink(&this->forw_);
-		ll_list_detail::unlink(&this->back_);
-		this->owner_ = nullptr;
-		return true;
-	} else
-		return false;
-}
-
-inline basic_list*
-basic_iter::get_owner() const noexcept
-{
-	return this->owner_;
+inline iter_link::~iter_link() noexcept {
+  while (list::unlink_(*list::pred_(*this), *this, 0) == list::UNLINK_RETRY);
 }
 
 
-template<typename Type, typename Tag, typename AcqRel>
-inline elem_ptr
-ll_list_transformations<Type, Tag, AcqRel>::as_elem_(
-    const typename ll_list_transformations<Type, Tag, AcqRel>::pointer& p)
-noexcept
-{
-	if (p == nullptr)
-		return nullptr;
-	hook_type& hook = *p;
-	return elem_ptr{ &hook.elem_ };
+template<typename T, typename Tag, typename AcqRel>
+auto ll_list_transformations<T, Tag, AcqRel>::as_elem_(const pointer& p)
+    noexcept -> elem_ptr {
+  if (p == nullptr) return nullptr;
+  hook_type& hook = *p;
+  return elem_ptr(&hook);
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline const_elem_ptr
-ll_list_transformations<Type, Tag, AcqRel>::as_elem_(
-    const typename ll_list_transformations<Type, Tag, AcqRel>::const_pointer&
-     p)
-noexcept
-{
-	if (p == nullptr)
-		return nullptr;
-	const hook_type& hook = *p;
-	return const_elem_ptr{ &hook.elem_ };
+template<typename T, typename Tag, typename AcqRel>
+auto ll_list_transformations<T, Tag, AcqRel>::as_elem_(const const_pointer& p)
+    noexcept -> elem_ptr {
+  if (p == nullptr) return nullptr;
+  const hook_type& hook = *p;
+  return elem_ptr(const_cast<hook_type*>(&hook));
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline typename ll_list_transformations<Type, Tag, AcqRel>::pointer
-ll_list_transformations<Type, Tag, AcqRel>::as_type_(const elem_ptr& p)
-noexcept
-{
-	if (p == nullptr || !p->is_elem())
-		return nullptr;
-
-	pointer rv;
-	hazard_t hz{ *this };
-
-	/* Use offsetof magic to calculate hook address. */
-	const std::size_t off = hook_type::_elem_offset();
-	hook_type& hook = *reinterpret_cast<hook_type*>(
-	    reinterpret_cast<unsigned char*>(p.get()) - off);
-	assert(&hook.elem_ == p);
-
-	/* Cast to derived type. */
-	reference value = static_cast<reference>(hook);
-
-	hz.do_hazard(value,
-	    [&]() {
-		if (p->is_linked())
-			rv = pointer{ &value };
-	    },
-	    [&]() {
-		rv = pointer{ &value, false };
-	    });
-	return rv;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_list_transformations<T, Tag, AcqRel>::as_type_(const elem_ptr& p)
+    noexcept -> pointer {
+  if (p == nullptr) return nullptr;
+  assert(list::get_elem_type(*p) == elem_type::element);
+  hook_type& hook = static_cast<hook_type&>(*p);
+  reference v = static_cast<reference>(hook);
+  return pointer(&v);
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline typename ll_list_transformations<Type, Tag, AcqRel>::const_pointer
-ll_list_transformations<Type, Tag, AcqRel>::as_type_(
-    const const_elem_ptr& p) noexcept
-{
-	if (p == nullptr || !p->is_elem())
-		return nullptr;
-
-	const_pointer rv;
-	hazard_t hz{ *this };
-
-	/* Use offsetof magic to calculate hook address. */
-	const std::size_t off = hook_type::_elem_offset();
-	const hook_type& hook = *reinterpret_cast<const hook_type*>(
-	    reinterpret_cast<const unsigned char*>(p.get()) - off);
-	assert(&hook.elem_ == p);
-
-	/* Cast to derived type. */
-	const_reference value = static_cast<const_reference>(hook);
-
-	hz.do_hazard(value,
-	    [&]() {
-		if (p->is_linked())
-			rv = const_pointer{ &value };
-	    },
-	    [&]() {
-		rv = const_pointer{ &value, false };
-	    });
-	return rv;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_list_transformations<T, Tag, AcqRel>::as_type_unlinked_(
+    const elem_ptr& p) noexcept -> pointer {
+  if (p == nullptr) return nullptr;
+  assert(list::get_elem_type(*p) == elem_type::element);
+  hook_type& hook = static_cast<hook_type&>(*p);
+  reference v = static_cast<reference>(hook);
+  return pointer(&v, false);
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline typename ll_list_transformations<Type, Tag, AcqRel>::pointer
-ll_list_transformations<Type, Tag, AcqRel>::as_type_unlinked_(
-    const elem_ptr& p) noexcept
-{
-	if (p == nullptr || !p->is_elem())
-		return nullptr;
-
-	/* Use offsetof magic to calculate hook address. */
-	const std::size_t off = hook_type::_elem_offset();
-	hook_type& hook = *reinterpret_cast<hook_type*>(
-	    reinterpret_cast<unsigned char*>(p.get()) - off);
-	assert(&hook.elem_ == p);
-
-	/* Cast to derived type. */
-	reference value = static_cast<reference>(hook);
-
-	return pointer{ &value, false };
+template<typename T, typename Tag, typename AcqRel>
+auto ll_list_transformations<T, Tag, AcqRel>::release_pointer_(pointer&& p)
+    noexcept -> void {
+  p.release();
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline typename ll_list_transformations<Type, Tag, AcqRel>::const_pointer
-ll_list_transformations<Type, Tag, AcqRel>::as_type_unlinked_(
-    const const_elem_ptr& p) noexcept
-{
-	if (p == nullptr || !p->is_elem())
-		return nullptr;
-
-	/* Use offsetof magic to calculate hook address. */
-	const std::size_t off = hook_type::_elem_offset();
-	const hook_type& hook = *reinterpret_cast<const hook_type*>(
-	    reinterpret_cast<const unsigned char*>(p.get()) - off);
-	assert(&hook.elem_ == p);
-
-	/* Cast to derived type. */
-	const_reference value = static_cast<const_reference>(hook);
-
-	return const_pointer{ &value, false };
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-inline void
-ll_list_transformations<Type, Tag, AcqRel>::post_unlink_(
-    ll_list_transformations<Type, Tag, AcqRel>::const_reference unlinked_value,
-    std::size_t uv_refs) const noexcept
-{
-	hazard_t::grant(
-	    [&unlinked_value](std::size_t nrefs) {
-		AcqRel::acquire(unlinked_value, nrefs);
-	    },
-	    [&unlinked_value](std::size_t nrefs) {
-		AcqRel::release(unlinked_value, nrefs);
-	    },
-	    *this, unlinked_value, uv_refs);
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-inline void
-ll_list_transformations<Type, Tag, AcqRel>::release_pointer(
-    ll_list_transformations<Type, Tag, AcqRel>::pointer& p) noexcept
-{
-	p.release();
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-inline void
-ll_list_transformations<Type, Tag, AcqRel>::release_pointer(
-    ll_list_transformations<Type, Tag, AcqRel>::const_pointer& p) noexcept
-{
-	p.release();
+template<typename T, typename Tag, typename AcqRel>
+auto ll_list_transformations<T, Tag, AcqRel>::release_pointer_(
+    const_pointer&& p) noexcept -> void {
+  p.release();
 }
 
 
-template<typename Type, typename Tag>
-inline elem_ptr
-ll_list_transformations<Type, Tag, no_acqrel>::as_elem_(
-    typename ll_list_transformations<Type, Tag, no_acqrel>::pointer p)
-noexcept
-{
-	if (p == nullptr)
-		return nullptr;
-	hook_type& hook = *p;
-	return elem_ptr{ &hook.elem_ };
+template<typename T, typename Tag>
+auto ll_list_transformations<T, Tag, no_acqrel>::as_elem_(const pointer& p)
+    noexcept -> elem_ptr {
+  if (p == nullptr) return nullptr;
+  hook_type& hook = *p;
+  return elem_ptr(&hook);
 }
 
-template<typename Type, typename Tag>
-inline const_elem_ptr
-ll_list_transformations<Type, Tag, no_acqrel>::as_elem_(
-    typename ll_list_transformations<Type, Tag, no_acqrel>::const_pointer p)
-noexcept
-{
-	if (p == nullptr)
-		return nullptr;
-	const hook_type& hook = *p;
-	return const_elem_ptr{ &hook.elem_ };
+template<typename T, typename Tag>
+auto ll_list_transformations<T, Tag, no_acqrel>::as_elem_(
+    const const_pointer& p) noexcept -> elem_ptr {
+  if (p == nullptr) return nullptr;
+  const hook_type& hook = *p;
+  return elem_ptr(const_cast<hook_type*>(&hook));
 }
 
-template<typename Type, typename Tag>
-inline typename ll_list_transformations<Type, Tag, no_acqrel>::pointer
-ll_list_transformations<Type, Tag, no_acqrel>::as_type_(const elem_ptr& p)
-noexcept
-{
-	if (p == nullptr || !p->is_elem())
-		return nullptr;
-
-	pointer rv = nullptr;
-	hazard_t hz{ *this };
-
-	/* Use offsetof magic to calculate hook address. */
-	const std::size_t off = hook_type::_elem_offset();
-	hook_type& hook = *reinterpret_cast<hook_type*>(
-	    reinterpret_cast<unsigned char*>(p.get()) - off);
-	assert(&hook.elem_ == p);
-
-	/* Cast to derived type. */
-	reference value = static_cast<reference>(hook);
-
-	hz.do_hazard(value,
-	    [&]() {
-		if (p->is_linked())
-			rv = &value;
-	    },
-	    []() {
-		assert(false);
-	    });
-	return rv;
+template<typename T, typename Tag>
+auto ll_list_transformations<T, Tag, no_acqrel>::as_type_(
+    const elem_ptr& p) noexcept -> pointer {
+  if (p == nullptr) return nullptr;
+  assert(list::get_elem_type(*p) == elem_type::element);
+  hook_type& hook = static_cast<hook_type&>(*p);
+  reference v = static_cast<reference>(hook);
+  return &v;
 }
 
-template<typename Type, typename Tag>
-inline typename ll_list_transformations<Type, Tag, no_acqrel>::const_pointer
-ll_list_transformations<Type, Tag, no_acqrel>::as_type_(
-    const const_elem_ptr& p) noexcept
-{
-	if (p == nullptr || !p->is_elem())
-		return nullptr;
-
-	const_pointer rv = nullptr;
-	hazard_t hz{ *this };
-
-	/* Use offsetof magic to calculate hook address. */
-	const std::size_t off = hook_type::_elem_offset();
-	const hook_type& hook = *reinterpret_cast<const hook_type*>(
-	    reinterpret_cast<const unsigned char*>(p.get()) - off);
-	assert(&hook.elem_ == p);
-
-	/* Cast to derived type. */
-	const_reference value = static_cast<const_reference>(hook);
-
-	hz.do_hazard(value,
-	    [&]() {
-		if (p->is_linked())
-			rv = &value;
-	    },
-	    []() {
-		assert(false);
-	    });
-	return rv;
+template<typename T, typename Tag>
+auto ll_list_transformations<T, Tag, no_acqrel>::as_type_unlinked_(
+    const elem_ptr& p) noexcept -> pointer {
+  if (p == nullptr) return nullptr;
+  assert(list::get_elem_type(*p) == elem_type::element);
+  hook_type& hook = static_cast<hook_type&>(*p);
+  reference v = static_cast<reference>(hook);
+  return &v;
 }
 
-template<typename Type, typename Tag>
-inline typename ll_list_transformations<Type, Tag, no_acqrel>::pointer
-ll_list_transformations<Type, Tag, no_acqrel>::as_type_unlinked_(
-    const elem_ptr& p) noexcept
-{
-	if (p == nullptr || !p->is_elem())
-		return nullptr;
-
-	/* Use offsetof magic to calculate hook address. */
-	const std::size_t off = hook_type::_elem_offset();
-	hook_type& hook = *reinterpret_cast<hook_type*>(
-	    reinterpret_cast<unsigned char*>(p.get()) - off);
-	assert(&hook.elem_ == p);
-
-	/* Cast to derived type. */
-	reference value = static_cast<reference>(hook);
-
-	return &value;
+template<typename T, typename Tag>
+auto ll_list_transformations<T, Tag, no_acqrel>::release_pointer_(pointer&& p)
+    noexcept -> void {
+  p = nullptr;
 }
 
-template<typename Type, typename Tag>
-inline typename ll_list_transformations<Type, Tag, no_acqrel>::const_pointer
-ll_list_transformations<Type, Tag, no_acqrel>::as_type_unlinked_(
-    const const_elem_ptr& p) noexcept
-{
-	if (p == nullptr || !p->is_elem())
-		return nullptr;
-
-	const_pointer rv = nullptr;
-
-	/* Use offsetof magic to calculate hook address. */
-	const std::size_t off = hook_type::_elem_offset();
-	const hook_type& hook = *reinterpret_cast<const hook_type*>(
-	    reinterpret_cast<const unsigned char*>(p.get()) - off);
-	assert(&hook.elem_ == p);
-
-	/* Cast to derived type. */
-	const_reference value = static_cast<const_reference>(hook);
-
-	return &value;
-}
-
-template<typename Type, typename Tag>
-inline void
-ll_list_transformations<Type, Tag, no_acqrel>::post_unlink_(
-    ll_list_transformations<Type, Tag, no_acqrel>::const_reference
-     unlinked_value,
-    std::size_t /*uv_refs*/) const noexcept
-{
-	hazard_t::wait_unused(*this, unlinked_value);
-}
-
-template<typename Type, typename Tag>
-inline void
-ll_list_transformations<Type, Tag, no_acqrel>::release_pointer(
-    ll_list_transformations<Type, Tag, no_acqrel>::pointer& p) noexcept
-{
-	p = nullptr;
-}
-
-template<typename Type, typename Tag>
-inline void
-ll_list_transformations<Type, Tag, no_acqrel>::release_pointer(
-    ll_list_transformations<Type, Tag, no_acqrel>::const_pointer& p) noexcept
-{
-	p = nullptr;
+template<typename T, typename Tag>
+auto ll_list_transformations<T, Tag, no_acqrel>::release_pointer_(
+    const_pointer&& p) noexcept -> void {
+  p = nullptr;
 }
 
 
 } /* namespace ilias::ll_list_detail */
 
 
-template<typename Type, typename Tag, typename AcqRel>
-inline ll_smartptr_list<Type, Tag, AcqRel>::~ll_smartptr_list() noexcept
-{
-	this->clear();
+template<typename T, typename Tag, typename AcqRel>
+ll_smartptr_list<T, Tag, AcqRel>::~ll_smartptr_list() noexcept {
+  clear();
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline bool
-ll_smartptr_list<Type, Tag, AcqRel>::empty() const noexcept
-{
-	return this->impl_.empty();
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::empty() const noexcept -> bool {
+  return data_.empty();
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline typename ll_smartptr_list<Type, Tag, AcqRel>::size_type
-ll_smartptr_list<Type, Tag, AcqRel>::size() const noexcept
-{
-	return this->impl_.size();
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::size() const noexcept -> size_type {
+  return data_.size();
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline typename ll_smartptr_list<Type, Tag, AcqRel>::pointer
-ll_smartptr_list<Type, Tag, AcqRel>::pop_front() noexcept
-{
-	pointer result = this->as_type_unlinked_(this->impl_.pop_front());
-	if (result)
-		this->post_unlink_(*result, 0U);
-	return result;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::pop_front() noexcept -> pointer {
+  return this->as_type_unlinked_(data_.pop_front());
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline typename ll_smartptr_list<Type, Tag, AcqRel>::pointer
-ll_smartptr_list<Type, Tag, AcqRel>::pop_back() noexcept
-{
-	pointer result = this->as_type_unlinked_(this->impl_.pop_back());
-	if (result)
-		this->post_unlink_(*result, 0U);
-	return result;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::pop_back() noexcept -> pointer {
+  return this->as_type_unlinked_(data_.pop_back());
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline bool
-ll_smartptr_list<Type, Tag, AcqRel>::push_back(
-    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
-{
-	auto p_ = as_elem_(p).get();
-	auto rv = this->impl_.push_back(p_);
-	if (rv)
-		parent_t::release_pointer(p);
-	return rv;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::begin() noexcept -> iterator {
+  iterator rv;
+  rv.ptr_ = this->as_type_(data_.init_begin(rv.pos_));
+  return rv;
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline bool
-ll_smartptr_list<Type, Tag, AcqRel>::push_front(
-    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
-{
-	auto p_ = as_elem_(p).get();
-	auto rv = this->impl_.push_front(p_);
-	if (rv)
-		parent_t::release_pointer(p);
-	return rv;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::end() noexcept -> iterator {
+  iterator rv;
+  auto head = data_.init_begin(rv.pos_);
+  assert(ll_list_detail::list::get_elem_type(*head) ==
+         ll_list_detail::elem_type::head);
+  return rv;
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline std::pair<typename ll_smartptr_list<Type, Tag, AcqRel>::iterator, bool>
-ll_smartptr_list<Type, Tag, AcqRel>::insert_after(
-    const typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator& pos,
-    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
-{
-	if (p == nullptr)
-		throw std::invalid_argument("null element");
-
-	std::pair<iterator, bool> result;
-	result.first.val_ = p;
-	auto p_ = this->as_elem_(p).get();
-	if ((result.second = this->impl_.insert_after(
-	    p_, pos.impl_, &result.first.impl_)))
-		parent_t::release_pointer(p);
-	else
-		result.first = pos;
-	return result;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::begin() const noexcept ->
+    const_iterator {
+  const_iterator rv;
+  rv.ptr_ = this->as_type_(data_.init_begin(rv.pos_));
+  return rv;
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline std::pair<typename ll_smartptr_list<Type, Tag, AcqRel>::iterator, bool>
-ll_smartptr_list<Type, Tag, AcqRel>::insert_after(
-    const typename ll_smartptr_list<Type, Tag, AcqRel>::iterator& pos,
-    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
-{
-	if (p == nullptr)
-		throw std::invalid_argument("null element");
-
-	std::pair<iterator, bool> result;
-	result.first.val_ = p;
-	auto p_ = this->as_elem_(p).get();
-	if ((result.second = this->impl_.insert_after(
-	    p_, pos.impl_, &result.first.impl_)))
-		parent_t::release_pointer(p);
-	else
-		result.first = pos;
-	return result;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::end() const noexcept -> const_iterator {
+  const_iterator rv;
+  auto head = data_.init_begin(rv.pos_);
+  assert(ll_list_detail::list::get_elem_type(*head) ==
+         ll_list_detail::elem_type::head);
+  return rv;
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline std::pair<typename ll_smartptr_list<Type, Tag, AcqRel>::iterator, bool>
-ll_smartptr_list<Type, Tag, AcqRel>::insert_before(
-    const typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator& pos,
-    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
-{
-	if (p == nullptr)
-		throw std::invalid_argument("null element");
-
-	std::pair<iterator, bool> result;
-	result.first.val_ = p;
-	auto p_ = this->as_elem_(p).get();
-	if ((result.second = this->impl_.insert_before(
-	    p_, pos.impl_, &result.first.impl_)))
-		parent_t::release_pointer(p);
-	else
-		result.first = pos;
-	return result;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::link_front(pointer p) ->
+    bool {
+  if (p == nullptr) throw std::invalid_argument("null element");
+  bool rv = data_.link_front(*this->as_elem_(p));
+  if (rv) this->release_pointer_(std::move(p));
+  return rv;
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline std::pair<typename ll_smartptr_list<Type, Tag, AcqRel>::iterator, bool>
-ll_smartptr_list<Type, Tag, AcqRel>::insert_before(
-    const typename ll_smartptr_list<Type, Tag, AcqRel>::iterator& pos,
-    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
-{
-	if (p == nullptr)
-		throw std::invalid_argument("null element");
-
-	std::pair<iterator, bool> result;
-	result.first.val_ = p;
-	auto p_ = this->as_elem_(p).get();
-	if ((result.second = this->impl_.insert_before(
-	    p_, pos.impl_, &result.first.impl_)))
-		parent_t::release_pointer(p);
-	else
-		result.first = pos;
-	return result;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::link_back(pointer p) ->
+    bool {
+  if (p == nullptr) throw std::invalid_argument("null element");
+  bool rv = data_.link_back(*this->as_elem_(p));
+  if (rv) this->release_pointer_(std::move(p));
+  return rv;
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
-ll_smartptr_list<Type, Tag, AcqRel>::insert(
-    const typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator& pos,
-    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
-{
-	iterator result;
-	bool success;
-	std::tie(result, success) = this->insert_before(pos, std::move(p));
-	if (success)
-		++result;
-	return result;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::link_after(const const_iterator& i,
+                                                  pointer p) ->
+    std::pair<iterator, bool> {
+  using std::get;
+  std::pair<iterator, bool> result;
+
+  if (p == nullptr) throw std::invalid_argument("null element");
+  auto link_result =
+      data_.link_after(i.pos_, this->as_elem_(p), &result.first.pos_);
+
+  result.first = this->as_type_(get<0>(link_result));
+  result.second = get<1>(link_result);
+  if (get<1>(link_result)) this->release_pointer_(std::move(p));
+  return result;
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
-ll_smartptr_list<Type, Tag, AcqRel>::insert(
-    const typename ll_smartptr_list<Type, Tag, AcqRel>::iterator& pos,
-    typename ll_smartptr_list<Type, Tag, AcqRel>::pointer p)
-{
-	iterator result;
-	bool success;
-	std::tie(result, success) = this->insert_before(pos, std::move(p));
-	if (success)
-		++result;
-	return result;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::link_after(const iterator& i,
+                                                  pointer p) ->
+    std::pair<iterator, bool> {
+  using std::get;
+  std::pair<iterator, bool> result;
+
+  if (p == nullptr) throw std::invalid_argument("null element");
+  auto link_result =
+      data_.link_after(i.pos_, this->as_elem_(p), &get<0>(result).pos_);
+
+  result.first = this->as_type_(get<0>(link_result));
+  result.second = get<1>(link_result);
+  if (get<1>(link_result)) this->release_pointer_(std::move(p));
+  return result;
 }
 
-template<typename Type, typename Tag, typename AcqRel>
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::link_before(const const_iterator& i,
+                                                   pointer p) ->
+    std::pair<iterator, bool> {
+  using std::get;
+  std::pair<iterator, bool> result;
+
+  if (p == nullptr) throw std::invalid_argument("null element");
+  auto link_result =
+      data_.link_before(i.pos_, this->as_elem_(p), &get<0>(result).pos_);
+
+  result.first = this->as_type_(get<0>(link_result));
+  result.second = get<1>(link_result);
+  if (get<1>(link_result)) this->release_pointer_(std::move(p));
+  return result;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::link_before(const iterator& i,
+                                                   pointer p) ->
+    std::pair<iterator, bool> {
+  using std::get;
+  std::pair<iterator, bool> result;
+
+  if (p == nullptr) throw std::invalid_argument("null element");
+  auto link_result =
+      data_.link_before(i.pos_, this->as_elem_(p), &get<0>(result).pos_);
+
+  result.first = this->as_type_(get<0>(link_result));
+  result.second = get<1>(link_result);
+  if (get<1>(link_result)) this->release_pointer_(std::move(p));
+  return result;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::link(const const_iterator& i,
+                                            pointer p) -> iterator {
+  iterator rv;
+  rv.pos_ = i.pos_;
+  rv.ptr_ = i.ptr_;
+
+  bool link_success;
+  tie(std::ignore, link_success) =
+      data_.link_before(i.pos_, this->as_elem_(p), nullptr);
+  if (link_success) this->release_pointer_(std::move(p));
+  return rv;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::link(const iterator& i,
+                                            pointer p) -> iterator {
+  iterator rv;
+  rv.pos_ = i.pos_;
+  rv.ptr_ = i.ptr_;
+
+  bool link_success;
+  tie(std::ignore, link_success) =
+      data_.link_before(i.pos_, *this->as_elem_(p), nullptr);
+  if (link_success) this->release_pointer_(std::move(p));
+  return rv;
+}
+
+template<typename T, typename Tag, typename AcqRel>
 template<typename Disposer>
-inline void
-ll_smartptr_list<Type, Tag, AcqRel>::clear_and_dispose(
-    Disposer disposer)
-noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer&&>())))
-{
-	/* XXX try to see if this can be done using splicing logic? */
-	while (pointer p = this->pop_front())
-		disposer(std::move(p));
+auto ll_smartptr_list<T, Tag, AcqRel>::clear_and_dispose(Disposer disp)
+    noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer>()))) ->
+    void {
+  while (pointer p = pop_front())
+    disp(std::move(p));
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline void
-ll_smartptr_list<Type, Tag, AcqRel>::clear() noexcept
-{
-	return this->clear_and_dispose([](const pointer&) { /* SKIP */ });
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::clear()
+    noexcept -> void {
+  clear_and_dispose([](const pointer&) {});
 }
 
-template<typename Type, typename Tag, typename AcqRel>
+template<typename T, typename Tag, typename AcqRel>
 template<typename Disposer>
-inline typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
-ll_smartptr_list<Type, Tag, AcqRel>::erase_and_dispose(
-    const typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator& iter,
-    Disposer disposer)
-noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer&&>())))
-{
-	return this->erase_and_dispose(iterator{ this, iter },
-	    std::move(disposer));
+auto ll_smartptr_list<T, Tag, AcqRel>::erase_and_dispose(
+    const const_iterator& i, Disposer disp)
+    noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer>()))) ->
+    iterator {
+  using std::tie;
+
+  const auto& i_ptr = i.get();
+  if (!i_ptr) throw std::invalid_argument("invalid iterator");
+  iterator out;
+
+  ll_list_detail::elem& e = *this->as_elem_(i_ptr);  // expect = 0
+  ll_list_detail::elem_ptr ep;
+  bool unlink_success;
+  tie(ep, unlink_success) = data_.unlink(e, &out.pos_, 0);
+  if (unlink_success)
+    disp(this->as_type_unlinked_(ep));
+  else
+    out.pos_ = i.pos_;
+  ++out;
+  return out;
 }
 
-template<typename Type, typename Tag, typename AcqRel>
+template<typename T, typename Tag, typename AcqRel>
 template<typename Disposer>
-inline typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
-ll_smartptr_list<Type, Tag, AcqRel>::erase_and_dispose(
-    const typename ll_smartptr_list<Type, Tag, AcqRel>::iterator& iter,
-    Disposer disposer)
-noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer&&>())))
-{
-	iterator rv{ iter };
-	++rv;
+auto ll_smartptr_list<T, Tag, AcqRel>::erase_and_dispose(
+    const iterator& i, Disposer disp)
+    noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer>()))) ->
+    iterator {
+  using std::tie;
 
-	const auto& p = iter.get();
-	if (this->unlink(p))
-		disposer(std::move(p));
-	return rv;
+  const auto& i_ptr = i.get();
+  if (!i_ptr) throw std::invalid_argument("invalid iterator");
+  iterator out;
+
+  ll_list_detail::elem& e = *this->as_elem_(i_ptr);  // expect = 0
+  ll_list_detail::elem_ptr ep;
+  bool unlink_success;
+  tie(ep, unlink_success) = data_.unlink(e, &out.pos_, 0);
+  if (unlink_success)
+    disp(this->as_type_unlinked_(ep));
+  else
+    out.pos_ = i.pos_;
+  ++out;
+  return out;
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
-ll_smartptr_list<Type, Tag, AcqRel>::erase(
-    const typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator& iter)
-noexcept
-{
-	return this->erase_and_dispose(iter, [](const pointer&) { /* SKIP */ });
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::erase(const const_iterator& i)
+    noexcept -> iterator {
+  return erase_and_dispose(i, [](const pointer&) {});
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
-ll_smartptr_list<Type, Tag, AcqRel>::erase(
-    const typename ll_smartptr_list<Type, Tag, AcqRel>::iterator& iter)
-noexcept
-{
-	return this->erase_and_dispose(iter, [](const pointer&) { /* SKIP */ });
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::erase(const iterator& i)
+    noexcept-> iterator {
+  return erase_and_dispose(i, [](const pointer&) {});
 }
 
-template<typename Type, typename Tag, typename AcqRel>
+template<typename T, typename Tag, typename AcqRel>
+template<typename Disposer>
+auto ll_smartptr_list<T, Tag, AcqRel>::erase_and_dispose(
+    const const_iterator& b, const const_iterator& e, Disposer disp)
+    noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer>()))) ->
+    iterator {
+  iterator i;
+  i.pos_ = b.pos_;
+  i.ptr_ = const_pointer_cast<value_type>(b.ptr_);
+
+  while (i != e) {
+    bool fired = false;
+    i = erase(i, [&fired, &disp](pointer&& p) {
+                   disp(std::move(p));
+                   fired = true;
+                 });
+    if (!fired && i != e) ++i;
+  }
+  return i;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+template<typename Disposer>
+auto ll_smartptr_list<T, Tag, AcqRel>::erase_and_dispose(
+    const iterator& b, const iterator& e, Disposer disp)
+    noexcept(noexcept(std::declval<Disposer&>()(std::declval<pointer>()))) ->
+    iterator {
+  iterator i;
+  i.pos_ = b.pos_;
+  i.ptr_ = b.ptr_;
+
+  while (i != e) {
+    bool fired = false;
+    i = erase(i, [&fired, &disp](pointer&& p) {
+                   disp(std::move(p));
+                   fired = true;
+                 });
+    if (!fired && i != e) ++i;
+  }
+  return i;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::erase(
+    const const_iterator& b, const const_iterator& e) noexcept -> iterator {
+  return erase_and_dispose(b, e, [](const pointer&) {});
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::erase(
+    const iterator& b, const iterator& e) noexcept -> iterator {
+  return erase_and_dispose(b, e, [](const pointer&) {});
+}
+
+template<typename T, typename Tag, typename AcqRel>
 template<typename Predicate, typename Disposer>
-inline void
-ll_smartptr_list<Type, Tag, AcqRel>::remove_and_dispose_if(Predicate predicate,
-    Disposer disposer)
-noexcept(
-	noexcept(std::declval<Predicate&>()(
-	    std::declval<const_reference>())) &&
-	noexcept(std::declval<Disposer&>()(
-	    std::declval<pointer&&>())))
-{
-	for (iterator i = this->begin();
-	    i.get();
-	    ++i) {
-		if (predicate(*i))
-			erase_and_dispose(i, disposer);
-	}
+auto ll_smartptr_list<T, Tag, AcqRel>::remove_and_dispose_if(Predicate pred,
+                                                             Disposer disp)
+    noexcept(noexcept(std::declval<Predicate&>()(
+                          std::declval<const_reference>())) &&
+             noexcept(std::declval<Disposer&>()(std::declval<pointer>()))) ->
+    void {
+  iterator i = begin(), e = end();
+  while (i != e) {
+    bool fired = false;
+    if (pred(*i)) {
+      i = erase_and_dispose(i, [&fired, &disp](pointer&& p) {
+                                 disp(std::move(p));
+                                 fired = true;
+                               });
+    }
+    if (!fired) ++i;
+  }
 }
 
-template<typename Type, typename Tag, typename AcqRel>
+template<typename T, typename Tag, typename AcqRel>
 template<typename Disposer>
-inline void
-ll_smartptr_list<Type, Tag, AcqRel>::remove_and_dispose(
-   ll_smartptr_list<Type, Tag, AcqRel>::const_reference value,
-   Disposer disposer)
-noexcept(
-	noexcept(std::declval<const_reference>() ==
-	    std::declval<const_reference>()) &&
-	noexcept(std::declval<Disposer&>()(
-	    std::declval<pointer&&>())))
-{
-	this->remove_and_dispose_if(
-	    [&value](const_reference test) {
-		return (value == test);
-	    },
-	    std::move(disposer));
+auto ll_smartptr_list<T, Tag, AcqRel>::remove_and_dispose(const_reference v,
+                                                          Disposer disp)
+    noexcept(noexcept(std::declval<const_reference>() ==
+                          std::declval<const_reference>()) &&
+             noexcept(std::declval<Disposer&>()(std::declval<pointer>()))) ->
+    void {
+  return remove_and_dispose_if([&v](const_reference& x) { return x == v; },
+                               std::move(disp));
 }
 
-template<typename Type, typename Tag, typename AcqRel>
+template<typename T, typename Tag, typename AcqRel>
 template<typename Predicate>
-inline void
-ll_smartptr_list<Type, Tag, AcqRel>::remove_if(Predicate predicate)
-noexcept(
-	noexcept(std::declval<Predicate&>()(
-	    std::declval<const_reference>())))
-{
-	this->remove_and_dispose_if(std::move(predicate),
-	    [](const pointer&) {
-		/* SKIP */
-	    });
+auto ll_smartptr_list<T, Tag, AcqRel>::remove_if(Predicate pred)
+    noexcept(noexcept(std::declval<Predicate&>()(
+                          std::declval<const_reference>()))) ->
+    void {
+  return remove_and_dispose_if(std::move(pred), [](const pointer&) {});
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline void
-ll_smartptr_list<Type, Tag, AcqRel>::remove(
-   ll_smartptr_list<Type, Tag, AcqRel>::const_reference value)
-noexcept(
-	noexcept(std::declval<const_reference>() ==
-	    std::declval<const_reference>()))
-{
-	this->remove_and_dispose(value,
-	    [](const pointer&) {
-		/* SKIP */
-	    });
+template<typename T, typename Tag, typename AcqRel>
+template<typename Predicate>
+auto ll_smartptr_list<T, Tag, AcqRel>::remove(const_reference v)
+    noexcept(noexcept(std::declval<Predicate&>()(
+                          std::declval<const_reference>()))) ->
+    void {
+  return remove_and_dispose_if([&v](const_reference& x) { return x == v; },
+                               [](const pointer&) {});
 }
 
-template<typename Type, typename Tag, typename AcqRel>
-inline bool
-ll_smartptr_list<Type, Tag, AcqRel>::unlink(const pointer& p) noexcept
-{
-	assert(p != nullptr);
-
-	const bool rv = ll_list_detail::unlink(as_elem_(p));
-	if (rv)
-		this->post_unlink_(*p, 1U);
-	return rv;
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-inline bool
-ll_smartptr_list<Type, Tag, AcqRel>::unlink(const const_pointer& p) noexcept
-{
-	assert(p != nullptr);
-
-	const bool rv = ll_list_detail::unlink(as_elem_(p));
-	if (rv)
-		this->post_unlink_(*p, 1U);
-	return rv;
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-inline ll_smartptr_list<Type, Tag, AcqRel>*
-ll_smartptr_list<Type, Tag, AcqRel>::_cast_to_self_(
-    ll_list_detail::basic_list* self) noexcept
-{
-	const std::uintptr_t ADDR = 0x1000;
-	const std::size_t off = reinterpret_cast<std::uintptr_t>(
-	    &reinterpret_cast<ll_smartptr_list*>(ADDR)->impl_) - ADDR;
-
-	if (self == nullptr)
-		return nullptr;
-	ll_smartptr_list* rv = reinterpret_cast<ll_smartptr_list*>(
-	    reinterpret_cast<unsigned char*>(self) - off);
-	assert(&rv->impl_ == self);
-	return rv;
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
-ll_smartptr_list<Type, Tag, AcqRel>::iterator_to(
-    ll_smartptr_list<Type, Tag, AcqRel>::reference r) noexcept
-{
-	iterator result;
-	if (!result.link_at_(this, pointer{ &r }))
-		result.link_at_(this, ll_list_detail::basic_iter::tag::head);
-	return result;
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator
-ll_smartptr_list<Type, Tag, AcqRel>::iterator_to(
-    ll_smartptr_list<Type, Tag, AcqRel>::const_reference r) const noexcept
-{
-	const_iterator result;
-	if (!result.link_at_(this, const_pointer{ &r }))
-		result.link_at_(this, ll_list_detail::basic_iter::tag::head);
-	return result;
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
-ll_smartptr_list<Type, Tag, AcqRel>::iterator_to(
-    const ll_smartptr_list<Type, Tag, AcqRel>::pointer& p)
-{
-	if (p == nullptr)
-		throw std::invalid_argument("cannot iterate to null");
-	return this->iterator_to(*p);
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator
-ll_smartptr_list<Type, Tag, AcqRel>::iterator_to(
-    const ll_smartptr_list<Type, Tag, AcqRel>::const_pointer& p) const
-{
-	if (p == nullptr)
-		throw std::invalid_argument("cannot iterate to null");
-	return this->iterator_to(*p);
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
-ll_smartptr_list<Type, Tag, AcqRel>::begin() noexcept
-{
-	iterator result;
-	result.link_at_(this, ll_list_detail::basic_iter::tag::first);
-	return result;
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-typename ll_smartptr_list<Type, Tag, AcqRel>::iterator
-ll_smartptr_list<Type, Tag, AcqRel>::end() noexcept
-{
-	iterator result;
-	result.link_at_(this, ll_list_detail::basic_iter::tag::head);
-	return result;
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator
-ll_smartptr_list<Type, Tag, AcqRel>::begin() const noexcept
-{
-	const_iterator result;
-	result.link_at_(const_cast<ll_smartptr_list*>(this),
-	    ll_list_detail::basic_iter::tag::first);
-	return result;
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator
-ll_smartptr_list<Type, Tag, AcqRel>::end() const noexcept
-{
-	const_iterator result;
-	result.link_at_(const_cast<ll_smartptr_list*>(this),
-	    ll_list_detail::basic_iter::tag::head);
-	return result;
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator
-ll_smartptr_list<Type, Tag, AcqRel>::cbegin() const noexcept
-{
-	const_iterator result;
-	result.link_at_(const_cast<ll_smartptr_list*>(this),
-	    ll_list_detail::basic_iter::tag::first);
-	return result;
-}
-
-template<typename Type, typename Tag, typename AcqRel>
-typename ll_smartptr_list<Type, Tag, AcqRel>::const_iterator
-ll_smartptr_list<Type, Tag, AcqRel>::cend() const noexcept
-{
-	const_iterator result;
-	result.link_at_(const_cast<ll_smartptr_list*>(this),
-	    ll_list_detail::basic_iter::tag::head);
-	return result;
-}
-
-template<typename Type, typename Tag, typename AcqRel>
+template<typename T, typename Tag, typename AcqRel>
 template<typename Functor>
-Functor
-ll_smartptr_list<Type, Tag, AcqRel>::visit(Functor functor)
-noexcept(noexcept(std::declval<Functor>()(std::declval<reference>())))
-{
-	for (iterator i = this->begin();
-	    i.get();
-	    ++i)
-		functor(*i);
-	return functor;
+auto ll_smartptr_list<T, Tag, AcqRel>::visit(Functor fn)
+    noexcept(noexcept(std::declval<Functor&>()(std::declval<reference>()))) ->
+    Functor {
+  for (reference i : *this) fn(i);
+  return fn;
 }
 
-template<typename Type, typename Tag, typename AcqRel>
+template<typename T, typename Tag, typename AcqRel>
 template<typename Functor>
-Functor
-ll_smartptr_list<Type, Tag, AcqRel>::visit(Functor functor) const
-noexcept(noexcept(std::declval<Functor>()(std::declval<const_reference>())))
-{
-	for (iterator i = this->begin();
-	    i.get();
-	    ++i)
-		functor(*i);
-	return functor;
+auto ll_smartptr_list<T, Tag, AcqRel>::visit(Functor fn)
+    const
+    noexcept(noexcept(std::declval<Functor&>()(std::declval<reference>()))) ->
+    Functor {
+  for (const_reference i : *this) fn(i);
+  return fn;
 }
 
 
-namespace ll_list_iter_detail {
-
-
-template<typename Type, typename Tag, typename AcqRel, bool IsConstIter>
-typename ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
- IsConstIter>::parent_t::pointer
-ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
-    IsConstIter>::get() const noexcept
-{
-	return this->val_;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator::operator==(
+    const iterator& o) const noexcept -> bool {
+  return pos_ == o.pos_;
 }
 
-template<typename Type, typename Tag, typename AcqRel, bool IsConstIter>
-typename ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
- IsConstIter>::parent_t::pointer
-ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
-    IsConstIter>::operator->() const noexcept
-{
-	return this->get();
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator::operator!=(
+    const iterator& o) const noexcept -> bool {
+  return !(*this == o);
 }
 
-template<typename Type, typename Tag, typename AcqRel, bool IsConstIter>
-typename ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
- IsConstIter>::parent_t::reference
-ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
-    IsConstIter>::operator*() const noexcept
-{
-	return *this->get();
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator::get() const noexcept ->
+    pointer {
+  return ptr_;
 }
 
-template<typename Type, typename Tag, typename AcqRel, bool IsConstIter>
-ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
- IsConstIter>::operator typename
-  ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
-   IsConstIter>::parent_t::pointer() const noexcept
-{
-	return this->get();
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator::operator->() const noexcept ->
+    value_type* {
+  assert(ptr_ != nullptr);
+  return &*ptr_;
 }
 
-template<typename Type, typename Tag, typename AcqRel, bool IsConstIter>
-typename ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
- IsConstIter>::parent_t::pointer
-ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
-    IsConstIter>::release() noexcept
-{
-	return std::move(this->val_);
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator::operator*() const noexcept ->
+    reference {
+  assert(ptr_ != nullptr);
+  return *ptr_;
 }
 
-template<typename Type, typename Tag, typename AcqRel, bool IsConstIter>
-bool
-ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
- IsConstIter>::link_at_(
-    ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
-     IsConstIter>::list_t* list,
-    typename ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
-     IsConstIter>::parent_t::pointer p)
-{
-	bool rv = this->impl_.link_at(&list->impl_, list_t::as_elem_(p));
-	if (rv)
-		this->val_ = std::move(p);
-	return rv;
+template<typename T, typename Tag, typename AcqRel>
+ll_smartptr_list<T, Tag, AcqRel>::iterator::operator pointer() const noexcept {
+  return *ptr_;
 }
 
-template<typename Type, typename Tag, typename AcqRel, bool IsConstIter>
-void
-ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
- IsConstIter>::link_at_(
-    ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
-     IsConstIter>::list_t* list,
-    ll_list_detail::basic_iter::tag where)
-{
-	using elem_ptr_t = typename std::conditional<IsConstIter,
-		ll_list_detail::const_elem_ptr,
-		ll_list_detail::elem_ptr
-	    >::type;
-
-	bool done = false;
-	elem_ptr_t link{ nullptr };
-	do {
-		link = this->impl_.link_at(&list->impl_, where);
-
-		if (link == nullptr) {
-			/* SKIP */
-		} else if (link->is_head()) {
-			this->val_ = nullptr;
-			done = true;
-		} else {
-			if ((this->val_ = list->as_type_(std::move(link))) !=
-			    nullptr)
-				done = true;
-		}
-	} while (!done);
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator::release() noexcept ->
+    pointer {
+  pointer rv = std::move(ptr_);
+  return rv;
 }
 
-template<typename Type, typename Tag, typename AcqRel, bool IsConstIter>
-void
-ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
- IsConstIter>::next(ll_list_detail::basic_list::size_type n) noexcept
-{
-	list_t* self = list_t::_cast_to_self_(this->impl_.get_owner());
-
-	this->val_ = nullptr;
-	for (auto elem = this->impl_.next(n);
-	    elem != nullptr && elem->is_elem();
-	    elem = this->impl_.next()) {
-		if ((this->val_ = self->as_type_(elem)) !=
-		    nullptr)
-			return;
-	}
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator::operator++()
+    noexcept -> iterator& {
+  auto e = pos_.step_forward();
+  if (e == nullptr ||
+      (ll_list_detail::list::get_elem_type(*e) ==
+       ll_list_detail::elem_type::head)) {
+    ptr_ = nullptr;
+  } else {
+    ptr_ = this->as_type_(e);
+  }
+  return *this;
 }
 
-template<typename Type, typename Tag, typename AcqRel, bool IsConstIter>
-void
-ll_smartptr_list_iterator<ll_smartptr_list<Type, Tag, AcqRel>,
- IsConstIter>::prev(ll_list_detail::basic_list::size_type n) noexcept
-{
-	list_t* self = list_t::_cast_to_self_(this->impl_.get_owner());
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator::operator++(int)
+    noexcept -> iterator {
+  iterator clone = *this;
+  ++clone;
+  return clone;
+}
 
-	this->val_ = nullptr;
-	for (auto elem = this->impl_.prev(n);
-	    elem != nullptr && elem->is_elem();
-	    elem = this->impl_.prev()) {
-		if ((this->val_ = self->as_type_(elem)) !=
-		    nullptr)
-			return;
-	}
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator::operator--()
+    noexcept -> iterator& {
+  auto e = pos_.step_backward();
+  if (e == nullptr ||
+      (ll_list_detail::list::get_elem_type(*e) ==
+       ll_list_detail::elem_type::head)) {
+    ptr_ = nullptr;
+  } else {
+    ptr_ = this->as_type_(e);
+  }
+  return *this;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator::operator--(int)
+    noexcept -> iterator {
+  iterator clone = *this;
+  --clone;
+  return clone;
 }
 
 
-template<typename Iter>
-inline iter_direction<Iter, forward>::iter_direction(
-    const iter_direction::parent_t& p)
-noexcept(std::is_nothrow_copy_constructible<parent_t>::value)
-:	parent_t{ p }
-{
-	/* Empty body. */
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::const_iterator::operator==(
+    const const_iterator& o) const noexcept -> bool {
+  return pos_ == o.pos_;
 }
 
-template<typename Iter>
-inline iter_direction<Iter, forward>::iter_direction(
-    iter_direction::parent_t&& p)
-noexcept(std::is_nothrow_move_constructible<parent_t>::value)
-:	parent_t{ std::move(p) }
-{
-	/* Empty body. */
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::const_iterator::operator!=(
+    const const_iterator& o) const noexcept -> bool {
+  return !(*this == o);
 }
 
-template<typename Iter>
-typename iter_direction<Iter, forward>::derived_t&
-iter_direction<Iter, forward>::operator++() noexcept
-{
-	this->next();
-	return *this;
+template<typename T, typename Tag, typename AcqRel>
+ll_smartptr_list<T, Tag, AcqRel>::const_iterator::const_iterator(
+    const iterator& o) noexcept
+: pos_(o.pos_),
+  ptr_(o.ptr_)
+{}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::const_iterator::get() const noexcept ->
+    pointer {
+  return ptr_;
 }
 
-template<typename Iter>
-typename iter_direction<Iter, forward>::derived_t&
-iter_direction<Iter, forward>::operator--() noexcept
-{
-	this->prev();
-	return *this;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::const_iterator::operator->()
+    const noexcept -> value_type* {
+  assert(ptr_ != nullptr);
+  return &*ptr_;
 }
 
-template<typename Iter>
-typename iter_direction<Iter, forward>::derived_t
-iter_direction<Iter, forward>::operator++(int) const noexcept
-{
-	derived_t clone = *this;
-	this->next();
-	return clone;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::const_iterator::operator*()
+    const noexcept -> reference {
+  assert(ptr_ != nullptr);
+  return *ptr_;
 }
 
-template<typename Iter>
-typename iter_direction<Iter, forward>::derived_t
-iter_direction<Iter, forward>::operator--(int) const noexcept
-{
-	derived_t clone = *this;
-	this->prev();
-	return clone;
+template<typename T, typename Tag, typename AcqRel>
+ll_smartptr_list<T, Tag, AcqRel>::const_iterator::operator pointer()
+    const noexcept {
+  return *ptr_;
 }
 
-
-template<typename Iter>
-inline iter_direction<Iter, reverse>::iter_direction(
-    const iter_direction::parent_t& p)
-noexcept(std::is_nothrow_copy_constructible<parent_t>::value)
-:	parent_t{ p }
-{
-	/* Empty body. */
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::const_iterator::release()
+    noexcept -> pointer {
+  pointer rv = std::move(ptr_);
+  return rv;
 }
 
-template<typename Iter>
-inline iter_direction<Iter, reverse>::iter_direction(
-    iter_direction::parent_t&& p)
-noexcept(std::is_nothrow_move_constructible<parent_t>::value)
-:	parent_t{ std::move(p) }
-{
-	/* Empty body. */
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::const_iterator::operator++()
+    noexcept -> const_iterator& {
+  auto e = pos_.step_forward();
+  if (e == nullptr ||
+      (ll_list_detail::list::get_elem_type(*e) ==
+       ll_list_detail::elem_type::head)) {
+    ptr_ = nullptr;
+  } else {
+    ptr_ = this->as_type_(e);
+  }
+  return *this;
 }
 
-template<typename Iter>
-typename iter_direction<Iter, reverse>::derived_t&
-iter_direction<Iter, reverse>::operator++() noexcept
-{
-	this->prev();
-	return *this;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::const_iterator::operator++(int)
+    noexcept -> const_iterator {
+  const_iterator clone = *this;
+  ++clone;
+  return clone;
 }
 
-template<typename Iter>
-typename iter_direction<Iter, reverse>::derived_t&
-iter_direction<Iter, reverse>::operator--() noexcept
-{
-	this->next();
-	return *this;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::const_iterator::operator--()
+    noexcept -> const_iterator& {
+  auto e = pos_.step_backward();
+  if (e == nullptr ||
+      (ll_list_detail::list::get_elem_type(*e) ==
+       ll_list_detail::elem_type::head)) {
+    ptr_ = nullptr;
+  } else {
+    ptr_ = this->as_type_(e);
+  }
+  return *this;
 }
 
-template<typename Iter>
-typename iter_direction<Iter, reverse>::derived_t
-iter_direction<Iter, reverse>::operator++(int) const noexcept
-{
-	derived_t clone = *this;
-	this->prev();
-	return clone;
-}
-
-template<typename Iter>
-typename iter_direction<Iter, reverse>::derived_t
-iter_direction<Iter, reverse>::operator--(int) const noexcept
-{
-	derived_t clone = *this;
-	this->next();
-	return clone;
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::const_iterator::operator--(int)
+    noexcept -> const_iterator {
+  const_iterator clone = *this;
+  --clone;
+  return clone;
 }
 
 
-}} /* namespace ilias::ll_list_iter_detail */
+} /* namespace ilias */
 
-#endif /* ILIAS_LL_LIST_INL */
+#endif /* _ILIAS_ASYNC_LL_INL_H_ */
