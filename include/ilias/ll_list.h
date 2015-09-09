@@ -47,7 +47,7 @@ ILIAS_ASYNC_EXPORT constexpr elem_flags UNMARKED = elem_flags(0);
 
 class elem {
   friend class elem_linking_lock;
-  friend class elem_acqrel;
+  friend struct elem_acqrel;
   friend class list;
   friend class iter_link;
 
