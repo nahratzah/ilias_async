@@ -64,6 +64,41 @@ constexpr list::axb_link_result list::XLINK_LOST_B;
 constexpr list::axb_link_result list::XLINK_LOST_AB;
 
 
+class elem_linking_lock {
+ public:
+  elem_linking_lock(const elem&) noexcept;
+  elem_linking_lock(const elem_linking_lock&) = delete;
+  elem_linking_lock& operator=(const elem_linking_lock&) = delete;
+  ~elem_linking_lock() noexcept;
+
+  explicit operator bool() const noexcept;
+
+  static bool is_locked(const elem&) noexcept;
+
+ private:
+  const elem* locked_ = nullptr;
+};
+
+
+inline elem_linking_lock::elem_linking_lock(const elem& e) noexcept {
+  if (e.linking_.exchange(true, memory_order_acquire))
+    locked_ = &e;
+}
+
+inline elem_linking_lock::~elem_linking_lock() noexcept {
+  if (locked_)
+    locked_->linking_.store(false, memory_order_release);
+}
+
+inline elem_linking_lock::operator bool() const noexcept {
+  return locked_ != nullptr;
+}
+
+inline auto elem_linking_lock::is_locked(const elem& e) noexcept -> bool {
+  return e.linking_.load(memory_order_relaxed);
+}
+
+
 elem::elem() noexcept {}
 
 elem::elem(elem_type type) noexcept
@@ -222,6 +257,9 @@ auto list::pred_(elem& x) noexcept -> elem_ptr {
 }
 
 auto list::link_(elem& a, elem& x, elem& b) noexcept -> axb_link_result {
+  elem_linking_lock lck{ x };
+  if (!lck) return XLINK_TWICE;
+
   /*
    * Link a and b from x.
    */
@@ -629,6 +667,50 @@ auto list::unlink(elem& e, position* out, size_t expect) ->
     out->unlink();
   }
   /* UNREACHABLE */
+}
+
+auto list::iterator_to(elem& e, position* out) noexcept -> bool {
+  assert(out != nullptr);
+  unsigned int spin = SPIN;
+  link_result lr;
+
+  out->unlink();
+
+  for (;;) {
+    if (elem_linking_lock::is_locked(e)) return false;
+
+    lr = list::link_before_(e, out->back_());
+    switch (lr) {
+    case list::LINK_TWICE:
+      assert(lr != list::LINK_TWICE);
+      /* FALLTHROUGH */
+    case list::LINK_OK:
+      break;
+    case list::LINK_LOST:
+      return false;
+    }
+
+    lr = list::link_after_(e, out->front_());
+    switch (lr) {
+    case list::LINK_TWICE:
+      assert(lr != list::LINK_TWICE);
+      /* FALLTHROUGH */
+    case list::LINK_OK:
+      return true;
+    case list::LINK_LOST:
+      break;  // Returning false, after unlinking back_() below. */
+    }
+
+    /* Unlink linked back_ part, so it can be relinked in the next loop. */
+    for (unlink_result ur =
+             list::unlink_(*pred_(out->back_()), out->back_(), 0);
+         ur != UNLINK_OK;
+         ur = list::unlink_(*pred_(out->back_()), out->back_(), 0)) {
+      assert(ur != UNLINK_FAIL);
+    }
+
+    if (lr == list::LINK_LOST) return false;
+  }
 }
 
 

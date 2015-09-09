@@ -55,19 +55,31 @@ inline iter_link::~iter_link() noexcept {
 
 
 template<typename T, typename Tag, typename AcqRel>
+auto ll_list_transformations<T, Tag, AcqRel>::as_elem_(reference r)
+    noexcept -> elem_ptr {
+  hook_type& hook = r;
+  return elem_ptr(&hook);
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_list_transformations<T, Tag, AcqRel>::as_elem_(const_reference r)
+    noexcept -> elem_ptr {
+  const hook_type& hook = r;
+  return elem_ptr(const_cast<hook_type*>(&hook));
+}
+
+template<typename T, typename Tag, typename AcqRel>
 auto ll_list_transformations<T, Tag, AcqRel>::as_elem_(const pointer& p)
     noexcept -> elem_ptr {
   if (p == nullptr) return nullptr;
-  hook_type& hook = *p;
-  return elem_ptr(&hook);
+  return as_elem_(*p);
 }
 
 template<typename T, typename Tag, typename AcqRel>
 auto ll_list_transformations<T, Tag, AcqRel>::as_elem_(const const_pointer& p)
     noexcept -> elem_ptr {
   if (p == nullptr) return nullptr;
-  const hook_type& hook = *p;
-  return elem_ptr(const_cast<hook_type*>(&hook));
+  return as_elem_(*p);
 }
 
 template<typename T, typename Tag, typename AcqRel>
@@ -104,19 +116,31 @@ auto ll_list_transformations<T, Tag, AcqRel>::release_pointer_(
 
 
 template<typename T, typename Tag>
+auto ll_list_transformations<T, Tag, no_acqrel>::as_elem_(reference r)
+    noexcept -> elem_ptr {
+  hook_type& hook = r;
+  return elem_ptr(&hook);
+}
+
+template<typename T, typename Tag>
+auto ll_list_transformations<T, Tag, no_acqrel>::as_elem_(const_reference r)
+    noexcept -> elem_ptr {
+  const hook_type& hook = r;
+  return elem_ptr(const_cast<hook_type*>(&hook));
+}
+
+template<typename T, typename Tag>
 auto ll_list_transformations<T, Tag, no_acqrel>::as_elem_(const pointer& p)
     noexcept -> elem_ptr {
   if (p == nullptr) return nullptr;
-  hook_type& hook = *p;
-  return elem_ptr(&hook);
+  return as_elem_(*p);
 }
 
 template<typename T, typename Tag>
 auto ll_list_transformations<T, Tag, no_acqrel>::as_elem_(
     const const_pointer& p) noexcept -> elem_ptr {
   if (p == nullptr) return nullptr;
-  const hook_type& hook = *p;
-  return elem_ptr(const_cast<hook_type*>(&hook));
+  return as_elem_(*p);
 }
 
 template<typename T, typename Tag>
@@ -178,6 +202,46 @@ auto ll_smartptr_list<T, Tag, AcqRel>::pop_front() noexcept -> pointer {
 template<typename T, typename Tag, typename AcqRel>
 auto ll_smartptr_list<T, Tag, AcqRel>::pop_back() noexcept -> pointer {
   return this->as_type_unlinked_(data_.pop_back());
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator_to(reference r)
+    noexcept -> iterator {
+  iterator rv;
+
+  rv.ptr_ = &r;
+  ll_list_detail::elem_ptr e_ptr = this->as_elem_(r);
+  if (!ll_list_detail::list::iterator_to(*e_ptr, &rv.pos_))
+    data_.init_end(rv.pos_);
+
+  return rv;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator_to(const_reference r)
+    noexcept -> const_iterator {
+  const_iterator rv;
+
+  rv.ptr_ = &r;
+  ll_list_detail::elem_ptr e_ptr = this->as_elem_(r);
+  if (!ll_list_detail::list::iterator_to(*e_ptr, &rv.pos_))
+    data_.init_end(rv.pos_);
+
+  return rv;
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator_to(const pointer& p) ->
+    iterator {
+  if (p == nullptr) throw std::invalid_argument("null pointer");
+  return iterator_to(*p);
+}
+
+template<typename T, typename Tag, typename AcqRel>
+auto ll_smartptr_list<T, Tag, AcqRel>::iterator_to(const const_pointer& p) ->
+    const_iterator {
+  if (p == nullptr) throw std::invalid_argument("null pointer");
+  return iterator_to(*p);
 }
 
 template<typename T, typename Tag, typename AcqRel>

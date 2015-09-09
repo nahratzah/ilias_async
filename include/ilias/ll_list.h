@@ -25,6 +25,7 @@ using namespace std;
 class elem;
 class list;
 class iter_link;
+class elem_linking_lock;
 
 enum class elem_type : uint8_t {
   head,
@@ -45,6 +46,7 @@ ILIAS_ASYNC_EXPORT constexpr elem_flags MARKED = elem_flags(1);
 ILIAS_ASYNC_EXPORT constexpr elem_flags UNMARKED = elem_flags(0);
 
 class elem {
+  friend class elem_linking_lock;
   friend class elem_acqrel;
   friend class list;
   friend class iter_link;
@@ -64,6 +66,7 @@ class elem {
   mutable elem_llptr pred_;
   mutable atomic<size_t> link_count_;
   const elem_type type_ = elem_type::element;
+  mutable atomic<bool> linking_;
 };
 
 class list {
@@ -165,6 +168,8 @@ class list {
                                                        position*);
   ILIAS_ASYNC_EXPORT tuple<elem_ptr, bool> unlink(elem&, position*, size_t);
 
+  ILIAS_ASYNC_EXPORT static bool iterator_to(elem&, position*) noexcept;
+
  private:
   elem data_;
 };
@@ -218,6 +223,8 @@ class ll_list_transformations {
   using hook_type = ll_list_hook<Tag>;
 
  protected:
+  static elem_ptr as_elem_(reference) noexcept;
+  static elem_ptr as_elem_(const_reference) noexcept;
   static elem_ptr as_elem_(const pointer&) noexcept;
   static elem_ptr as_elem_(const const_pointer&) noexcept;
   static pointer as_type_(const elem_ptr&) noexcept;
@@ -240,6 +247,8 @@ class ll_list_transformations<T, Tag, no_acqrel> {
   using hook_type = ll_list_hook<Tag>;
 
  protected:
+  static elem_ptr as_elem_(reference) noexcept;
+  static elem_ptr as_elem_(const_reference) noexcept;
   static elem_ptr as_elem_(const pointer&) noexcept;
   static elem_ptr as_elem_(const const_pointer&) noexcept;
   static pointer as_type_(const elem_ptr&) noexcept;
