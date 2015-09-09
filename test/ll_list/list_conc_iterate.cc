@@ -10,7 +10,14 @@ thrfun(list* lst, int thrnum)
 {
 	unsigned int count = 0;
 	std::cerr << "start " << thrnum << std::endl;
-	lst->visit([&count](const test_obj&) { ++count; });
+	lst->visit([&count](const test_obj&) {
+		++count;
+		if (count > COUNT) {
+			std::cerr << "Too many iterations: " << count <<
+			    std::endl;
+			std::abort();
+		}
+	});
 	std::cerr << "done  " << thrnum << std::endl;
 
 	if (count != COUNT) {
