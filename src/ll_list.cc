@@ -831,6 +831,7 @@ list::position::~position() noexcept {}
 auto list::position::unlink() noexcept -> void {
   for (iter_link& i : pos_)
     unlink_iter_(i);
+  swap_ = 0;
 }
 
 auto list::position::link_around(elem& x) noexcept -> bool {
