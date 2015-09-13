@@ -504,7 +504,7 @@ auto list::unlink_aid_(elem& a, elem& x) noexcept ->
     cas_succeeded =
         a_ptr->succ_.compare_exchange_weak(as_expect, x_succ,
                                            memory_order_acq_rel,
-                                           memory_order_relaxed);
+                                           memory_order_acquire);
   } while (!cas_succeeded && get<0>(as_expect) == &x);
 
   if (cas_succeeded) {
