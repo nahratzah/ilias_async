@@ -146,8 +146,6 @@ class list {
       noexcept;
   ILIAS_ASYNC_EXPORT static unlink_result unlink_(elem_ptr, elem&, size_t)
       noexcept;
-  static elem_ptr unlink_aid_fix_pred_(tuple<elem_ptr, elem_p_flags>, elem&)
-      noexcept;
   static tuple<elem_ptr, elem_ptr, elem_s_flags>
       unlink_aid_(elem&, elem&) noexcept;
 

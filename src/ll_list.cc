@@ -440,33 +440,6 @@ auto list::unlink_(elem_ptr a, elem& x, size_t expect) noexcept ->
   return UNLINK_OK;
 }
 
-// DEPRECATED
-auto list::unlink_aid_fix_pred_(tuple<elem_ptr, elem_p_flags> xp_expect,
-                                elem& x) noexcept -> elem_ptr {
-  for (;;) {
-    assert(get<0>(xp_expect) != nullptr);
-
-    // XXX: test xp_expect->pred and xp_expect->pred->succ and move backwards if need be.
-    tuple<elem_ptr, elem_s_flags> a_pred_succ =
-        make_tuple(nullptr, S_UNMARKED);
-    auto a_pred = get<0>(xp_expect)->pred_.load(memory_order_acquire);
-    assert(get<0>(a_pred) != nullptr);
-    if (get<1>(a_pred) != MARKED) {
-      a_pred_succ = get<0>(a_pred)->succ_.load(memory_order_acquire);
-      if ((get<1>(a_pred_succ) & S_MARKED) != S_MARKED)
-        return get<0>(move(xp_expect));
-    }
-
-    tuple<elem_ptr, elem_p_flags> xp_assign =
-        get<0>(a_pred)->pred_.load(memory_order_acquire);
-    get<1>(xp_assign) = MARKED;
-    if (x.pred_.compare_exchange_weak(xp_expect, xp_assign,
-                                      memory_order_acq_rel,
-                                      memory_order_acquire))
-      xp_expect = move(xp_assign);
-  }
-}
-
 auto list::unlink_aid_(elem& a, elem& x) noexcept ->
     tuple<elem_ptr, elem_ptr, elem_s_flags> {
   tuple<elem_ptr, elem_s_flags> b_ptr;
