@@ -419,7 +419,7 @@ auto list::unlink_(elem_ptr a, elem& x, size_t expect) noexcept ->
 
     /* Ensure b does not point at x. */
     auto b_pred = get<0>(b->pred_.load_no_acquire(memory_order_acquire));
-    while (get<0>(b_pred) == &x) {
+    while (b_pred == &x) {
       b_pred = pred_(*b).get();
       if (b_pred == nullptr)
         b_pred = get<0>(b->pred_.load_no_acquire(memory_order_acquire));
@@ -479,6 +479,29 @@ auto list::unlink_aid_(elem& a, elem& x) noexcept ->
   if (get<0>(x_succ) == nullptr)
     return tuple_cat(make_tuple(a_ptr), move(b_ptr));
 
+  {
+    /*
+     * Fix predecessor of our successor.
+     * Due to us maybe operating in parallel with other delete actions,
+     * we'll have to skip any released predecessors until we find an
+     * undeleted element.
+     */
+    auto bp_expect = make_tuple(&x, UNMARKED);
+    auto bp_assign = make_tuple(a_ptr, UNMARKED);
+    if (!get<0>(x_succ)->pred_.compare_exchange_strong(bp_expect,
+                                                       move(bp_assign),
+                                                       memory_order_release,
+                                                       memory_order_relaxed) &&
+        bp_expect == make_tuple(&x, MARKED)) {
+      bp_assign = make_tuple(a_ptr, MARKED);
+      get<0>(x_succ)->pred_.compare_exchange_strong(bp_expect,
+                                                    move(bp_assign),
+                                                    memory_order_release,
+                                                    memory_order_relaxed);
+    }
+  }
+
+  /* Make our predecessor skip us. */
   auto as_expect = make_tuple(elem_ptr(&x), S_MARKED);
   bool cas_succeeded;
   do {
@@ -493,19 +516,6 @@ auto list::unlink_aid_(elem& a, elem& x) noexcept ->
 
   if (cas_succeeded) {
     b_ptr = move(x_succ);
-    auto bp_expect = make_tuple(&x, UNMARKED);
-    auto bp_assign = make_tuple(a_ptr, UNMARKED);
-    if (!get<0>(b_ptr)->pred_.compare_exchange_strong(bp_expect,
-                                                      move(bp_assign),
-                                                      memory_order_release,
-                                                      memory_order_relaxed) &&
-        bp_expect == make_tuple(&x, MARKED)) {
-      bp_assign = make_tuple(a_ptr, MARKED);
-      get<0>(b_ptr)->pred_.compare_exchange_strong(bp_expect,
-                                                   move(bp_assign),
-                                                   memory_order_release,
-                                                   memory_order_relaxed);
-    }
   } else {
     b_ptr = move(as_expect);
   }
