@@ -405,11 +405,15 @@ auto list::unlink_(elem_ptr a, elem& x, size_t expect) noexcept ->
 
   elem_ptr b;
   tie(a, b, ignore) = unlink_aid_(*a, x);
+  assert(a != nullptr);  // Only this function will reset x.pred_.
 
   auto lc = x.link_count_.load(memory_order_acquire);
   while (lc > expect) {
-    while (b == nullptr)
+    while (b == nullptr) {
       b = get<0>(a->succ_.load(memory_order_acquire));
+      if (b == nullptr)
+        a = get<0>(a->pred_.load(memory_order_acquire));
+    }
     const auto b_succ = b->succ_.load_no_acquire(memory_order_acquire);
     if (get<0>(b_succ) == &x) pred_(*b);
     lc = x.link_count_.load(memory_order_acquire);
@@ -465,7 +469,9 @@ auto list::unlink_aid_(elem& a, elem& x) noexcept ->
     if (get<0>(xp_expect) == nullptr)
       return tuple_cat(make_tuple(nullptr), move(b_ptr));
   }
-  const elem_ptr a_ptr = get<0>(move(xp_expect));
+  const elem_ptr a_ptr = (get<1>(xp_expect) == MARKED ?
+                          get<0>(move(xp_expect)) :
+                          elem_ptr(&a));
 
   /* Publish intent to move x.succ_ to a_ptr->succ_. */
   auto x_succ = x.succ_.load(memory_order_acquire);
