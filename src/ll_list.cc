@@ -50,6 +50,9 @@ namespace ll_list_detail {
  *   move x.pred back until NOT(x.pred.pred == (*, marked))
  * - if x.succ == (*, marked) AND x.pred == (*, marked)
  *   then x.succ.pred should be moved back and marked
+ * - if x.succ == (*, d_marked), may not set marked flag
+ * - if x.succ == (*, marked, d_marked),
+ *   must unlink_aid_ x.succ prior to final stage unlinking of x
  */
 
 
@@ -145,7 +148,7 @@ list::list() noexcept
 {
   {
     auto p = elem_ptr(&data_);
-    data_.succ_.store(make_tuple(p, UNMARKED), memory_order_release);
+    data_.succ_.store(make_tuple(p, S_UNMARKED), memory_order_release);
     data_.pred_.store(make_tuple(p, UNMARKED), memory_order_release);
   }
   assert(data_.link_count_.load() == 2);
@@ -167,7 +170,7 @@ list::~list() noexcept {
   assert(succ_(data_) == &data_);
   assert(pred_(data_) == &data_);
 
-  data_.succ_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
+  data_.succ_.store(make_tuple(nullptr, S_UNMARKED), memory_order_release);
   data_.pred_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
 }
 
@@ -227,7 +230,7 @@ auto list::init_end(position& pos) const noexcept -> elem_ptr {
 
 auto list::succ_(elem& x) noexcept -> elem_ptr {
   auto s = x.succ_.load(memory_order_acquire);
-  while (get<0>(s) != nullptr && get<1>(s) == MARKED) {
+  while (get<0>(s) != nullptr && (get<1>(s) & S_MARKED) == S_MARKED) {
     tie(ignore, get<0>(s), get<1>(s)) = unlink_aid_(x, *get<0>(s));
     if (get<0>(s) == nullptr) s = x.succ_.load(memory_order_acquire);
   }
@@ -256,7 +259,8 @@ auto list::pred_(elem& x) noexcept -> elem_ptr {
        */
       auto ps = get<0>(p)->succ_.load(memory_order_acquire);
 
-      if (get<0>(ps) != nullptr && get<0>(ps) != &x && get<1>(ps) == MARKED) {
+      if (get<0>(ps) != nullptr && get<0>(ps) != &x &&
+          (get<1>(ps) & S_MARKED) == S_MARKED) {
         tie(ignore, get<0>(ps), get<1>(ps)) =
             unlink_aid_(*get<0>(p), *get<0>(ps));
       }
@@ -274,11 +278,12 @@ auto list::pred_(elem& x) noexcept -> elem_ptr {
         continue;
       }
       if (get<0>(ps) != &x) {
-        get<1>(ps) = get<1>(p);  // Don't change the flags.
-        x.pred_.compare_exchange_weak(p,
-                                      make_tuple(get<0>(move(ps)), UNMARKED),
-                                      memory_order_acq_rel,
-                                      memory_order_acquire);
+        // Don't change the flags.
+        if (x.pred_.compare_exchange_weak(p,
+                                          make_tuple(get<0>(ps), UNMARKED),
+                                          memory_order_acq_rel,
+                                          memory_order_acquire))
+          get<0>(p) = get<0>(move(ps));
         continue;
       }
     }
@@ -311,24 +316,24 @@ auto list::link_(elem& a, elem& x, elem& b) noexcept -> axb_link_result {
   /*
    * Link a and b from x.
    */
-  if (!x.pred_.compare_exchange_strong(elem_llptr::no_acquire_t(nullptr,
-                                                                UNMARKED),
+  if (!x.pred_.compare_exchange_strong(make_tuple(static_cast<elem*>(nullptr),
+                                                  UNMARKED),
                                        make_tuple(elem_ptr(&a), UNMARKED),
                                        memory_order_acq_rel,
                                        memory_order_acquire))
     return XLINK_TWICE;
   {
-    auto x_orig_succ = x.succ_.exchange(make_tuple(elem_ptr(&b), UNMARKED),
+    auto x_orig_succ = x.succ_.exchange(make_tuple(elem_ptr(&b), S_UNMARKED),
                                         memory_order_acq_rel);
-    assert(x_orig_succ == make_tuple(nullptr, UNMARKED));
+    assert(x_orig_succ == make_tuple(nullptr, S_UNMARKED));
   }
 
   /*
    * Link x from a.
    */
-  auto as_expect = make_tuple(&b, UNMARKED);
+  auto as_expect = make_tuple(&b, S_UNMARKED);
   if (a.succ_.compare_exchange_strong(as_expect,
-                                      make_tuple(elem_ptr(&x), UNMARKED),
+                                      make_tuple(elem_ptr(&x), S_UNMARKED),
                                       memory_order_acq_rel,
                                       memory_order_acquire)) {
     /*
@@ -369,7 +374,7 @@ auto list::link_(elem& a, elem& x, elem& b) noexcept -> axb_link_result {
       error = XLINK_LOST_B;
   }
 
-  x.succ_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
+  x.succ_.store(make_tuple(nullptr, S_UNMARKED), memory_order_release);
   x.pred_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
   return error;
 }
@@ -381,14 +386,19 @@ auto list::unlink_(elem_ptr a, elem& x, size_t expect) noexcept ->
      * Extra scope, to hold references to x
      * without caring about affecting 'expect' value.
      */
-    auto as_expect = make_tuple(&x, UNMARKED);
-    const auto as_assign = make_tuple(elem_ptr(&x), MARKED);
+    auto as_expect = make_tuple(&x, S_UNMARKED);
+    const auto as_assign = make_tuple(elem_ptr(&x), S_MARKED);
     if (!a->succ_.compare_exchange_strong(as_expect, as_assign,
                                           memory_order_acquire,
                                           memory_order_relaxed)) {
-      if (as_expect == as_assign) return UNLINK_FAIL;
+      if (get<0>(as_expect) == &x &&
+          (get<1>(as_expect) & S_MARKED) == S_MARKED)
+        return UNLINK_FAIL;
       if (get<1>(x.pred_.load_no_acquire(memory_order_relaxed)) == MARKED)
         return UNLINK_FAIL;
+      if (get<0>(as_expect) != nullptr &&
+          (get<1>(as_expect) & D_MARKED) == D_MARKED)
+        pred_(*get<0>(as_expect));  // Aid unlinking of a, prior to retry.
       return UNLINK_RETRY;
     }
   }
@@ -415,21 +425,24 @@ auto list::unlink_(elem_ptr a, elem& x, size_t expect) noexcept ->
   return UNLINK_OK;
 }
 
-auto list::unlink_aid_fix_pred_(tuple<elem_ptr, elem_flags> xp_expect,
+// DEPRECATED
+auto list::unlink_aid_fix_pred_(tuple<elem_ptr, elem_p_flags> xp_expect,
                                 elem& x) noexcept -> elem_ptr {
   for (;;) {
     assert(get<0>(xp_expect) != nullptr);
 
     // XXX: test xp_expect->pred and xp_expect->pred->succ and move backwards if need be.
-    tuple<elem_ptr, elem_flags> a_pred_succ = make_tuple(nullptr, UNMARKED),
-                                a_pred = get<0>(xp_expect)->pred_.load(memory_order_acquire);
+    tuple<elem_ptr, elem_s_flags> a_pred_succ =
+        make_tuple(nullptr, S_UNMARKED);
+    auto a_pred = get<0>(xp_expect)->pred_.load(memory_order_acquire);
     assert(get<0>(a_pred) != nullptr);
     if (get<1>(a_pred) != MARKED) {
       a_pred_succ = get<0>(a_pred)->succ_.load(memory_order_acquire);
-      if (get<1>(a_pred_succ) != MARKED) return get<0>(move(xp_expect));
+      if ((get<1>(a_pred_succ) & S_MARKED) != S_MARKED)
+        return get<0>(move(xp_expect));
     }
 
-    tuple<elem_ptr, elem_flags> xp_assign =
+    tuple<elem_ptr, elem_p_flags> xp_assign =
         get<0>(a_pred)->pred_.load(memory_order_acquire);
     get<1>(xp_assign) = MARKED;
     if (x.pred_.compare_exchange_weak(xp_expect, xp_assign,
@@ -440,8 +453,8 @@ auto list::unlink_aid_fix_pred_(tuple<elem_ptr, elem_flags> xp_expect,
 }
 
 auto list::unlink_aid_(elem& a, elem& x) noexcept ->
-    tuple<elem_ptr, elem_ptr, elem_flags> {
-  tuple<elem_ptr, elem_flags> b_ptr;
+    tuple<elem_ptr, elem_ptr, elem_s_flags> {
+  tuple<elem_ptr, elem_s_flags> b_ptr;
 
   auto xp_expect = make_tuple(elem_ptr(&a), UNMARKED);
   while (!x.pred_.compare_exchange_weak(xp_expect,
@@ -452,21 +465,43 @@ auto list::unlink_aid_(elem& a, elem& x) noexcept ->
     if (get<0>(xp_expect) == nullptr)
       return tuple_cat(make_tuple(nullptr), move(b_ptr));
   }
-  const elem_ptr a_ptr = unlink_aid_fix_pred_(move(xp_expect), x);
+  const elem_ptr a_ptr = get<0>(move(xp_expect));
 
+  /* Publish intent to move x.succ_ to a_ptr->succ_. */
   auto x_succ = x.succ_.load(memory_order_acquire);
-  while (get<0>(x_succ) != nullptr && get<1>(x_succ) == MARKED) {
+  while (get<0>(x_succ) != nullptr &&
+         (get<1>(x_succ) & D_MARKED) != D_MARKED) {
+    x.succ_.compare_exchange_weak(x_succ,
+                                  make_tuple(get<0>(x_succ),
+                                             get<1>(x_succ) | D_MARKED),
+                                  memory_order_acq_rel,
+                                  memory_order_acquire);
+  }
+
+  /* Cascade aiding into successive unlinked elements. */
+  while (get<0>(x_succ) != nullptr &&
+         (get<1>(x_succ) & S_MARKED) == S_MARKED) {
     tie(ignore, get<0>(x_succ), get<1>(x_succ)) =
         unlink_aid_(x, *get<0>(x_succ));
     if (get<0>(x_succ) == nullptr)
       x_succ = x.succ_.load(memory_order_acquire);
   }
   if (get<0>(x_succ) == nullptr)
-    return tuple_cat(make_tuple(nullptr), move(b_ptr));
-  auto as_expect = make_tuple(elem_ptr(&x), MARKED);
-  if (a_ptr->succ_.compare_exchange_strong(as_expect, x_succ,
+    return tuple_cat(make_tuple(a_ptr), move(b_ptr));
+
+  auto as_expect = make_tuple(elem_ptr(&x), S_MARKED);
+  bool cas_succeeded;
+  do {
+    assert(get<0>(as_expect) == &x &&
+           (get<1>(as_expect) & S_MARKED) == S_MARKED);
+    get<1>(x_succ) = get<1>(as_expect) & ~S_MARKED;  // Maintain D_MARKED bit.
+    cas_succeeded =
+        a_ptr->succ_.compare_exchange_weak(as_expect, x_succ,
                                            memory_order_acq_rel,
-                                           memory_order_relaxed)) {
+                                           memory_order_relaxed);
+  } while (!cas_succeeded && get<0>(as_expect) == &x);
+
+  if (cas_succeeded) {
     b_ptr = move(x_succ);
     auto bp_expect = make_tuple(&x, UNMARKED);
     auto bp_assign = make_tuple(a_ptr, UNMARKED);
@@ -481,11 +516,11 @@ auto list::unlink_aid_(elem& a, elem& x) noexcept ->
                                                    memory_order_release,
                                                    memory_order_relaxed);
     }
-
-    x.succ_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
   } else {
     b_ptr = move(as_expect);
   }
+
+  x.succ_.store(make_tuple(nullptr, S_UNMARKED), memory_order_release);
 
   return tuple_cat(make_tuple(move(a_ptr)), move(b_ptr));
 }

@@ -39,11 +39,16 @@ struct elem_acqrel {
 };
 
 using elem_ptr = refpointer<elem, elem_acqrel>;
-using elem_llptr = llptr<elem, elem_acqrel, 1>;
-using elem_flags = elem_llptr::flags_type;
+using elem_p_llptr = llptr<elem, elem_acqrel, 1>;
+using elem_p_flags = elem_p_llptr::flags_type;
+using elem_s_llptr = llptr<elem, elem_acqrel, 2>;
+using elem_s_flags = elem_s_llptr::flags_type;
 
-ILIAS_ASYNC_EXPORT constexpr elem_flags MARKED = elem_flags(1);
-ILIAS_ASYNC_EXPORT constexpr elem_flags UNMARKED = elem_flags(0);
+ILIAS_ASYNC_EXPORT constexpr elem_p_flags MARKED = elem_p_flags(1);
+ILIAS_ASYNC_EXPORT constexpr elem_p_flags UNMARKED = elem_p_flags(0);
+ILIAS_ASYNC_EXPORT constexpr elem_s_flags S_UNMARKED = elem_s_flags(0);
+ILIAS_ASYNC_EXPORT constexpr elem_s_flags S_MARKED = elem_s_flags(1);
+ILIAS_ASYNC_EXPORT constexpr elem_s_flags D_MARKED = elem_s_flags(2);
 
 class elem {
   friend class elem_linking_lock;
@@ -62,8 +67,8 @@ class elem {
  private:
   ILIAS_ASYNC_EXPORT elem(elem_type) noexcept;
 
-  mutable elem_llptr succ_;
-  mutable elem_llptr pred_;
+  mutable elem_s_llptr succ_;
+  mutable elem_p_llptr pred_;
   mutable atomic<size_t> link_count_{ 0U };
   const elem_type type_ = elem_type::element;
   mutable atomic<bool> linking_{ false };
@@ -141,9 +146,9 @@ class list {
       noexcept;
   ILIAS_ASYNC_EXPORT static unlink_result unlink_(elem_ptr, elem&, size_t)
       noexcept;
-  static elem_ptr unlink_aid_fix_pred_(tuple<elem_ptr, elem_flags>, elem&)
+  static elem_ptr unlink_aid_fix_pred_(tuple<elem_ptr, elem_p_flags>, elem&)
       noexcept;
-  static tuple<elem_ptr, elem_ptr, elem_flags>
+  static tuple<elem_ptr, elem_ptr, elem_s_flags>
       unlink_aid_(elem&, elem&) noexcept;
 
  public:
