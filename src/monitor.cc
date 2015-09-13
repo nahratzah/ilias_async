@@ -71,7 +71,7 @@ auto monitor::queue_(cb_promise<token> p, access a) -> void {
   }
 }
 
-auto monitor::try_lock(access a) noexcept -> token {
+auto monitor::try_immediate(access a) noexcept -> token {
   std::lock_guard<std::mutex> lck{ mtx_ };
 
   /* Read access, when immediately available. */
@@ -196,6 +196,61 @@ auto monitor::upgrade_to_write_() -> cb_future<token> {
     u_queue_.push_front(std::move(prom));
 
   return fut;
+}
+
+auto monitor::try_lock() noexcept -> bool {
+  std::lock_guard<std::mutex> lck{ mtx_ };
+
+  if (active_writers_ == 0 && active_readers_ == 0) {
+    assert(upgrade_active_ == 0);
+    ++active_writers_;
+    return true;
+  }
+  return false;
+}
+
+auto monitor::lock() noexcept -> void {
+  std::unique_lock<std::mutex> lck{ mtx_ };
+
+  while (active_writers_ != 0 || active_readers_ != 0) {
+    lck.unlock();
+    std::this_thread::yield();
+    lck.lock();
+  }
+
+  assert(upgrade_active_ == 0);
+  ++active_writers_;
+}
+
+auto monitor::unlock() noexcept -> void {
+  unlock_(access::write);
+}
+
+auto monitor::try_lock_shared() noexcept -> bool {
+  std::lock_guard<std::mutex> lck{ mtx_ };
+
+  if (active_writers_ == upgrade_active_) {
+    ++active_readers_;
+    return true;
+  }
+  return false;
+}
+
+auto monitor::lock_shared() noexcept -> void {
+  std::unique_lock<std::mutex> lck{ mtx_ };
+
+  while (active_readers_ != upgrade_active_) {
+    lck.unlock();
+    std::this_thread::yield();
+    lck.lock();
+  }
+
+  assert(upgrade_active_ == 0);
+  ++active_readers_;
+}
+
+auto monitor::unlock_shared() noexcept -> void {
+  unlock_(access::read);
 }
 
 
