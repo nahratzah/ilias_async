@@ -482,7 +482,7 @@ auto list::unlink_aid_(elem& a, elem& x) noexcept ->
   while (get<0>(x_succ) != nullptr &&
          (get<1>(x_succ) & S_MARKED) == S_MARKED) {
     tie(ignore, get<0>(x_succ), get<1>(x_succ)) =
-        unlink_aid_(x, *get<0>(x_succ));
+        unlink_aid_(x, *get<0>(x_succ));  // RECURSION
     if (get<0>(x_succ) == nullptr)
       x_succ = x.succ_.load(memory_order_acquire);
   }
