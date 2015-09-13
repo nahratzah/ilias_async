@@ -408,29 +408,27 @@ auto list::unlink_(elem_ptr a, elem& x, size_t expect) noexcept ->
   assert(a != nullptr);  // Only this function will reset x.pred_.
   assert(get<0>(x.pred_.load_no_acquire()) == a);
 
-  /*
-   * If unlink_aid_ failed to perform the final,
-   * zeroing compare_exchange on b.pred_
-   * b may not be the original successor to x.
-   * In that case, it may still point at x,
-   * so we opt to ignore the hint from unlink_aid_.
-   */
-  if (b != nullptr &&
-      get<0>(b->pred_.load_no_acquire(memory_order_acquire)) != a)
-    b = nullptr;
-
   auto lc = x.link_count_.load(memory_order_acquire);
   while (lc > expect) {
+    /* Fix b, if it has become a nullptr. */
     while (b == nullptr) {
       b = get<0>(a->succ_.load(memory_order_acquire));
       if (b == nullptr)
         a = get<0>(a->pred_.load(memory_order_acquire));
     }
-    const auto b_succ = b->succ_.load_no_acquire(memory_order_acquire);
-    if (get<0>(b_succ) == &x) pred_(*b);
+
+    /* Ensure b does not point at x. */
+    auto b_pred = get<0>(b->pred_.load_no_acquire(memory_order_acquire));
+    while (get<0>(b_pred) == &x) {
+      b_pred = pred_(*b).get();
+      if (b_pred == nullptr)
+        b_pred = get<0>(b->pred_.load_no_acquire(memory_order_acquire));
+    }
+
+    /* Prepare for next iteration. */
     lc = x.link_count_.load(memory_order_acquire);
     if (get_elem_type(*b) == elem_type::head) break;
-    b = get<0>(move(b_succ));
+    b = get<0>(b->succ_.load(memory_order_acquire));
   }
   a = nullptr;
   b = nullptr;
