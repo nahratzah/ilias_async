@@ -406,6 +406,17 @@ auto list::unlink_(elem_ptr a, elem& x, size_t expect) noexcept ->
   elem_ptr b;
   tie(a, b, ignore) = unlink_aid_(*a, x);
   assert(a != nullptr);  // Only this function will reset x.pred_.
+  assert(get<0>(x.pred_.load_no_acquire()) == a);
+
+  /*
+   * If unlink_aid_ failed to perform the final,
+   * zeroing compare_exchange on b.pred_
+   * b may not be the original successor to x.
+   * In that case, it may still point at x, so fix it in that case.
+   */
+  if (b != nullptr &&
+      get<0>(b->pred_.load_no_acquire(memory_order_acquire)) == &x)
+    pred_(*b);
 
   auto lc = x.link_count_.load(memory_order_acquire);
   while (lc > expect) {
@@ -459,6 +470,7 @@ auto list::unlink_aid_fix_pred_(tuple<elem_ptr, elem_p_flags> xp_expect,
 auto list::unlink_aid_(elem& a, elem& x) noexcept ->
     tuple<elem_ptr, elem_ptr, elem_s_flags> {
   tuple<elem_ptr, elem_s_flags> b_ptr;
+  get<1>(b_ptr) = S_UNMARKED;  // Not really needed, but nice to initialize.
 
   auto xp_expect = make_tuple(elem_ptr(&a), UNMARKED);
   while (!x.pred_.compare_exchange_weak(xp_expect,
