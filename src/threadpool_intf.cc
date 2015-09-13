@@ -23,49 +23,54 @@ namespace threadpool_intf_detail {
 
 
 void
-refcnt_acquire(const threadpool_intf_refcnt& self) noexcept
+refcnt_acquire(const threadpool_intf_refcnt& self, std::uintptr_t n) noexcept
 {
-	const auto c = self.m_refcnt.fetch_add(1U, std::memory_order_acquire);
-	assert(c + 1U != 0U);
+	const auto c = self.m_refcnt.fetch_add(n, std::memory_order_acquire);
+	assert(c + n > c);
 }
 
 void
-refcnt_release(const threadpool_intf_refcnt& self) noexcept
+refcnt_release(const threadpool_intf_refcnt& self, std::uintptr_t n) noexcept
 {
-	const auto c = self.m_refcnt.fetch_sub(1U, std::memory_order_release);
-	if (c == 1U)
+	const auto c = self.m_refcnt.fetch_sub(n, std::memory_order_release);
+	assert(c >= n);
+	if (c == n)
 		delete &self;
 }
 
 void
-client_acqrel::acquire(const threadpool_client_intf& tpc) const noexcept
+client_acqrel::acquire(const threadpool_client_intf& tpc, unsigned int n)
+    noexcept
 {
-	if (tpc.client_acquire())
-		refcnt_acquire(tpc);
+	if (tpc.client_acquire(n))
+		refcnt_acquire(tpc, 1U);
 }
 
 void
-client_acqrel::release(const threadpool_client_intf& tpc) const noexcept
+client_acqrel::release(const threadpool_client_intf& tpc, unsigned int n)
+    noexcept
 {
-	if (tpc.client_release()) {
+	if (tpc.client_release(n)) {
 		tpc.client_lock_wait();
-		refcnt_release(tpc);
+		refcnt_release(tpc, 1U);
 	}
 }
 
 void
-service_acqrel::acquire(const threadpool_service_intf& tps) const noexcept
+service_acqrel::acquire(const threadpool_service_intf& tps, unsigned int n)
+    noexcept
 {
-	if (tps.service_acquire())
-		refcnt_acquire(tps);
+	if (tps.service_acquire(n))
+		refcnt_acquire(tps, 1U);
 }
 
 void
-service_acqrel::release(const threadpool_service_intf& tps) const noexcept
+service_acqrel::release(const threadpool_service_intf& tps, unsigned int n)
+    noexcept
 {
-	if (tps.service_release()) {
+	if (tps.service_release(n)) {
 		tps.service_lock_wait();
-		refcnt_release(tps);
+		refcnt_release(tps, 1U);
 	}
 }
 
@@ -75,34 +80,46 @@ refcount::~refcount() noexcept
 }
 
 bool
-refcount::service_acquire() const noexcept
+refcount::service_acquire(unsigned int n) const noexcept
 {
-	return (this->m_service_refcnt.fetch_add(1U,
+	if (n == 0)
+		return false;
+
+	return (this->m_service_refcnt.fetch_add(n,
 	    std::memory_order_acquire) == 0U);
 }
 
 bool
-refcount::service_release() const noexcept
+refcount::service_release(unsigned int n) const noexcept
 {
-	const bool last = (this->m_service_refcnt.fetch_sub(1U,
-	    std::memory_order_release) == 1U);
+	if (n == 0)
+		return false;
+
+	const bool last = (this->m_service_refcnt.fetch_sub(n,
+	    std::memory_order_release) == n);
 	if (last)
 		const_cast<refcount*>(this)->on_service_detach();
 	return last;
 }
 
 bool
-refcount::client_acquire() const noexcept
+refcount::client_acquire(unsigned int n) const noexcept
 {
-	return (this->m_client_refcnt.fetch_add(1U,
+	if (n == 0)
+		return false;
+
+	return (this->m_client_refcnt.fetch_add(n,
 	    std::memory_order_release) == 0U);
 }
 
 bool
-refcount::client_release() const noexcept
+refcount::client_release(unsigned int n) const noexcept
 {
-	const bool last = (this->m_client_refcnt.fetch_sub(1U,
-	    std::memory_order_release) == 1U);
+	if (n == 0)
+		return false;
+
+	const bool last = (this->m_client_refcnt.fetch_sub(n,
+	    std::memory_order_release) == n);
 	if (last)
 		const_cast<refcount*>(this)->on_client_detach();
 	return last;
@@ -160,7 +177,7 @@ tp_service_multiplexer::threadpool_service::~threadpool_service() noexcept
 void
 tp_service_multiplexer::threadpool_service::activate() noexcept
 {
-	this->m_self.m_active.push_back(*this);
+	this->m_self.m_active.link_back(this);
 }
 
 bool
@@ -272,7 +289,7 @@ tp_service_multiplexer::threadpool_service::wakeup(unsigned int n) noexcept
 	}
 
 	if (c == work_avail::NO)
-		this->m_self.m_active.push_back(*this);
+		this->m_self.m_active.link_back(this);
 
 	auto impl = atomic_load(&this->m_self.m_impl);
 	return (impl ? impl->wakeup(n) : 0U);
@@ -287,7 +304,7 @@ tp_service_multiplexer::threadpool_service::on_client_detach() noexcept
 		return;
 
 	this->m_work_avail.store(work_avail::DETACHED);
-	this->m_self.m_active.push_back(*this);
+	this->m_self.m_active.link_back(this);
 }
 
 bool
@@ -295,16 +312,16 @@ tp_service_multiplexer::threadpool_client::do_work() noexcept
 {
 	threadpool_client_lock lck{ *this };
 	this->m_self.m_active.remove_and_dispose_if(
-	    [](threadpool_service& s) -> bool {
-		return !s.invoke_work();
+	    [](const threadpool_service& s) -> bool {
+		return !const_cast<threadpool_service&>(s).invoke_work();
 	    },
-	    [this](threadpool_service* s) -> void {
+	    [this](active_t::pointer s) -> void {
 		s->post_deactivate();
 
 		if (s->m_work_avail.load(std::memory_order_acquire) ==
 		    threadpool_service::work_avail::DETACHED) {
 			this->m_self.m_data.erase(
-			    this->m_self.m_data.iterator_to(*s));
+			    this->m_self.m_data.iterator_to(s));
 		}
 	    });
 	return !this->m_self.m_active.empty();
@@ -314,8 +331,8 @@ bool
 tp_service_multiplexer::threadpool_client::has_work() noexcept
 {
 	threadpool_client_lock lck{ *this };
-	this->m_self.m_active.remove_if([](threadpool_service& s) {
-		return !s.invoke_test();
+	this->m_self.m_active.remove_if([](const threadpool_service& s) {
+		return !const_cast<threadpool_service&>(s).invoke_test();
 	    });
 	return !this->m_self.m_active.empty();
 }
@@ -334,8 +351,8 @@ tp_service_multiplexer::attach(threadpool_service_ptr<threadpool_service> p)
 	}
 
 	do_noexcept([&]() {
-		this->m_data.push_back(p);
-		this->m_active.push_back(*p);
+		this->m_data.link_back(p);
+		this->m_active.link_back(p);
 		p->wakeup(threadpool_client_intf::WAKE_ALL);
 	    });
 }
@@ -406,9 +423,11 @@ tp_client_multiplexer::threadpool_service::wakeup(unsigned int n) noexcept
 	unsigned int rv = 0;
 	threadpool_service_lock lck{ *this };
 	if (this->has_service()) {
-		this->m_self.m_data.remove_if([&rv, n](threadpool_client& c) {
-			rv += std::min(n - rv, c.wakeup(n));
-			return c.has_service();
+		this->m_self.m_data.remove_if(
+		    [&rv, n](const threadpool_client& c) {
+			rv += std::min(n - rv,
+			    const_cast<threadpool_client&>(c).wakeup(n));
+			return c.has_service();	/* XXX is this right? */
 		    });
 	}
 	return rv;
@@ -422,7 +441,7 @@ tp_client_multiplexer::attach(threadpool_client_ptr<threadpool_client> p)
 		    "null threadpool client");
 	}
 
-	this->m_data.push_back(std::move(p));
+	this->m_data.link_back(std::move(p));
 }
 
 void

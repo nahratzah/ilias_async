@@ -1,4 +1,4 @@
-#include <ilias/promise.h>
+#include <ilias/future.h>
 #include <stdexcept>
 
 class test_error
@@ -15,7 +15,7 @@ public:
 int
 main()
 {
-	ilias::future<int> f = ilias::new_promise<int>([](promise<int> p) {
+	ilias::cb_future<int> f = ilias::async_lazy([]() -> int {
 		throw test_error();
 	    });
 	bool ok = false;
@@ -26,8 +26,5 @@ main()
 		ok = true;
 	}
 	assert(ok && "error should cascade into this body");
-
-	assert(f.ready());
-	assert(f.is_broken());
 	return 0;
 }

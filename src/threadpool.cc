@@ -17,7 +17,7 @@
 #if !HAS_TLS
 #include "tls_fallback.h"
 #endif
-#include <ilias/ll.h>
+#include <ilias/ll_list.h>
 #include <ilias/refcnt.h>
 #include <ilias/workq.h>
 #include <ilias/util.h>
@@ -67,9 +67,9 @@ private:
 	static tp_tls_data& get_tls() noexcept;
 
 	/* List of idle threads. */
-	using idle_type = ll_list<ll_base<worker, idle_tag>>;
+	using idle_type = ll_list<worker, idle_tag>;
 	/* List of threads that are dead (and need to be collected). */
-	using dead_type = ll_list<ll_base<worker, dead_tag>>;
+	using dead_type = ll_list<worker, dead_tag>;
 
 	/* Number of threads in pool. */
 	std::atomic<unsigned int> n_threads{ 0 };
@@ -230,8 +230,8 @@ public:
 
 
 class threadpool::impl::worker
-:	public ll_base_hook<idle_tag>,
-	public ll_base_hook<dead_tag>
+:	public ll_list_hook<idle_tag>,
+	public ll_list_hook<dead_tag>
 {
 private:
 	std::atomic<thread_state> m_state{ thread_state::BUSY };
@@ -458,7 +458,7 @@ threadpool::impl::set_nthreads(unsigned int n)
 		 * affinity on the runqueue, making them perform a bit
 		 * better than the threads we kill.
 		 */
-		auto i = this->m_idle.pop_back_nowait();
+		auto i = this->m_idle.pop_back();
 		if (!i)
 			break;
 		if (i->kill())
@@ -576,13 +576,13 @@ threadpool::impl::worker::do_sleep() noexcept
 			 * less chance of all data to have been flushed
 			 * from the cpu caches.
 			 */
-			this->tp.m_idle.push_front(this->self);
+			this->tp.m_idle.link_front(&this->self);
 		}
 
 		~idle_set_guard() noexcept
 		{
 			this->tp.m_idle.erase(
-			    this->tp.m_idle.iterator_to(this->self));
+			    this->tp.m_idle.iterator_to(&this->self));
 		}
 	};
 
@@ -732,7 +732,7 @@ threadpool::impl::worker::_run() noexcept
 			 *
 			 * Push on collector queue.
 			 */
-			this->tp.m_dead.push_back(*this);
+			this->tp.m_dead.link_back(this);
 		} else {
 			/*
 			 * This thread will survive the destruction of threadpool,

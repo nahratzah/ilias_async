@@ -694,7 +694,7 @@ public:
 
 	/* Ignore allocator arguments, since we don't use one. */
 	template<typename... Args>
-	msg_queue(Args&&... args) noexcept
+	msg_queue(Args&&...) noexcept
 	{
 		/* Empty body. */
 	}

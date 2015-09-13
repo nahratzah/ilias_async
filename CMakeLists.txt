@@ -23,7 +23,7 @@ add_definitions (-D_REENTRANT -D_GNU_SOURCE)
 # - we require libstdc++, since gcc's stdlib on apple is simply ancient.
 if (APPLE)
 	set (CMAKE_XCODE_ATTRIBUTE_GCC_VERSION "com.apple.compilers.llvm.clang.1_0")
-	set (CMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD "c++0x")
+	set (CMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD "c++14")
 	set (CMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY "libc++")
 	set (CMAKE_OSX_ARCHITECTURES "i386;x86_64")
 endif ()
@@ -57,13 +57,26 @@ elseif (WIN32)
 	set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} /LARGEADDRESSAWARE /NXCOMPAT /INCREMENTAL:NO")
 endif ()
 
-# Check if the compiler can needs/handles c++11 flags.
-check_cxx_compiler_flag("-std=c++11" STD_CXX11)
-check_cxx_compiler_flag("-std=c++0x" STD_CXX0X)
-if (STD_CXX11)
-	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-elseif (STD_CXX0X)
-	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
+#
+# Enable gprof profiling.
+#
+option (PROFILE "Enable profiling." OFF)
+if (PROFILE)
+	check_cxx_compiler_flag("-pg" PROFILE_PG)
+	if (PROFILE_PG)
+		set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
+		set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
+		set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER} -pg")
+		set (CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -pg")
+	else (PROFILE_PG)
+		message(ERROR "Cannot profile.")
+	endif (PROFILE_PG)
+endif (PROFILE)
+
+# Check if the compiler can needs/handles c++14 flags.
+check_cxx_compiler_flag("-std=c++14" STD_CXX14)
+if (STD_CXX14)
+	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
 endif ()
 
 # This library requires threads,
@@ -96,6 +109,24 @@ if (NOT HAS___THREAD AND NOT HAS_THREAD_LOCAL)
 else ()
 	add_definitions (-DHAS_TLS=1)
 endif ()
+# Enable thread-local (constructor/destructor based) workaround if required.
+if (NOT HAS_THREAD_LOCAL)
+	# Add to srcs, since this is not a public header.
+	list (APPEND srcs internal/thread_local.h internal/thread_local.cc)
+	add_definitions (-DHAS_THREAD_LOCAL=0)
+else ()
+	add_definitions (-DHAS_THREAD_LOCAL=1)
+endif ()
+# Declare __thread/declspec/... keyword.
+if (WIN32)
+	add_definitions ("-DTHREAD_LOCAL=declspec(thread)")
+elseif (HAS_THREAD_LOCAL)
+	add_definitions ("-DTHREAD_LOCAL=thread_local")
+elseif (HAS___THREAD)
+	add_definitions ("-DTHREAD_LOCAL=__thread")
+else ()
+	add_definitions ("-DTHREAD_LOCAL=DO_NOT_USE_THREAD_LOCAL")
+endif ()
 
 # Test for atomic shared_ptr operations.
 file (READ "CMake/source/atomic_shared_ptr.cc" ATOMIC_SHARED_PTR_CC)
@@ -106,29 +137,30 @@ check_cxx_source_compiles ("${ATOMIC_SARED_PTR_CC}" ILIAS_ASYNC_HAS_ATOMIC_SHARE
 list (APPEND hdrs
 	include/ilias/hazard.h
 	include/ilias/llptr.h
+	include/ilias/ll_list.h
+	include/ilias/ll_list-inl.h
 	include/ilias/ll_queue.h
-	include/ilias/ll.h
 	include/ilias/refcnt.h
 	include/ilias/msg_queue.h
 	include/ilias/mq_ptr.h
 	include/ilias/wq_callback.h
-	include/ilias/promise.h
-	include/ilias/wq_promise.h
-	include/ilias/combi_promise.h
+	include/ilias/future.h
+	include/ilias/future-inl.h
+	include/ilias/monitor.h
+	include/ilias/monitor-inl.h
 	include/ilias/threadpool_intf.h
 	include/ilias/threadpool.h
 	include/ilias/workq.h
 	)
 list (APPEND srcs
 	src/hazard.cc
+	src/ll_list.cc
 	src/ll_queue.cc
-	src/ll.cc
 	src/refcnt.cc
 	src/msg_queue.cc
 	src/mq_ptr.cc
-	src/promise.cc
-	src/wq_promise.cc
-	src/combi_promise.cc
+	src/future.cc
+	src/monitor.cc
 	src/threadpool_intf.cc
 	src/threadpool.cc
 	src/workq.cc

@@ -1,7 +1,7 @@
 add_executable (test_promise_assign assign.cc)
-add_executable (test_promise_lazy assign.cc)
-add_executable (test_promise_broken assign.cc)
-add_executable (test_promise_except assign.cc)
+add_executable (test_promise_lazy lazy.cc)
+add_executable (test_promise_broken broken.cc)
+add_executable (test_promise_except except.cc)
 
 target_link_libraries (test_promise_assign ilias_async)
 target_link_libraries (test_promise_lazy ilias_async)

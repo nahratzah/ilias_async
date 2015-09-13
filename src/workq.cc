@@ -19,6 +19,9 @@
 #if !HAS_TLS
 #include "tls_fallback.h"
 #endif
+#if !HAS_THREAD_LOCAL
+#include "thread_local.h"
+#endif
 
 
 #ifdef _MSC_VER
@@ -196,7 +199,8 @@ friend class publish_wqs;
 	get_wq() const noexcept
 	{
 		static const workq_detail::workq_intref<workq> stack_empty;
-		return (this->stack ? stack_empty : this->stack->get_wq());
+		return (this->stack == nullptr ?
+		    stack_empty : this->stack->get_wq());
 	}
 
 	wq_stack*
@@ -251,6 +255,8 @@ public:
 		m_tls(get_wq_tls()),
 		m_wqs(&wqs)
 	{
+		using std::begin;
+
 		if (this->m_tls.wqs)
 			throw publish_wqs_busy();
 		this->m_tls.wqs = this->m_wqs;
@@ -448,23 +454,42 @@ wq_run_lock::lock(workq_service& wqs) noexcept
 	 * Loop terminates when either we manage to lock a job on a workq,
 	 * or when the runq is depleted.
 	 */
+	auto& runq_iter = wqs.get_runq_iterpos();
+	auto wq = (++runq_iter).get();
 	for (;;) {
-		auto wq = wqs.m_wq_runq.pop_front_nowait();
-		if (!wq)
-			break;		/* GUARD */
-		else if (this->lock(*wq)) {
+		if (!wq) {
+			runq_iter = wqs.m_wq_runq.begin();
+			wq = runq_iter.get();
+			if (!wq)
+				break;	/* GUARD */
+		}
+
+		if (this->lock(*wq)) {
 			/* Acquired a job: workq may stay on the runq. */
-			wqs.m_wq_runq.push_back(std::move(wq));
-			wqs.wakeup();
 			break;		/* GUARD */
 		} else {
 			/*
 			 * No job acquired, workq is depleted and
-			 * (automatically) removed from the runq:
-			 * wq is unlinked when scope of the loop ends.
+			 * must be removed.
 			 */
+			wqs.m_wq_runq.erase(runq_iter);
+
+			/*
+			 * Retest to see if the workq has a job.
+			 *
+			 * This test is important, because without it there
+			 * will be a race condition where the job acquires new
+			 * workq between the lock (above) and the erase call
+			 * we just did.
+			 */
+			if (this->lock(*wq)) {
+				wqs.m_wq_runq.link(runq_iter, std::move(wq));
+				wqs.wakeup();
+				break;
+			}
 		}
 	}
+	runq_iter.release();
 	return this->is_locked();
 }
 
@@ -679,7 +704,7 @@ workq_detail::co_runnable::unlock_run(workq_job::run_lck rl) noexcept
 }
 
 bool
-workq_detail::co_runnable::release(std::size_t n) noexcept
+workq_detail::co_runnable::release(std::size_t) noexcept
 {
 	bool did_unlock = false;
 
@@ -743,9 +768,9 @@ workq::job_to_runq(workq_detail::workq_intref<workq_job> j) noexcept
 {
 	bool activate = false;
 	if ((j->m_type & workq_job::TYPE_PARALLEL) &&
-	    this->m_p_runq.push_back(j))
+	    this->m_p_runq.link_back(j))
 		activate = true;
-	if (this->m_runq.push_back(std::move(j)))
+	if (this->m_runq.link_back(std::move(j)))
 		activate = true;
 
 	if (activate)
@@ -863,6 +888,27 @@ workq_service::threadpool_client::has_work() noexcept
 	return (this->has_client() && !this->m_self.empty());
 }
 
+workq_service::wq_runq::iterator&
+workq_service::get_runq_iterpos() noexcept
+{
+	using runq_iterator = wq_runq::iterator;
+	using tls_type = std::tuple<runq_iterator, workq_service*>;
+
+#if HAS_THREAD_LOCAL
+	static thread_local tls_type m_impl;
+	tls_type& tls = m_impl;
+#else
+	static tls_cd<tls_type> m_impl;
+	tls_type& tls = *m_impl;
+#endif
+
+	if (std::get<1>(tls) != this) {
+		std::get<0>(tls) = this->m_wq_runq.begin();
+		std::get<1>(tls) = this;
+	}
+	return std::get<0>(tls);
+}
+
 workq_service::workq_service()
 {
 	return;
@@ -870,8 +916,8 @@ workq_service::workq_service()
 
 workq_service::~workq_service() noexcept
 {
-	assert(this->m_wq_runq.empty());
-	assert(this->m_co_runq.empty());
+	this->m_wq_runq.clear();
+	this->m_co_runq.clear();
 
 	atomic_store(&this->m_wakeup_cb, nullptr);
 }
@@ -879,8 +925,10 @@ workq_service::~workq_service() noexcept
 void
 workq_service::wq_to_runq(workq_detail::workq_intref<workq> wq) noexcept
 {
-	if (this->m_wq_runq.push_front(wq))
-		this->wakeup();
+	/* Load insert position suitable for this thread. */
+	auto ipos = this->get_runq_iterpos();
+	this->m_wq_runq.link(++ipos, wq);
+	this->wakeup();
 }
 
 void
@@ -889,7 +937,7 @@ workq_service::co_to_runq(
     std::size_t max_threads) noexcept
 {
 	assert(max_threads > 0);
-	const bool pushback_succeeded = (this->m_co_runq.push_back(co));
+	const bool pushback_succeeded = this->m_co_runq.link_back(co);
 	assert(pushback_succeeded);
 	this->wakeup(max_threads);
 }
@@ -928,30 +976,28 @@ workq_service::aid(unsigned int count) noexcept
 	using workq_detail::co_runnable;
 
 	unsigned int i;
-	auto co = begin(this->m_co_runq);
+
 	for (i = 0; i < count; ++i) {
 		/* Run co-runnables before workqs. */
-		if (co != end(this->m_co_runq)) {
-			do {
-				workq_intref<co_runnable> co_ptr = co.get();
-
+		if (!this->m_co_runq.empty()) {
+			auto co = begin(this->m_co_runq);
+			bool ran = false;
+			while (co.get() && i < count) {
 				/* Acquire lock and
 				 * publish intent to execute. */
-				wq_stack stack(*co_ptr);
+				wq_stack stack{ *co };
 
-				/* Release list refcount,
-				 * so co_runnable::release() can unlink. */
-				co = this->m_co_runq.end();
-
-				if (co_ptr->co_run())
+				if ((ran = co->co_run()))
 					++i;
-				co = this->m_co_runq.begin();
-			} while (i < count && co != end(this->m_co_runq));
+				++co;
+			}
+
+			/* Retest counter. */
 			continue;
 		}
 
 		/* Run a workq. */
-		workq_detail::wq_run_lock rlck(*this);
+		workq_detail::wq_run_lock rlck{ *this };
 		if (!rlck.is_locked()) {
 			/* GUARD: No co-runnables, nor workqs available. */
 			break;
@@ -963,9 +1009,6 @@ workq_service::aid(unsigned int count) noexcept
 			wq_stack stack(std::move(rlck));
 			job->run();
 		}
-
-		/* Update co-routine iterator. */
-		co = begin(this->m_co_runq);
 	}
 
 	return (i > 0);
@@ -984,10 +1027,10 @@ namespace workq_detail {
 void
 wq_deleter::operator()(const workq_job* wqj) const noexcept
 {
-	wqj->get_workq()->m_runq.unlink_robust(
+	wqj->get_workq()->m_runq.erase(
 	    wqj->get_workq()->m_runq.iterator_to(
 	    const_cast<workq_job&>(*wqj)));
-	wqj->get_workq()->m_p_runq.unlink_robust(
+	wqj->get_workq()->m_p_runq.erase(
 	    wqj->get_workq()->m_p_runq.iterator_to(
 	    const_cast<workq_job&>(*wqj)));
 	const_cast<workq_job*>(wqj)->deactivate();
@@ -1011,24 +1054,13 @@ wq_deleter::operator()(const workq_job* wqj) const noexcept
 void
 wq_deleter::operator()(const workq* wq) const noexcept
 {
-	wq->get_workq_service()->m_wq_runq.unlink_robust(
-	    wq->get_workq_service()->m_wq_runq.iterator_to(
-	    const_cast<workq&>(*wq)));
-
 	/*
-	 * If this wq is being destroyed from within its own worker thread,
-	 * inform the internal references that they are responsible
-	 * for destruction.
+	 * Workq are lazily destroyed: they hold no observable state.
+	 * If the workq exists on a runq, the action of trying to run
+	 * it will release the workq and cause it to be destroyed.
 	 */
-	if (get_wq_tls().find(*wq)) {
-		wq->int_suicide.store(true, std::memory_order_release);
-		return;
-	}
-
-	/* Wait for the last internal reference to go away. */
-	wq->wait_unreferenced();
-
-	delete wq;
+	workq_intref<const workq> wq_ptr{ wq };
+	wq->int_suicide.store(true, std::memory_order_release);
 }
 
 void

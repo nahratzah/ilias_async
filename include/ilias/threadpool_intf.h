@@ -16,7 +16,7 @@
 #ifndef ILIAS_THREADPOOL_INTF_H
 #define ILIAS_THREADPOOL_INTF_H
 
-#include <ilias/ll.h>
+#include <ilias/ll_list.h>
 #include <ilias/refcnt.h>
 #include <ilias/util.h>
 #include <climits>
@@ -89,9 +89,9 @@ public:
 	virtual ~threadpool_intf_refcnt() noexcept;
 
 	ILIAS_ASYNC_EXPORT friend void refcnt_acquire(
-	    const threadpool_intf_refcnt&) noexcept;
+	    const threadpool_intf_refcnt&, std::uintptr_t) noexcept;
 	ILIAS_ASYNC_EXPORT friend void refcnt_release(
-	    const threadpool_intf_refcnt&) noexcept;
+	    const threadpool_intf_refcnt&, std::uintptr_t) noexcept;
 
 	/* Test if the service is attached. */
 	bool
@@ -111,19 +111,19 @@ public:
 /* Client acquisition/release. */
 struct client_acqrel
 {
-	ILIAS_ASYNC_EXPORT void acquire(const threadpool_client_intf&)
-	    const noexcept;
-	ILIAS_ASYNC_EXPORT void release(const threadpool_client_intf&)
-	    const noexcept;
+	ILIAS_ASYNC_EXPORT static void acquire(const threadpool_client_intf&,
+	    unsigned int = 1) noexcept;
+	ILIAS_ASYNC_EXPORT static void release(const threadpool_client_intf&,
+	    unsigned int = 1) noexcept;
 };
 
 /* Service acquisition/release. */
 struct service_acqrel
 {
-	ILIAS_ASYNC_EXPORT void acquire(const threadpool_service_intf&)
-	    const noexcept;
-	ILIAS_ASYNC_EXPORT void release(const threadpool_service_intf&)
-	    const noexcept;
+	ILIAS_ASYNC_EXPORT static void acquire(const threadpool_service_intf&,
+	    unsigned int = 1) noexcept;
+	ILIAS_ASYNC_EXPORT static void release(const threadpool_service_intf&,
+	    unsigned int = 1) noexcept;
 };
 
 class refcount;
@@ -227,8 +227,8 @@ private:
 	/*
 	 * Implementation provided by combiner.
 	 */
-	virtual bool service_acquire() const noexcept = 0;
-	virtual bool service_release() const noexcept = 0;
+	virtual bool service_acquire(unsigned int) const noexcept = 0;
+	virtual bool service_release(unsigned int) const noexcept = 0;
 };
 
 /*
@@ -264,8 +264,8 @@ private:
 	/*
 	 * Implementation provided by combiner.
 	 */
-	virtual bool client_acquire() const noexcept = 0;
-	virtual bool client_release() const noexcept = 0;
+	virtual bool client_acquire(unsigned int) const noexcept = 0;
+	virtual bool client_release(unsigned int) const noexcept = 0;
 };
 
 
@@ -285,7 +285,7 @@ class ILIAS_ASYNC_EXPORT refcount
 public:
 	refcount() = default;
 	refcount(const refcount&) : refcount() {}
-	virtual ~refcount();
+	virtual ~refcount() noexcept;
 
 private:
 	mutable std::atomic<uintptr_t> m_service_refcnt{ 0U };
@@ -295,10 +295,10 @@ private:
 	bool _has_client() const noexcept override final;
 
 protected:
-	bool service_acquire() const noexcept override final;
-	bool service_release() const noexcept override final;
-	bool client_acquire() const noexcept override final;
-	bool client_release() const noexcept override final;
+	bool service_acquire(unsigned int) const noexcept override final;
+	bool service_release(unsigned int) const noexcept override final;
+	bool client_acquire(unsigned int) const noexcept override final;
+	bool client_release(unsigned int) const noexcept override final;
 };
 
 
@@ -428,8 +428,8 @@ public:
 	 */
 	class ILIAS_ASYNC_EXPORT threadpool_service
 	:	public virtual threadpool_service_intf,
-		public ll_base_hook<data_all>,
-		public ll_base_hook<data_active>
+		public ll_list_hook<data_all>,
+		public ll_list_hook<data_active>
 	{
 	friend class tp_service_multiplexer;
 
@@ -522,35 +522,15 @@ public:
 
 
 private:
-	struct tps_acquire
-	{
-		threadpool_service_ptr<threadpool_service>
-		operator()(threadpool_service* p)
-		    const noexcept
-		{
-			return threadpool_service_ptr<threadpool_service>(p,
-			    false);
-		}
-	};
-
-	struct tps_release
-	{
-		threadpool_service*
-		operator()(threadpool_service_ptr<threadpool_service> p)
-		    const noexcept
-		{
-			return p.release();
-		}
-	};
-
 	/* All clients of the service set. */
-	using data_t = ll_smartptr_list<
-	    threadpool_service_ptr<threadpool_service>,
-	    ll_base<threadpool_service, data_all>,
-	    tps_acquire, tps_release>;
+	using data_t = ll_smartptr_list<threadpool_service,
+	    data_all,
+	    threadpool_intf_detail::service_acqrel>;
 
 	/* All active clients (i.e. the ones with work to do). */
-	using active_t = ll_list<ll_base<threadpool_service, data_active>>;
+	using active_t = ll_smartptr_list<threadpool_service,
+	    data_active,
+	    threadpool_intf_detail::service_acqrel>;
 
 	/* All clients. */
 	data_t m_data;
@@ -583,7 +563,7 @@ public:
 	 */
 	class ILIAS_ASYNC_EXPORT threadpool_client
 	:	public virtual threadpool_client_intf,
-		public ll_base_hook<>
+		public ll_list_hook<>
 	{
 	friend class tp_client_multiplexer;
 
@@ -648,31 +628,10 @@ public:
 	    threadpool_service_ptr<threadpool_service> p);
 
 private:
-	struct tpc_acquire
-	{
-		threadpool_client_ptr<threadpool_client>
-		operator()(threadpool_client* p)
-		    const noexcept
-		{
-			return threadpool_client_ptr<threadpool_client>(p,
-			    false);
-		}
-	};
-
-	struct tpc_release
-	{
-		threadpool_client*
-		operator()(threadpool_client_ptr<threadpool_client> p)
-		{
-			return p.release();
-		}
-	};
-
 	/* All services. */
-	using data_t = ll_smartptr_list<
-	    threadpool_client_ptr<threadpool_client>,
-	    ll_base<threadpool_client>,
-	    tpc_acquire, tpc_release>;
+	using data_t = ll_smartptr_list<threadpool_client,
+	    void,
+	    threadpool_intf_detail::client_acqrel>;
 
 	/* All services. */
 	data_t m_data;

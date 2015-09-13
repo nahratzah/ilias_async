@@ -33,8 +33,6 @@ template<typename Type, typename AcqRel>
 struct acqrel_helper
 {
 private:
-	mutable AcqRel m_acqrel;
-
 	using ref_t = Type&;
 
 public:
@@ -44,14 +42,11 @@ public:
 	 *
 	 * SFINAE based.
 	 */
-	template<typename Refcount, typename Return>
 	void
-	acquire(ref_t p, std::size_t nrefs,
-	    Return (AcqRel::*)(ref_t, Refcount) = &AcqRel::acquire)
-	const noexcept
+	acquire(ref_t p, std::size_t nrefs) const noexcept
 	{
 		if (nrefs > 0)
-			this->m_acqrel.acquire(p, nrefs);
+			AcqRel::acquire(p, nrefs);
 	}
 
 	/*
@@ -60,38 +55,11 @@ public:
 	 *
 	 * SFINAE based.
 	 */
-	template<typename Refcount, typename Return>
 	void
-	release(ref_t p, std::size_t nrefs,
-	    Return (AcqRel::*)(ref_t, Refcount) = &AcqRel::release)
-	const noexcept
+	release(ref_t p, std::size_t nrefs) const noexcept
 	{
 		if (nrefs > 0)
-			this->m_acqrel.release(p, nrefs);
-	}
-
-	/*
-	 * Fallback implementation of acquire, if the SFINAE above fails.
-	 *
-	 * To acquire N references, N calls to AcqRel::acquire are performed.
-	 */
-	void
-	acquire(ref_t p, std::size_t nrefs, ...) const noexcept
-	{
-		while (nrefs-- > 0)
-			this->m_acqrel.acquire(p);
-	}
-
-	/*
-	 * Fallback implementation of release, if the SFINAE above fails.
-	 *
-	 * To release N references, N calls to AcqRel::release are performed.
-	 */
-	void
-	release(ref_t p, std::size_t nrefs, ...) const noexcept
-	{
-		while (nrefs-- > 0)
-			this->m_acqrel.release(p);
+			AcqRel::release(p, nrefs);
 	}
 };
 
@@ -598,11 +566,6 @@ public:
 		    expect_ = convert_get(expect),
 		    convert_get(set),
 		    mo_success, mo_fail)) {
-			if (this->compare_exchange_strong(expect_,
-			    std::move(set),
-			    mo_success, mo_fail))
-				return true;
-
 			/*
 			 * Skip hazard logic if there is no need to acquire
 			 * the reference.
@@ -753,7 +716,8 @@ private:
 public:
 	template<typename Expect, typename Set>
 	bool
-	compare_exchange_weak(Expect&& expect, Set&& set, std::memory_order mo = std::memory_order_seq_cst)
+	compare_exchange_weak(Expect&& expect, Set&& set,
+	    std::memory_order mo = std::memory_order_seq_cst)
 	noexcept
 	{
 		return this->compare_exchange_weak(
@@ -764,7 +728,8 @@ public:
 
 	template<typename Expect, typename Set>
 	bool
-	compare_exchange_strong(Expect&& expect, Set&& set, std::memory_order mo = std::memory_order_seq_cst)
+	compare_exchange_strong(Expect&& expect, Set&& set,
+	    std::memory_order mo = std::memory_order_seq_cst)
 	noexcept
 	{
 		return this->compare_exchange_strong(

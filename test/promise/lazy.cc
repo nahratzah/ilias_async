@@ -1,13 +1,17 @@
-#include <ilias/promise.h>
+#include <ilias/future.h>
 
 int
 main()
 {
-	auto f = ilias::new_promise<int>(
-	    [](ilias::promise<int> p) {
-		p.set(42);
+	volatile bool done = false;
+	auto f = ilias::async_lazy(
+	    [&done]() -> int {
+		done = true;
+		return 42;
 	    });
 
+	assert(done == false);
 	assert(f.get() == 42);
+	assert(done == true);
 	return 0;
 }

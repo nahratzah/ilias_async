@@ -19,8 +19,8 @@ namespace mq_ptr_detail {
 class refcount
 {
 private:
-	mutable std::atomic<uintptr_t> count;
-	mutable std::atomic<uintptr_t> in;
+	mutable std::atomic<std::uintptr_t> count;
+	mutable std::atomic<std::uintptr_t> in;
 
 public:
 	bool
@@ -41,23 +41,23 @@ public:
 	class out_refcount_mgr
 	{
 	public:
-		void
-		acquire(const refcount& v_) noexcept
+		static void
+		acquire(const refcount& v_, std::uintptr_t n) noexcept
 		{
-			auto old = v_.count.fetch_add(1U,
+			auto old = v_.count.fetch_add(n,
 			    std::memory_order_acquire);
-			assert(old + 1U != 0U);
+			assert(old + n > old);
 		}
 
 		template<typename Type>
-		void
-		release(const Type& v) noexcept
+		static void
+		release(const Type& v, std::uintptr_t n) noexcept
 		{
 			const refcount& v_ = v;
-			auto old = v_.count.fetch_sub(1U,
+			auto old = v_.count.fetch_sub(n,
 			    std::memory_order_release);
-			assert(old > 0U);
-			if (old == 1U)
+			assert(old >= n);
+			if (old == n)
 				delete &v;
 		}
 	};
@@ -65,34 +65,34 @@ public:
 	class in_refcount_mgr
 	{
 	private:
-		out_refcount_mgr base;
+		using base = out_refcount_mgr;
 
 	public:
-		void
-		acquire(const refcount& v_) noexcept
+		static void
+		acquire(const refcount& v_, std::uintptr_t n) noexcept
 		{
-			auto old = v_.in.fetch_add(1U,
+			auto old = v_.in.fetch_add(n,
 			    std::memory_order_acquire);
-			assert(old + 1U != 0U);
+			assert(old + n > old);
 
-			if (old == 0U)
-				this->base.acquire(v_);
+			if (old == n)
+				base::acquire(v_, 1);
 		}
 
 		template<typename Type>
-		void
-		release(const Type& v) noexcept
+		static void
+		release(const Type& v, std::uintptr_t n) noexcept
 		{
 			const refcount& v_ = v;
-			auto old = v_.in.fetch_sub(1U,
+			auto old = v_.in.fetch_sub(n,
 			    std::memory_order_release);
-			assert(old > 0U);
+			assert(old >= n);
 
-			if (old == 1U) {
+			if (old == n) {
 				const_cast<Type&>(v)._fire(
 				    &const_cast<Type&>(v));
 
-				this->base.release(v);
+				base::release(v, 1);
 			}
 		}
 	};

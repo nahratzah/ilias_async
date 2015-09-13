@@ -1,28 +1,31 @@
-#include <ilias/promise.h>
+#include <ilias/future.h>
 #include <ilias/threadpool_intf.h>
 #include <stdexcept>
 #include <cassert>
 #include <iostream>
+#include <atomic>
 
 
 class client
 {
 public:
-	ilias::future<int> result;
+	ilias::cb_future<int> result;
 
 	class threadpool_client
 	:	public virtual ilias::threadpool_client_intf
 	{
 	public:
-		ilias::promise<int> result;
+		ilias::cb_promise<int> result;
+		std::atomic<bool> done;
 
 	private:
 		client* m_client;
 
 	public:
-		threadpool_client(std::tuple<ilias::promise<int>, client*> arg)
-		:	result(std::get<0>(arg)),
-			m_client(std::get<1>(arg))
+		threadpool_client(
+                    std::tuple<ilias::cb_promise<int>, client*> arg)
+		:	result(std::get<0>(std::move(arg))),
+			m_client(std::get<1>(std::move(arg)))
 		{
 			/* Empty body. */
 		}
@@ -36,12 +39,20 @@ public:
 		bool
 		do_work()
 		{
-			if (result.ready()) {
+			constexpr std::future_errc promise_already_satisfied =
+			    std::future_errc::promise_already_satisfied;
+			if (done) return false;
+
+			try {
+				result.set_value(42);
+			} catch (const std::future_error& e) {
+				if (e.code() != promise_already_satisfied)
+					throw;
 				std::cout << "Client work already completed."
 				    << std::endl;
 				return false;
 			}
-			result.set(42);
+			done.store(true);
 			std::cout << "Client: assigned 42 as result of work."
 			    << std::endl;
 			return true;
@@ -50,7 +61,7 @@ public:
 		bool
 		has_work()
 		{
-			bool rv = !result.ready();
+			bool rv = !done;
 			std::cout << "client::has_work() -> " << rv
 			    << std::endl;
 			return rv;
@@ -74,14 +85,14 @@ public:
 	void
 	attach(ilias::threadpool_client_ptr<threadpool_client> ptr)
 	{
-		this->result = ptr->result;
+		this->result = ptr->result.get_future();
 		this->ptr = std::move(ptr);
 	}
 
-	std::tuple<ilias::promise<int>, client*>
+	std::tuple<ilias::cb_promise<int>, client*>
 	threadpool_client_arg()
 	{
-		return std::make_tuple(ilias::promise<int>::create(), this);
+		return std::make_tuple(ilias::cb_promise<int>(), this);
 	}
 };
 
@@ -188,7 +199,6 @@ main()
 	while (s.has_work())
 		while (s.do_work());
 
-	assert(c.result.ready());
 	assert(c.result.get());
 
 	return 0;

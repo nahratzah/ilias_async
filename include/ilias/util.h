@@ -16,9 +16,9 @@
 #ifndef ILIAS_ASYNC_UTIL_H
 #define ILIAS_ASYNC_UTIL_H
 
-#include <thread>
 #include <type_traits>
 #include <utility>
+#include <mutex>
 
 
 namespace ilias {
