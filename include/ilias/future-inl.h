@@ -216,12 +216,12 @@ class ILIAS_ASYNC_EXPORT shared_state_base {
   void add_promise_reference_() noexcept;
   void remove_promise_reference_() noexcept;
 
-  std::atomic<state_t> state_;
-  std::atomic<bool> lck_;
-  std::atomic<bool> shared_;
-  std::atomic<bool> start_deferred_called_;
-  std::atomic<bool> start_deferred_value_;
-  std::atomic<uintptr_t> promise_refcnt_;
+  std::atomic<state_t> state_{ state_t::uninitialized };
+  std::atomic<bool> lck_{ false };
+  std::atomic<bool> shared_{ false };
+  std::atomic<bool> start_deferred_called_{ false };
+  std::atomic<bool> start_deferred_value_{ false };
+  std::atomic<uintptr_t> promise_refcnt_{ 0U };
 };
 
 template<typename T>
