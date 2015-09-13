@@ -258,7 +258,10 @@ auto ll_smartptr_list<T, Tag, AcqRel>::iterator_to(const const_pointer& p) ->
 template<typename T, typename Tag, typename AcqRel>
 auto ll_smartptr_list<T, Tag, AcqRel>::begin() noexcept -> iterator {
   iterator rv;
-  rv.ptr_ = this->as_type_(data_.init_begin(rv.pos_));
+  auto first = data_.init_begin(rv.pos_);
+  if (ll_list_detail::list::get_elem_type(*first) !=
+      ll_list_detail::elem_type::head)
+    rv.ptr_ = this->as_type_(first);
   return rv;
 }
 
