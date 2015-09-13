@@ -412,11 +412,12 @@ auto list::unlink_(elem_ptr a, elem& x, size_t expect) noexcept ->
    * If unlink_aid_ failed to perform the final,
    * zeroing compare_exchange on b.pred_
    * b may not be the original successor to x.
-   * In that case, it may still point at x, so fix it in that case.
+   * In that case, it may still point at x,
+   * so we opt to ignore the hint from unlink_aid_.
    */
   if (b != nullptr &&
-      get<0>(b->pred_.load_no_acquire(memory_order_acquire)) == &x)
-    pred_(*b);
+      get<0>(b->pred_.load_no_acquire(memory_order_acquire)) != a)
+    b = nullptr;
 
   auto lc = x.link_count_.load(memory_order_acquire);
   while (lc > expect) {
