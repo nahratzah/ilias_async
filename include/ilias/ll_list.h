@@ -139,11 +139,12 @@ class list {
   ILIAS_ASYNC_EXPORT static elem_ptr pred_(elem&) noexcept;
   ILIAS_ASYNC_EXPORT static axb_link_result link_(elem&, elem&, elem&)
       noexcept;
-  ILIAS_ASYNC_EXPORT static unlink_result unlink_(elem&, elem&, size_t)
+  ILIAS_ASYNC_EXPORT static unlink_result unlink_(elem_ptr, elem&, size_t)
       noexcept;
-  ILIAS_ASYNC_EXPORT static tuple<elem_ptr, elem_flags> unlink_aid_(elem&,
-                                                                    elem&)
+  static elem_ptr unlink_aid_fix_pred_(tuple<elem_ptr, elem_flags>, elem&)
       noexcept;
+  static tuple<elem_ptr, elem_ptr, elem_flags>
+      unlink_aid_(elem&, elem&) noexcept;
 
  public:
   static elem_type get_elem_type(const elem&) noexcept;

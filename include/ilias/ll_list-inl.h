@@ -44,7 +44,7 @@ inline auto iter_link::operator=(const iter_link& o) noexcept -> iter_link& {
     list::unlink_result ur;
     do {
       elem_ptr p = list::pred_(*this);
-      ur = (p ? list::unlink_(*p, *this, 0) : list::UNLINK_FAIL);
+      ur = (p ? list::unlink_(move(p), *this, 0) : list::UNLINK_FAIL);
     } while (ur == list::UNLINK_RETRY);
   }
 
@@ -60,7 +60,7 @@ inline iter_link::~iter_link() noexcept {
   do {
     elem_ptr p = list::pred_(*this);
     if (!p) return;
-    ur = list::unlink_(*p, *this, 0);
+    ur = list::unlink_(move(p), *this, 0);
   } while (ur == list::UNLINK_RETRY);
 }
 

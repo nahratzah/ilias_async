@@ -39,12 +39,17 @@ namespace ll_list_detail {
  * - x.link_count == sum(a.succ == x, a.pred == x, link references on stack)
  * - x.link_count > 0  ==>  single reference count held
  * - x.pred == (b, marked)  ==>  b is direct predecessor of unlinked x
+ * - x.pred == (*, unmarked) AND x.succ == (b, unmarked)  ==>  all(y : y.pred == (*, unmarked) AND y.succ == b  ==>  y == x)
  *
  * Rules:
  * - only the creator of an iterator may link/unlink it
  * - traversal of the list always happens from a iterator that is owned
  * - when an element that is to be deleted is encounter,
  *   the algorithm will aid in deletion
+ * - after marking x.pred,
+ *   move x.pred back until NOT(x.pred.pred == (*, marked))
+ * - if x.succ == (*, marked) AND x.pred == (*, marked)
+ *   then x.succ.pred should be moved back and marked
  */
 
 
@@ -223,7 +228,7 @@ auto list::init_end(position& pos) const noexcept -> elem_ptr {
 auto list::succ_(elem& x) noexcept -> elem_ptr {
   auto s = x.succ_.load(memory_order_acquire);
   while (get<0>(s) != nullptr && get<1>(s) == MARKED) {
-    s = unlink_aid_(x, *get<0>(s));
+    tie(ignore, get<0>(s), get<1>(s)) = unlink_aid_(x, *get<0>(s));
     if (get<0>(s) == nullptr) s = x.succ_.load(memory_order_acquire);
   }
   return get<0>(s);
@@ -251,8 +256,10 @@ auto list::pred_(elem& x) noexcept -> elem_ptr {
        */
       auto ps = get<0>(p)->succ_.load(memory_order_acquire);
 
-      if (get<0>(ps) != nullptr && get<0>(ps) != &x && get<1>(ps) == MARKED)
-        ps = unlink_aid_(*get<0>(p), *get<0>(ps));
+      if (get<0>(ps) != nullptr && get<0>(ps) != &x && get<1>(ps) == MARKED) {
+        tie(ignore, get<0>(ps), get<1>(ps)) =
+            unlink_aid_(*get<0>(p), *get<0>(ps));
+      }
       if (get<0>(ps) == nullptr) {
         /*
          * p was unlinked from under us or
@@ -367,7 +374,8 @@ auto list::link_(elem& a, elem& x, elem& b) noexcept -> axb_link_result {
   return error;
 }
 
-auto list::unlink_(elem& a, elem& x, size_t expect) noexcept -> unlink_result {
+auto list::unlink_(elem_ptr a, elem& x, size_t expect) noexcept ->
+    unlink_result {
   {
     /*
      * Extra scope, to hold references to x
@@ -375,9 +383,9 @@ auto list::unlink_(elem& a, elem& x, size_t expect) noexcept -> unlink_result {
      */
     auto as_expect = make_tuple(&x, UNMARKED);
     const auto as_assign = make_tuple(elem_ptr(&x), MARKED);
-    if (!a.succ_.compare_exchange_strong(as_expect, as_assign,
-                                         memory_order_acquire,
-                                         memory_order_relaxed)) {
+    if (!a->succ_.compare_exchange_strong(as_expect, as_assign,
+                                          memory_order_acquire,
+                                          memory_order_relaxed)) {
       if (as_expect == as_assign) return UNLINK_FAIL;
       if (get<1>(x.pred_.load_no_acquire(memory_order_relaxed)) == MARKED)
         return UNLINK_FAIL;
@@ -386,17 +394,20 @@ auto list::unlink_(elem& a, elem& x, size_t expect) noexcept -> unlink_result {
   }
 
   elem_ptr b;
-  tie(b, ignore) = unlink_aid_(a, x);
+  tie(a, b, ignore) = unlink_aid_(*a, x);
 
   auto lc = x.link_count_.load(memory_order_acquire);
   while (lc > expect) {
-    if (b == nullptr) b = &a;
+    while (b == nullptr)
+      b = get<0>(a->succ_.load(memory_order_acquire));
     const auto b_succ = b->succ_.load_no_acquire(memory_order_acquire);
     if (get<0>(b_succ) == &x) pred_(*b);
     lc = x.link_count_.load(memory_order_acquire);
     if (get_elem_type(*b) == elem_type::head) break;
-    b = succ_(*b);
+    b = get<0>(move(b_succ));
   }
+  a = nullptr;
+  b = nullptr;
 
   if (lc > expect) wait_link0(x, expect);
   x.pred_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
@@ -404,8 +415,32 @@ auto list::unlink_(elem& a, elem& x, size_t expect) noexcept -> unlink_result {
   return UNLINK_OK;
 }
 
+auto list::unlink_aid_fix_pred_(tuple<elem_ptr, elem_flags> xp_expect,
+                                elem& x) noexcept -> elem_ptr {
+  for (;;) {
+    assert(get<0>(xp_expect) != nullptr);
+
+    // XXX: test xp_expect->pred and xp_expect->pred->succ and move backwards if need be.
+    tuple<elem_ptr, elem_flags> a_pred_succ = make_tuple(nullptr, UNMARKED),
+                                a_pred = get<0>(xp_expect)->pred_.load(memory_order_acquire);
+    assert(get<0>(a_pred) != nullptr);
+    if (get<1>(a_pred) != MARKED) {
+      a_pred_succ = get<0>(a_pred)->succ_.load(memory_order_acquire);
+      if (get<1>(a_pred_succ) != MARKED) return get<0>(move(xp_expect));
+    }
+
+    tuple<elem_ptr, elem_flags> xp_assign =
+        get<0>(a_pred)->pred_.load(memory_order_acquire);
+    get<1>(xp_assign) = MARKED;
+    if (x.pred_.compare_exchange_weak(xp_expect, xp_assign,
+                                      memory_order_acq_rel,
+                                      memory_order_acquire))
+      xp_expect = move(xp_assign);
+  }
+}
+
 auto list::unlink_aid_(elem& a, elem& x) noexcept ->
-    tuple<elem_ptr, elem_flags> {
+    tuple<elem_ptr, elem_ptr, elem_flags> {
   tuple<elem_ptr, elem_flags> b_ptr;
 
   auto xp_expect = make_tuple(elem_ptr(&a), UNMARKED);
@@ -414,12 +449,20 @@ auto list::unlink_aid_(elem& a, elem& x) noexcept ->
                                         memory_order_acq_rel,
                                         memory_order_acquire) &&
          get<1>(xp_expect) != MARKED) {
-    if (get<0>(xp_expect) == nullptr) return b_ptr;
+    if (get<0>(xp_expect) == nullptr)
+      return tuple_cat(make_tuple(nullptr), move(b_ptr));
   }
-  const elem_ptr a_ptr = get<0>(move(xp_expect));
+  const elem_ptr a_ptr = unlink_aid_fix_pred_(move(xp_expect), x);
 
   auto x_succ = x.succ_.load(memory_order_acquire);
-  if (get<0>(x_succ) == nullptr) return b_ptr;
+  while (get<0>(x_succ) != nullptr && get<1>(x_succ) == MARKED) {
+    tie(ignore, get<0>(x_succ), get<1>(x_succ)) =
+        unlink_aid_(x, *get<0>(x_succ));
+    if (get<0>(x_succ) == nullptr)
+      x_succ = x.succ_.load(memory_order_acquire);
+  }
+  if (get<0>(x_succ) == nullptr)
+    return tuple_cat(make_tuple(nullptr), move(b_ptr));
   auto as_expect = make_tuple(elem_ptr(&x), MARKED);
   if (a_ptr->succ_.compare_exchange_strong(as_expect, x_succ,
                                            memory_order_acq_rel,
@@ -438,13 +481,13 @@ auto list::unlink_aid_(elem& a, elem& x) noexcept ->
                                                    memory_order_release,
                                                    memory_order_relaxed);
     }
+
+    x.succ_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
   } else {
     b_ptr = move(as_expect);
   }
 
-  x.succ_.store(make_tuple(nullptr, UNMARKED), memory_order_release);
-
-  return b_ptr;
+  return tuple_cat(make_tuple(move(a_ptr)), move(b_ptr));
 }
 
 auto list::succ_elem_(elem& x) noexcept -> elem_ptr {
@@ -525,7 +568,7 @@ auto list::pop_front() noexcept -> elem_ptr {
   if (get_elem_type(*e) == elem_type::head) return nullptr;
 
   for (;;) {
-    switch (unlink_(*pred_(*e), *e, 1)) {
+    switch (unlink_(pred_(*e), *e, 1)) {
     case UNLINK_OK:
       return e;
     case UNLINK_RETRY:
@@ -543,7 +586,7 @@ auto list::pop_back() noexcept -> elem_ptr {
   if (get_elem_type(*e) == elem_type::head) return nullptr;
 
   for (;;) {
-    switch (unlink_(*pred_(*e), *e, 1)) {
+    switch (unlink_(pred_(*e), *e, 1)) {
     case UNLINK_OK:
       return e;
     case UNLINK_RETRY:
@@ -669,7 +712,7 @@ auto list::unlink(elem& e, position* out, size_t expect) ->
     if (lr == LINK_LOST) return make_tuple(nullptr, false);
     assert(lr == LINK_OK);
 
-    ur = unlink_(out->back_(), e, expect + 1U);
+    ur = unlink_(&out->back_(), e, expect + 1U);
     switch (ur) {
     case UNLINK_OK:
       return make_tuple(e_ptr, true);
@@ -687,7 +730,6 @@ auto list::unlink(elem& e, position* out, size_t expect) ->
 
 auto list::iterator_to(elem& e, position* out) noexcept -> bool {
   assert(out != nullptr);
-  unsigned int spin = SPIN;
   link_result lr;
 
   out->unlink();
@@ -719,9 +761,9 @@ auto list::iterator_to(elem& e, position* out) noexcept -> bool {
 
     /* Unlink linked back_ part, so it can be relinked in the next loop. */
     for (unlink_result ur =
-             list::unlink_(*pred_(out->back_()), out->back_(), 0);
+             list::unlink_(pred_(out->back_()), out->back_(), 0);
          ur != UNLINK_OK;
-         ur = list::unlink_(*pred_(out->back_()), out->back_(), 0)) {
+         ur = list::unlink_(pred_(out->back_()), out->back_(), 0)) {
       assert(ur != UNLINK_FAIL);
     }
 
@@ -859,7 +901,7 @@ auto list::position::unlink_iter_(iter_link& i) noexcept -> bool {
     elem_ptr p = pred_(i);
     if (!p) return false;
 
-    switch (unlink_(*p, i, 0)) {
+    switch (unlink_(move(p), i, 0)) {
     case UNLINK_OK:
       return true;
     case UNLINK_FAIL:
