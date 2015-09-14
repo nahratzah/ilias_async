@@ -406,7 +406,6 @@ auto list::unlink_(elem_ptr a, elem& x, size_t expect) noexcept ->
   elem_ptr b;
   tie(a, b, ignore) = unlink_aid_(*a, x);
   assert(a != nullptr);  // Only this function will reset x.pred_.
-  assert(get<0>(x.pred_.load_no_acquire()) == a);
 
   auto lc = x.link_count_.load(memory_order_acquire);
   while (lc > expect) {
