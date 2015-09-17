@@ -185,6 +185,9 @@ class ll_queue<Type, no_intrusive_tag>
         noexcept(std::is_nothrow_copy_constructible<value_type>::value);
     elem(rvalue_reference)
         noexcept(std::is_nothrow_move_constructible<value_type>::value);
+    template<typename... Args>
+    elem(Args&&...)
+        noexcept(std::is_nothrow_constructible<value_t, Args...>::value);
     elem& operator=(const elem&) = delete;
   };
 
@@ -207,6 +210,10 @@ class ll_queue<Type, no_intrusive_tag>
   void push_back(rvalue_reference);
   void push_front(const_reference);
   void push_front(rvalue_reference);
+  template<typename... Args>
+  void emplace_back(Args&&... args);
+  template<typename... Args>
+  void emplace_front(Args&&... args);
 
   size_type size() const noexcept;
   bool empty() const noexcept;

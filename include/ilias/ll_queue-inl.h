@@ -184,6 +184,13 @@ ll_queue<Type, no_intrusive_tag>::elem::elem(rvalue_reference v)
 : m_value(v)
 {}
 
+template<typename Type>
+template<typename... Args>
+ll_queue<Type, no_intrusive_tag>::elem::elem(Args&&... args)
+    noexcept(std::is_nothrow_constructible<value_t, Args...>::value)
+: m_value(std::forward<Args>(args)...)
+{}
+
 
 template<typename Type>
 ll_queue<Type, no_intrusive_tag>::~ll_queue()
@@ -204,22 +211,34 @@ auto ll_queue<Type, no_intrusive_tag>::pop_front()
 
 template<typename Type>
 auto ll_queue<Type, no_intrusive_tag>::push_back(const_reference e) -> void {
-  m_impl.push_back(new elem{ e });
+  m_impl.push_back(new elem(e));
 }
 
 template<typename Type>
 auto ll_queue<Type, no_intrusive_tag>::push_back(rvalue_reference e) -> void {
-  m_impl.push_back(new elem{ std::move(e) });
+  m_impl.push_back(new elem(std::move(e)));
 }
 
 template<typename Type>
 auto ll_queue<Type, no_intrusive_tag>::push_front(const_reference e) -> void {
-  m_impl.push_front(new elem{ e });
+  m_impl.push_front(new elem(e));
 }
 
 template<typename Type>
 auto ll_queue<Type, no_intrusive_tag>::push_front(rvalue_reference e) -> void {
-  m_impl.push_front(new elem{ std::move(e) });
+  m_impl.push_front(new elem(std::move(e)));
+}
+
+template<typename Type>
+template<typename... Args>
+auto ll_queue<Type, no_intrusive_tag>::emplace_back(Args&&... args) -> void {
+  m_impl.push_back(new elem(std::forward<Args>(args)...));
+}
+
+template<typename Type>
+template<typename... Args>
+auto ll_queue<Type, no_intrusive_tag>::emplace_front(Args&&... args) -> void {
+  m_impl.push_front(new elem(std::forward<Args>(args)...));
 }
 
 template<typename Type>
