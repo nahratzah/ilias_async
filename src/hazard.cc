@@ -26,102 +26,92 @@ namespace {
 using hazards_t = std::array<hazard_t, 64>;
 
 std::atomic<unsigned short> hz_idx;
-alignas(4096) hazards_t hazards;
+alignas(4096) hazards_t hazards;  // Page aligned, to reduce TLB misses.
 
-bool
-mark(hazard_t& h, std::uintptr_t owner, std::uintptr_t value) noexcept
-{
-	std::uintptr_t expect;
-	do {
-		if (h.value.load(std::memory_order_relaxed) != value)
-			break;
+auto mark(hazard_t& h, std::uintptr_t owner, std::uintptr_t value) noexcept ->
+    bool {
+  std::uintptr_t expect;
+  do {
+    if (h.value.load(std::memory_order_relaxed) != value) break;
 
-		expect = owner;
-		if (h.owner.compare_exchange_weak(expect,
-		    owner | hazard_t::FLAG,
-		    std::memory_order_acquire,
-		    std::memory_order_relaxed)) {
-			auto rv = h.value.compare_exchange_strong(value, 0U,
-			    std::memory_order_relaxed,
-			    std::memory_order_relaxed);
+    expect = owner;
+    if (h.owner.compare_exchange_weak(expect,
+                                      owner | hazard_t::FLAG,
+                                      std::memory_order_acquire,
+                                      std::memory_order_relaxed)) {
+      auto rv = h.value.compare_exchange_strong(value, 0U,
+                                                std::memory_order_relaxed,
+                                                std::memory_order_relaxed);
 
-			h.owner.fetch_and(hazard_t::MASK,
-			    std::memory_order_release);
-			return rv;
-		}
-	} while ((expect & hazard_t::MASK) == owner);
-	return false;
+      h.owner.fetch_and(hazard_t::MASK, std::memory_order_release);
+      return rv;
+    }
+  } while ((expect & hazard_t::MASK) == owner);
+  return false;
 }
 
 
 }} /* namespace ilias::hazard_detail::<unnamed> */
 
 
-hazard_detail::hazard_t&
-basic_hazard::allocate_hazard(std::uintptr_t owner) noexcept
-{
-	using namespace hazard_detail;
+auto basic_hazard::allocate_hazard(std::uintptr_t owner) noexcept ->
+    hazard_detail::hazard_t& {
+  using namespace hazard_detail;
 
-	assert(owner != 0U && (owner & hazard_t::FLAG) == 0U);
+  assert(owner != 0U && (owner & hazard_t::FLAG) == 0U);
 
-	const hazards_t::size_type idx =
-	    hz_idx.fetch_add(1U, std::memory_order_relaxed) % hazards.size();
+  const hazards_t::size_type idx =
+      hz_idx.fetch_add(1U, std::memory_order_relaxed) % hazards.size();
 
-	for (auto h = hazards.begin() + idx; true; h = hazards.begin()) {
-		for (; h != hazards.end(); ++h) {
-			std::uintptr_t expect = 0U;
-			if (h->owner.compare_exchange_weak(expect, owner,
-			    std::memory_order_relaxed,
-			    std::memory_order_relaxed))
-				return *h;
-		}
-	}
+  for (auto h = hazards.begin() + idx; true; h = hazards.begin()) {
+    for (; h != hazards.end(); ++h) {
+      std::uintptr_t expect = 0U;
+      if (h->owner.compare_exchange_weak(expect, owner,
+                                         std::memory_order_relaxed,
+                                         std::memory_order_relaxed))
+        return *h;
+    }
+  }
 
-	/* UNREACHABLE */
+  /* UNREACHABLE */
 }
 
 const std::size_t basic_hazard::hazard_count = hazard_detail::hazards.size();
 
-std::size_t
-basic_hazard::hazard_grant(std::uintptr_t owner, std::uintptr_t value) noexcept
-{
-	using namespace hazard_detail;
+auto basic_hazard::hazard_grant(std::uintptr_t owner, std::uintptr_t value)
+    noexcept -> std::size_t {
+  using namespace hazard_detail;
 
-	std::size_t count = 0;
-	for (auto& h : hazards) {
-		if (mark(h, owner, value))
-			++count;
-	}
-	return count;
+  std::size_t count = 0;
+  for (auto& h : hazards) {
+    if (mark(h, owner, value))
+      ++count;
+  }
+  return count;
 }
 
-std::size_t
-basic_hazard::hazard_grant_n(std::uintptr_t owner, std::uintptr_t value,
-    std::size_t nrefs) noexcept
-{
-	using namespace hazard_detail;
+auto basic_hazard::hazard_grant_n(std::uintptr_t owner, std::uintptr_t value,
+                                  std::size_t nrefs) noexcept -> std::size_t {
+  using namespace hazard_detail;
 
-	std::size_t count = 0;
-	for (auto& h : hazards) {
-		if (count == nrefs)
-			break;
-		if (mark(h, owner, value))
-			++count;
-	}
-	return count;
+  std::size_t count = 0;
+  for (auto& h : hazards) {
+    if (count == nrefs) break;
+    if (mark(h, owner, value)) ++count;
+  }
+  return count;
 }
 
-void
-basic_hazard::hazard_wait(std::uintptr_t owner, std::uintptr_t value) noexcept
-{
-	using namespace hazard_detail;
+auto basic_hazard::hazard_wait(std::uintptr_t owner, std::uintptr_t value)
+    noexcept -> void {
+  using namespace hazard_detail;
 
-	for (auto& h : hazards) {
-		while ((h.owner.load(std::memory_order_consume) &
-		    hazard_t::MASK) == owner &&
-		    h.value.load(std::memory_order_consume) == value)
-			std::this_thread::yield();
-	}
+  for (auto& h : hazards) {
+    while (((h.owner.load(std::memory_order_consume) & hazard_t::MASK) ==
+            owner) &&
+           h.value.load(std::memory_order_consume) == value)
+      std::this_thread::yield();
+  }
 }
 
 

@@ -24,7 +24,6 @@
 #include <memory>
 #include <stdexcept>
 
-
 namespace ilias {
 namespace hazard_detail {
 
@@ -32,11 +31,11 @@ namespace hazard_detail {
 /* Hazard pointer logic. */
 struct alignas(64) hazard_t
 {
-	static constexpr std::uintptr_t FLAG = 0x1U;
-	static constexpr std::uintptr_t MASK = ~FLAG;
+  static constexpr std::uintptr_t FLAG = 0x1U;
+  static constexpr std::uintptr_t MASK = ~FLAG;
 
-	std::atomic<std::uintptr_t> owner;
-	std::atomic<std::uintptr_t> value;
+  std::atomic<std::uintptr_t> owner;
+  std::atomic<std::uintptr_t> value;
 };
 
 
@@ -48,121 +47,41 @@ struct alignas(64) hazard_t
  */
 class basic_hazard
 {
-private:
-	using hazard_t = hazard_detail::hazard_t;
+ private:
+  using hazard_t = hazard_detail::hazard_t;
 
-	hazard_t& m_hazard;
+  hazard_t& m_hazard;
 
-	static std::uintptr_t
-	validate_owner(std::uintptr_t p)
-	{
-		if (p == 0U) {
-			throw std::invalid_argument("hazard: "
-			    "owner must be non-null");
-		}
+  static std::uintptr_t validate_owner(std::uintptr_t p);
 
-		if ((p & hazard_t::FLAG) != 0U) {
-			throw std::invalid_argument("hazard: "
-			    "owner may not have LSB set");
-		}
+  ILIAS_ASYNC_EXPORT static hazard_t& allocate_hazard(std::uintptr_t) noexcept;
+  ILIAS_ASYNC_EXPORT static const std::size_t hazard_count;
+  ILIAS_ASYNC_EXPORT static std::size_t hazard_grant(std::uintptr_t,
+                                                     std::uintptr_t) noexcept;
+  ILIAS_ASYNC_EXPORT static void hazard_wait(std::uintptr_t, std::uintptr_t)
+      noexcept;
+  ILIAS_ASYNC_EXPORT static std::size_t hazard_grant_n(std::uintptr_t,
+                                                       std::uintptr_t,
+                                                       std::size_t) noexcept;
 
-		return p;
-	}
+ public:
+  basic_hazard(std::uintptr_t);
+  basic_hazard(const basic_hazard&) = delete;
+  basic_hazard(basic_hazard&&) = delete;
+  basic_hazard& operator=(const basic_hazard&) = delete;
+  ~basic_hazard() noexcept;
 
-	ILIAS_ASYNC_EXPORT static hazard_t& allocate_hazard(std::uintptr_t)
-	    noexcept;
-	ILIAS_ASYNC_EXPORT static const std::size_t hazard_count;
-	ILIAS_ASYNC_EXPORT static std::size_t hazard_grant(std::uintptr_t,
-	    std::uintptr_t) noexcept;
-	ILIAS_ASYNC_EXPORT static void hazard_wait(std::uintptr_t,
-	    std::uintptr_t) noexcept;
-	ILIAS_ASYNC_EXPORT static std::size_t hazard_grant_n(std::uintptr_t,
-	    std::uintptr_t, std::size_t) noexcept;
+  bool is_lock_free() const noexcept;
+  friend bool atomic_is_lock_free(const basic_hazard*) noexcept;
 
-public:
-	basic_hazard(std::uintptr_t owner)
-	:	m_hazard{ allocate_hazard(validate_owner(owner)) }
-	{
-		assert(this->m_hazard.value.load(std::memory_order_relaxed) ==
-		    0U);
-	}
+  template<typename OperationFn, typename NilFn>
+  void do_hazard(std::uintptr_t, OperationFn&&, NilFn&&) noexcept;
 
-	basic_hazard(const basic_hazard&) = delete;
-	basic_hazard(basic_hazard&&) = delete;
-	basic_hazard& operator=(const basic_hazard&) = delete;
-
-	~basic_hazard() noexcept
-	{
-		assert(this->m_hazard.value.load(std::memory_order_relaxed) ==
-		    0U);
-		this->m_hazard.owner.fetch_and(hazard_t::FLAG,
-		    std::memory_order_release);
-	}
-
-	bool
-	is_lock_free() const noexcept
-	{
-		return atomic_is_lock_free(&this->m_hazard.owner) &&
-		    atomic_is_lock_free(&this->m_hazard.value);
-	}
-
-	friend bool
-	atomic_is_lock_free(const basic_hazard* h) noexcept
-	{
-		return h && h->is_lock_free();
-	}
-
-	template<typename OperationFn, typename NilFn>
-	void
-	do_hazard(std::uintptr_t value,
-	    OperationFn&& operation, NilFn&& on_nil)
-	noexcept
-	{
-		auto ov = this->m_hazard.value.exchange(value,
-		    std::memory_order_acq_rel);
-		assert(ov == 0U);
-		do_noexcept(operation);
-		if (this->m_hazard.value.exchange(0U,
-		    std::memory_order_release) == 0U)
-			do_noexcept(on_nil);
-	}
-
-	template<typename AcquireFn, typename ReleaseFn>
-	static void
-	grant(AcquireFn&& acquire, ReleaseFn&& release,
-	    std::uintptr_t owner, std::uintptr_t value,
-	    std::size_t nrefs = 0U)
-	{
-		validate_owner(owner);
-
-		do_noexcept([&]() {
-			const auto hzc = hazard_count;
-
-			if (nrefs < hzc) {
-				acquire(hzc - nrefs);
-				nrefs = hzc;
-			}
-
-			nrefs -= hazard_grant(owner, value);
-			if (nrefs > 0U)
-				release(nrefs);
-		    });
-	}
-
-	static std::size_t
-	grant_n(std::uintptr_t owner, std::uintptr_t value,
-	    std::size_t nrefs)
-	{
-		validate_owner(owner);
-		return hazard_grant_n(owner, value, nrefs);
-	}
-
-	static void
-	wait_unused(std::uintptr_t owner, std::uintptr_t value)
-	{
-		validate_owner(owner);
-		hazard_wait(owner, value);
-	}
+  template<typename AcquireFn, typename ReleaseFn>
+  static void grant(AcquireFn&&, ReleaseFn&&,
+                    std::uintptr_t, std::uintptr_t, std::size_t = 0U);
+  static std::size_t grant_n(std::uintptr_t, std::uintptr_t, std::size_t);
+  static void wait_unused(std::uintptr_t, std::uintptr_t);
 };
 
 /*
@@ -172,77 +91,41 @@ template<typename OwnerType, typename ValueType>
 class hazard
 :	public basic_hazard
 {
-	static_assert((std::alignment_of<OwnerType>::value &
-	    hazard_detail::hazard_t::FLAG) == 0U,
-	    "hazard: "
-	    "reference type must be aligned on an even number of bytes");
+  static_assert((std::alignment_of<OwnerType>::value &
+      hazard_detail::hazard_t::FLAG) == 0U,
+      "hazard: "
+      "reference type must be aligned on an even number of bytes");
 
-public:
-	using owner_type = OwnerType;
-	using value_type = ValueType;
-	using owner_reference = const owner_type&;
-	using value_reference = const value_type&;
+ public:
+  using owner_type = OwnerType;
+  using value_type = ValueType;
+  using owner_reference = const owner_type&;
+  using value_reference = const value_type&;
 
-	static std::uintptr_t
-	owner_key(owner_reference v) noexcept
-	{
-		return reinterpret_cast<std::uintptr_t>(std::addressof(v));
-	}
+  static std::uintptr_t owner_key(owner_reference) noexcept;
+  static std::uintptr_t value_key(value_reference) noexcept;
 
-	static std::uintptr_t
-	value_key(value_reference v) noexcept
-	{
-		return reinterpret_cast<std::uintptr_t>(std::addressof(v));
-	}
+  hazard(owner_reference v);
 
-	hazard(owner_reference v)
-	:	basic_hazard{ owner_key(v) }
-	{
-		/* Empty body. */
-	}
+  template<typename OperationFn, typename NilFn>
+  auto do_hazard(value_reference,
+                 OperationFn&&, NilFn&&) noexcept ->
+      decltype(std::declval<basic_hazard>().do_hazard(
+                   std::declval<std::uintptr_t>(),
+                   std::declval<OperationFn>(),
+                   std::declval<NilFn>()));
 
-	template<typename OperationFn, typename NilFn>
-	auto
-	do_hazard(value_reference value,
-	    OperationFn&& operation, NilFn&& on_nil)
-	noexcept
-	->	decltype(std::declval<basic_hazard>().do_hazard(
-		    std::declval<std::uintptr_t>(),
-		    std::forward<OperationFn>(operation),
-		    std::forward<NilFn>(on_nil)))
-	{
-		return this->basic_hazard::do_hazard(value_key(value),
-		    std::forward<OperationFn>(operation),
-		    std::forward<NilFn>(on_nil));
-	}
+  template<typename AcquireFn, typename ReleaseFn>
+  static void grant(AcquireFn&&, ReleaseFn&&,
+                    owner_reference, value_reference, std::size_t = 0U);
+  static std::size_t grant_n(owner_reference, value_reference, std::size_t);
 
-	template<typename AcquireFn, typename ReleaseFn>
-	static void
-	grant(AcquireFn&& acquire, ReleaseFn&& release,
-	    owner_reference owner, value_reference value,
-	    std::size_t nrefs = 0U)
-	{
-		basic_hazard::grant(std::forward<AcquireFn>(acquire),
-		    std::forward<ReleaseFn>(release),
-		    owner_key(owner), value_key(value), nrefs);
-	}
-
-	static std::size_t
-	grant_n(owner_reference owner, value_reference value,
-	    std::size_t nrefs)
-	{
-		return basic_hazard::grant_n(owner_key(owner),
-		    value_key(value), nrefs);
-	}
-
-	static void
-	wait_unused(owner_reference owner, value_reference value)
-	{
-		basic_hazard::wait_unused(owner_key(owner), value_key(value));
-	}
+  static void wait_unused(owner_reference, value_reference);
 };
 
 
 } /* namespace ilias */
+
+#include "hazard-inl.h"
 
 #endif /* ILIAS_HAZARD_H */
