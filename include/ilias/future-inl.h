@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Ariane van der Steldt <ariane@stack.nl>
+ * Copyright (c) 2014, 2015 Ariane van der Steldt <ariane@stack.nl>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
