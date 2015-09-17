@@ -83,16 +83,6 @@ inline auto basic_hazard::wait_unused(std::uintptr_t owner,
   hazard_wait(owner, value);
 }
 
-inline auto basic_hazard::validate_owner(std::uintptr_t p) -> std::uintptr_t {
-  if (p == 0U)
-    throw std::invalid_argument("hazard: owner must be non-null");
-
-  if ((p & hazard_t::FLAG) != 0U)
-    throw std::invalid_argument("hazard: owner may not have LSB set");
-
-  return p;
-}
-
 
 template<typename O, typename V>
 auto hazard<O, V>::owner_key(owner_reference v) noexcept -> std::uintptr_t {

@@ -70,7 +70,7 @@ class basic_hazard {
  private:
   hazard_t& hazard_;
 
-  static std::uintptr_t validate_owner(std::uintptr_t p);
+  ILIAS_ASYNC_EXPORT static std::uintptr_t validate_owner(std::uintptr_t p);
 
   ILIAS_ASYNC_EXPORT static hazard_t& allocate_hazard(std::uintptr_t) noexcept;
   ILIAS_ASYNC_EXPORT static const std::size_t hazard_count;
