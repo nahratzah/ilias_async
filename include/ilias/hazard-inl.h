@@ -21,30 +21,20 @@
 namespace ilias {
 
 
-inline auto basic_hazard::validate_owner(std::uintptr_t p) -> std::uintptr_t {
-  if (p == 0U)
-    throw std::invalid_argument("hazard: owner must be non-null");
-
-  if ((p & hazard_t::FLAG) != 0U)
-    throw std::invalid_argument("hazard: owner may not have LSB set");
-
-  return p;
-}
-
 inline basic_hazard::basic_hazard(std::uintptr_t owner)
-: m_hazard(allocate_hazard(validate_owner(owner)))
+: hazard_(allocate_hazard(validate_owner(owner)))
 {
-  assert(m_hazard.value.load(std::memory_order_relaxed) == 0U);
+  assert(hazard_.value.load(std::memory_order_relaxed) == 0U);
 }
 
 inline basic_hazard::~basic_hazard() noexcept {
-  assert(m_hazard.value.load(std::memory_order_relaxed) == 0U);
-  m_hazard.owner.fetch_and(hazard_t::FLAG, std::memory_order_release);
+  assert(hazard_.value.load(std::memory_order_relaxed) == 0U);
+  hazard_.owner.fetch_and(hazard_t::FLAG, std::memory_order_release);
 }
 
 inline auto basic_hazard::is_lock_free() const noexcept -> bool {
-  return atomic_is_lock_free(&m_hazard.owner) &&
-      atomic_is_lock_free(&m_hazard.value);
+  return atomic_is_lock_free(&hazard_.owner) &&
+      atomic_is_lock_free(&hazard_.value);
 }
 
 inline auto atomic_is_lock_free(const basic_hazard* h) noexcept -> bool {
@@ -54,10 +44,10 @@ inline auto atomic_is_lock_free(const basic_hazard* h) noexcept -> bool {
 template<typename OperationFn, typename NilFn>
 auto basic_hazard::do_hazard(std::uintptr_t value, OperationFn&& operation,
                              NilFn&& on_nil) noexcept -> void {
-  auto ov = m_hazard.value.exchange(value, std::memory_order_acq_rel);
+  auto ov = hazard_.value.exchange(value, std::memory_order_acq_rel);
   assert(ov == 0U);
   do_noexcept(operation);
-  if (m_hazard.value.exchange(0U, std::memory_order_release) == 0U)
+  if (hazard_.value.exchange(0U, std::memory_order_release) == 0U)
     do_noexcept(on_nil);
 }
 
@@ -91,6 +81,16 @@ inline auto basic_hazard::wait_unused(std::uintptr_t owner,
                                       std::uintptr_t value) -> void {
   validate_owner(owner);
   hazard_wait(owner, value);
+}
+
+inline auto basic_hazard::validate_owner(std::uintptr_t p) -> std::uintptr_t {
+  if (p == 0U)
+    throw std::invalid_argument("hazard: owner must be non-null");
+
+  if ((p & hazard_t::FLAG) != 0U)
+    throw std::invalid_argument("hazard: owner may not have LSB set");
+
+  return p;
 }
 
 

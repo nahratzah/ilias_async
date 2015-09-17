@@ -29,8 +29,7 @@ namespace hazard_detail {
 
 
 /* Hazard pointer logic. */
-struct alignas(64) hazard_t
-{
+struct alignas(64) hazard_t {
   static constexpr std::uintptr_t FLAG = 0x1U;
   static constexpr std::uintptr_t MASK = ~FLAG;
 
@@ -45,24 +44,9 @@ struct alignas(64) hazard_t
 /*
  * Basic hazard-pointer implementation.
  */
-class basic_hazard
-{
+class basic_hazard {
  private:
   using hazard_t = hazard_detail::hazard_t;
-
-  hazard_t& m_hazard;
-
-  static std::uintptr_t validate_owner(std::uintptr_t p);
-
-  ILIAS_ASYNC_EXPORT static hazard_t& allocate_hazard(std::uintptr_t) noexcept;
-  ILIAS_ASYNC_EXPORT static const std::size_t hazard_count;
-  ILIAS_ASYNC_EXPORT static std::size_t hazard_grant(std::uintptr_t,
-                                                     std::uintptr_t) noexcept;
-  ILIAS_ASYNC_EXPORT static void hazard_wait(std::uintptr_t, std::uintptr_t)
-      noexcept;
-  ILIAS_ASYNC_EXPORT static std::size_t hazard_grant_n(std::uintptr_t,
-                                                       std::uintptr_t,
-                                                       std::size_t) noexcept;
 
  public:
   basic_hazard(std::uintptr_t);
@@ -82,6 +66,21 @@ class basic_hazard
                     std::uintptr_t, std::uintptr_t, std::size_t = 0U);
   static std::size_t grant_n(std::uintptr_t, std::uintptr_t, std::size_t);
   static void wait_unused(std::uintptr_t, std::uintptr_t);
+
+ private:
+  hazard_t& hazard_;
+
+  static std::uintptr_t validate_owner(std::uintptr_t p);
+
+  ILIAS_ASYNC_EXPORT static hazard_t& allocate_hazard(std::uintptr_t) noexcept;
+  ILIAS_ASYNC_EXPORT static const std::size_t hazard_count;
+  ILIAS_ASYNC_EXPORT static std::size_t hazard_grant(std::uintptr_t,
+                                                     std::uintptr_t) noexcept;
+  ILIAS_ASYNC_EXPORT static void hazard_wait(std::uintptr_t, std::uintptr_t)
+      noexcept;
+  ILIAS_ASYNC_EXPORT static std::size_t hazard_grant_n(std::uintptr_t,
+                                                       std::uintptr_t,
+                                                       std::size_t) noexcept;
 };
 
 /*
@@ -89,7 +88,7 @@ class basic_hazard
  */
 template<typename OwnerType, typename ValueType>
 class hazard
-:	public basic_hazard
+: public basic_hazard
 {
   static_assert((std::alignment_of<OwnerType>::value &
       hazard_detail::hazard_t::FLAG) == 0U,
