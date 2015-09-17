@@ -23,107 +23,104 @@ namespace ll_queue_detail {
 const ll_qhead::token_ ll_qhead::token = {};
 
 
-void
-ll_qhead::push_back_(elem* e) noexcept
-{
-	assert(e);
-	e->ensure_unused();
-	e->m_succ.store(&this->m_head, std::memory_order_relaxed);
+auto ll_qhead::push_back_(elem* e) noexcept -> void {
+  using std::memory_order_relaxed;
+  using std::memory_order_release;
 
-	hazard_t hz;
-	elem* p = this->m_tail.load(std::memory_order_relaxed);
-	bool done = false;
+  assert(e);
+  e->ensure_unused();
+  e->m_succ.store(&m_head, memory_order_relaxed);
 
-	while (!done) {
-		hz.do_hazard(*p,
-		    [&]() {
-			elem* p_ = this->m_tail.load(
-			    std::memory_order_relaxed);
-			if (p != p_) {
-				p = p_;
-				return;
-			}
+  hazard_t hz;
+  elem* p = m_tail.load(memory_order_relaxed);
+  bool done = false;
 
-			elem* expect = &this->m_head;
-			if (p->m_succ.compare_exchange_weak(expect, e,
-			    std::memory_order_release,
-			    std::memory_order_relaxed)) {
-				this->m_tail.compare_exchange_strong(p, e,
-				    std::memory_order_relaxed,
-				    std::memory_order_relaxed);
-				done = true;
-			} else if (this->m_tail.compare_exchange_weak(
-			    p, expect,
-			    std::memory_order_relaxed,
-			    std::memory_order_relaxed))
-				p = expect;
-		    },
-		    []() {
-			assert(false);
-		    });
-	}
+  while (!done) {
+    hz.do_hazard(*p,
+                 [&]() {
+                   elem* p_ = m_tail.load(memory_order_relaxed);
+                   if (p != p_) {
+                     p = p_;
+                     return;
+                   }
 
-	this->m_size.fetch_add(1, std::memory_order_release);
+                   elem* expect = &m_head;
+                   if (p->m_succ.compare_exchange_weak(expect, e,
+                                                       memory_order_release,
+                                                       memory_order_relaxed)) {
+                     m_tail.compare_exchange_strong(p, e,
+                                                    memory_order_relaxed,
+                                                    memory_order_relaxed);
+                     done = true;
+                   } else if (m_tail.compare_exchange_weak(p, expect,
+                                  memory_order_relaxed,
+                                  memory_order_relaxed)) {
+                     p = expect;
+                   }
+                 },
+                 []() {
+                   assert(false);
+                 });
+  }
+
+  m_size.fetch_add(1, memory_order_release);
 }
 
-ll_qhead::elem*
-ll_qhead::pop_front_() noexcept
-{
-	hazard_t hz;
-	elem* e = this->m_head.m_succ.load(std::memory_order_consume);
-	bool done = false;
+auto ll_qhead::pop_front_() noexcept -> ll_qhead::elem* {
+  using std::memory_order_acq_rel;
+  using std::memory_order_consume;
+  using std::memory_order_relaxed;
+  using std::memory_order_release;
 
-	while (!done && e != &this->m_head) {
-		hz.do_hazard(*e,
-		    [&]() {
-			elem* e_ = this->m_head.m_succ.load(
-			    std::memory_order_relaxed);
-			if (e != e_) {
-				e = e_;
-				return;
-			}
+  hazard_t hz;
+  elem* e = m_head.m_succ.load(memory_order_consume);
+  bool done = false;
 
-			elem* succ = e->m_succ.load(std::memory_order_relaxed);
-			if (this->m_head.m_succ.compare_exchange_strong(
-			    e,
-			    succ,
-			    std::memory_order_relaxed,
-			    std::memory_order_consume)) {
-				this->m_tail.compare_exchange_strong(e_,
-				    &this->m_head,
-				    std::memory_order_relaxed,
-				    std::memory_order_relaxed);
-				done = true;
-			}
-		    },
-		    []() {
-			assert(false);
-		    });
-	}
+  while (!done && e != &m_head) {
+    hz.do_hazard(*e,
+                 [&]() {
+                   elem* e_ = m_head.m_succ.load(memory_order_relaxed);
+                   if (e != e_) {
+                     e = e_;
+                     return;
+                   }
 
-	if (e == &this->m_head)
-		e = nullptr;
+                   elem* succ = e->m_succ.load(memory_order_relaxed);
+                   if (m_head.m_succ.compare_exchange_strong(
+                                         e, succ,
+                                         memory_order_acq_rel,
+                                         memory_order_consume)) {
+                     m_tail.compare_exchange_strong(e_, &m_head,
+                                                    memory_order_relaxed,
+                                                    memory_order_relaxed);
+                     done = true;
+                   }
+                 },
+                 []() {
+                   assert(false);
+                 });
+  }
 
-	if (e)
-		this->m_size.fetch_sub(1U, std::memory_order_release);
-
-	return e;
+  if (e == &m_head) e = nullptr;
+  if (e) m_size.fetch_sub(1U, memory_order_release);
+  return e;
 }
 
-void
-ll_qhead::push_front_(elem* e) noexcept
-{
-	assert(e);
-	e->ensure_unused();
+auto ll_qhead::push_front_(elem* e) noexcept -> void {
+  using std::memory_order_release;
+  using std::memory_order_relaxed;
 
-	elem* s = this->m_head.m_succ.load(std::memory_order_relaxed);
-	do {
-		e->m_succ.store(s, std::memory_order_relaxed);
-	} while (!this->m_head.m_succ.compare_exchange_weak(s, e,
-	    std::memory_order_release,
-	    std::memory_order_relaxed));
+  assert(e);
+  e->ensure_unused();
 
-	this->m_size.fetch_add(1U, std::memory_order_release);
+  elem* s = m_head.m_succ.load(memory_order_relaxed);
+  do {
+    e->m_succ.store(s, memory_order_relaxed);
+  } while (!m_head.m_succ.compare_exchange_weak(s, e,
+                                                memory_order_release,
+                                                memory_order_relaxed));
+
+  m_size.fetch_add(1U, memory_order_release);
 }
 
 
