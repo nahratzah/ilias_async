@@ -203,7 +203,7 @@ auto ll_queue<Type, no_intrusive_tag>::pop_front()
     noexcept(std::is_nothrow_move_constructible<value_type>::value ||
              std::is_nothrow_copy_constructible<value_type>::value) ->
     pointer {
-  std::unique_ptr<elem> e = m_impl.pop_front();
+  std::unique_ptr<elem> e = std::unique_ptr<elem>(m_impl.pop_front());
   pointer rv;
   if (e) rv.reset(std::move_if_noexcept(e->m_value));
   return rv;
