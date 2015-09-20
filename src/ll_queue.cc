@@ -23,6 +23,7 @@ const ll_qhead::token_ ll_qhead::token = {};
 
 
 auto ll_qhead::push_back_(elem* e) noexcept -> void {
+  using std::memory_order_acquire;
   using std::memory_order_relaxed;
   using std::memory_order_release;
 
@@ -34,10 +35,12 @@ auto ll_qhead::push_back_(elem* e) noexcept -> void {
   elem* p = m_tail.load(memory_order_relaxed);
   bool done = false;
 
+  m_size.fetch_add(1, memory_order_release);
+
   while (!done) {
     hz.do_hazard(*p,
                  [&]() {
-                   elem* p_ = m_tail.load(memory_order_relaxed);
+                   elem* p_ = m_tail.load(memory_order_acquire);
                    if (p != p_) {
                      p = p_;
                      return;
@@ -48,7 +51,7 @@ auto ll_qhead::push_back_(elem* e) noexcept -> void {
                                                        memory_order_release,
                                                        memory_order_relaxed)) {
                      m_tail.compare_exchange_strong(p, e,
-                                                    memory_order_relaxed,
+                                                    memory_order_release,
                                                     memory_order_relaxed);
                      done = true;
                    } else if (m_tail.compare_exchange_weak(p, expect,
@@ -61,11 +64,10 @@ auto ll_qhead::push_back_(elem* e) noexcept -> void {
                    assert(false);
                  });
   }
-
-  m_size.fetch_add(1, memory_order_release);
 }
 
 auto ll_qhead::pop_front_() noexcept -> ll_qhead::elem* {
+  using std::memory_order_acquire;
   using std::memory_order_acq_rel;
   using std::memory_order_consume;
   using std::memory_order_relaxed;
@@ -78,7 +80,7 @@ auto ll_qhead::pop_front_() noexcept -> ll_qhead::elem* {
   while (!done && e != &m_head) {
     hz.do_hazard(*e,
                  [&]() {
-                   elem* e_ = m_head.m_succ.load(memory_order_relaxed);
+                   elem* e_ = m_head.m_succ.load(memory_order_acquire);
                    if (e != e_) {
                      e = e_;
                      return;
@@ -112,14 +114,14 @@ auto ll_qhead::push_front_(elem* e) noexcept -> void {
   assert(e);
   e->ensure_unused();
 
+  m_size.fetch_add(1U, memory_order_release);
+
   elem* s = m_head.m_succ.load(memory_order_relaxed);
   do {
     e->m_succ.store(s, memory_order_relaxed);
   } while (!m_head.m_succ.compare_exchange_weak(s, e,
                                                 memory_order_release,
                                                 memory_order_relaxed));
-
-  m_size.fetch_add(1U, memory_order_release);
 }
 
 
