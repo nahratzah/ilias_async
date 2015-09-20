@@ -14,15 +14,20 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 #include <ilias/ll_queue.h>
+#include <cassert>
 
 namespace ilias {
 namespace ll_queue_detail {
 
 
 const ll_qhead::token_ ll_qhead::token = {};
+constexpr ll_qhead::atom_flags ll_qhead::UNMARKED;
+constexpr ll_qhead::atom_flags ll_qhead::MARKED;
 
 
 auto ll_qhead::push_back_(elem* e) noexcept -> void {
+  using std::get;
+  using std::memory_order_acq_rel;
   using std::memory_order_acquire;
   using std::memory_order_relaxed;
   using std::memory_order_release;
@@ -33,11 +38,13 @@ auto ll_qhead::push_back_(elem* e) noexcept -> void {
 
   hazard_t hz;
   elem* p = m_tail.load(memory_order_relaxed);
-  bool done = false;
 
   m_size.fetch_add(1, memory_order_release);
 
-  while (!done) {
+  for (;;) {
+    bool done = false;
+    atom_vt p_succ = atom_vt(nullptr, UNMARKED);
+
     hz.do_hazard(*p,
                  [&]() {
                    elem* p_ = m_tail.load(memory_order_acquire);
@@ -46,27 +53,43 @@ auto ll_qhead::push_back_(elem* e) noexcept -> void {
                      return;
                    }
 
-                   elem* expect = &m_head;
-                   if (p->m_succ.compare_exchange_weak(expect, e,
-                                                       memory_order_release,
-                                                       memory_order_relaxed)) {
+                   p_succ = atom_vt(&m_head, UNMARKED);
+                   if (p->m_succ.compare_exchange_weak(p_succ,
+                                                       atom_vt(e, UNMARKED),
+                                                       memory_order_acq_rel,
+                                                       memory_order_acquire)) {
                      m_tail.compare_exchange_strong(p, e,
                                                     memory_order_release,
                                                     memory_order_relaxed);
                      done = true;
-                   } else if (m_tail.compare_exchange_weak(p, expect,
-                                  memory_order_relaxed,
-                                  memory_order_relaxed)) {
-                     p = expect;
+                     return;
+                   }
+
+                   if (get<1>(p_succ) == UNMARKED) {
+                     if (m_tail.compare_exchange_weak(p, get<0>(p_succ),
+                         memory_order_release,
+                         memory_order_relaxed))
+                       p = get<0>(p_succ);
+                     return;
                    }
                  },
                  []() {
-                   assert(false);
+                   assert(false);  // We don't use grants.
                  });
+
+    if (done) return;
+
+    if (get<1>(p_succ) == MARKED) {
+      if (p == &m_head)
+        p = pop_front_aid_(hz, get<0>(p_succ), true);
+      else
+        p = pop_front_aid_(hz, p, true);
+    }
   }
 }
 
 auto ll_qhead::pop_front_() noexcept -> ll_qhead::elem* {
+  using std::get;
   using std::memory_order_acquire;
   using std::memory_order_acq_rel;
   using std::memory_order_consume;
@@ -74,40 +97,26 @@ auto ll_qhead::pop_front_() noexcept -> ll_qhead::elem* {
   using std::memory_order_release;
 
   hazard_t hz;
-  elem* e = m_head.m_succ.load(memory_order_consume);
-  bool done = false;
 
-  while (!done && e != &m_head) {
-    hz.do_hazard(*e,
-                 [&]() {
-                   elem* e_ = m_head.m_succ.load(memory_order_acquire);
-                   if (e != e_) {
-                     e = e_;
-                     return;
-                   }
-
-                   elem* succ = e->m_succ.load(memory_order_relaxed);
-                   if (m_head.m_succ.compare_exchange_strong(
-                                         e, succ,
-                                         memory_order_acq_rel,
-                                         memory_order_consume)) {
-                     m_tail.compare_exchange_strong(e_, &m_head,
-                                                    memory_order_relaxed,
-                                                    memory_order_relaxed);
-                     done = true;
-                   }
-                 },
-                 []() {
-                   assert(false);
-                 });
+  atom_vt e = atom_vt(get<0>(m_head.m_succ.load(memory_order_relaxed)),
+                      UNMARKED);
+  while (get<0>(e) != &m_head &&
+         !m_head.m_succ.compare_exchange_weak(e, atom_vt(get<0>(e), MARKED),
+                                              memory_order_acquire,
+                                              memory_order_relaxed)) {
+    if (get<1>(e) == MARKED)
+      e = atom_vt(pop_front_aid_(hz, get<0>(e), true), UNMARKED);
   }
+  assert(get<1>(e) == UNMARKED);
+  if (get<0>(e) == &m_head) return nullptr;
 
-  if (e == &m_head) e = nullptr;
-  if (e) m_size.fetch_sub(1U, memory_order_release);
-  return e;
+  m_size.fetch_sub(1U, memory_order_release);
+  pop_front_aid_(hz, get<0>(e), false);
+  return get<0>(e);
 }
 
 auto ll_qhead::push_front_(elem* e) noexcept -> void {
+  using std::get;
   using std::memory_order_release;
   using std::memory_order_relaxed;
 
@@ -116,12 +125,58 @@ auto ll_qhead::push_front_(elem* e) noexcept -> void {
 
   m_size.fetch_add(1U, memory_order_release);
 
-  elem* s = m_head.m_succ.load(memory_order_relaxed);
-  do {
+  atom_vt s = m_head.m_succ.load(memory_order_relaxed);
+  for (;;) {
+    if (get<1>(s) == MARKED) {
+      hazard_t hz;
+      s = atom_vt(pop_front_aid_(hz, get<0>(s), true), UNMARKED);
+    }
+
     e->m_succ.store(s, memory_order_relaxed);
-  } while (!m_head.m_succ.compare_exchange_weak(s, e,
-                                                memory_order_release,
-                                                memory_order_relaxed));
+    if (m_head.m_succ.compare_exchange_weak(s, e,
+                                            memory_order_release,
+                                            memory_order_relaxed))
+      return;
+  }
+}
+
+auto ll_qhead::pop_front_aid_(hazard_t& hz, elem* s, bool until_valid)
+    noexcept -> elem* {
+  using std::get;
+  using std::memory_order_acquire;
+  using std::memory_order_release;
+  using std::memory_order_acq_rel;
+  using std::memory_order_relaxed;
+
+  atom_vt h_succ;
+  do {
+    assert(s != nullptr);
+
+    hz.do_hazard(*s,
+                 [&]() {
+                   h_succ = m_head.m_succ.load(memory_order_acquire);
+                   if (get<0>(h_succ) != s) return;
+                   assert(get<1>(h_succ) == MARKED);
+
+                   atom_vt ss = s->m_succ.load(memory_order_acquire);
+                   assert(get<1>(ss) == UNMARKED);
+                   m_tail.compare_exchange_strong(s, get<0>(ss),
+                                                  memory_order_release,
+                                                  memory_order_relaxed);
+                   if (m_head.m_succ.compare_exchange_strong(
+                           h_succ, ss,
+                           memory_order_acq_rel,
+                           memory_order_acquire))
+                     h_succ = ss;
+                 },
+                 []() {
+                   assert(false);  // We don't use grants.
+                 });
+
+    s = get<0>(h_succ);
+    if (get<1>(h_succ) == UNMARKED) return s;
+  } while (until_valid);
+  return s;
 }
 
 

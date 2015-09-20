@@ -20,6 +20,7 @@
 #include <ilias/hazard.h>
 #include <ilias/util.h>
 #include <ilias/refcnt.h>
+#include <ilias/llptr.h>
 #include <atomic>
 
 namespace ilias {
@@ -32,9 +33,18 @@ namespace ll_queue_detail {
  * Uses intrusively linked elem objects.
  */
 class ll_qhead {
+ public:
+  class elem;
+
  private:
+  using atom_ptr = atomic_flag_ptr<elem, 1>;
+  using atom_flags = atom_ptr::flags_type;
+  using atom_vt = atom_ptr::element_type;
   struct tag_head {};
   struct alignas(2) token_ {};
+
+  static constexpr atom_flags UNMARKED = atom_flags(0U);
+  static constexpr atom_flags MARKED = atom_flags(1U);
 
   /*
    * Global address token, to identify all ll_qhead hazard pointers.
@@ -50,7 +60,7 @@ class ll_qhead {
     friend class ll_qhead;
 
    private:
-    mutable std::atomic<elem*> m_succ{ nullptr };
+    mutable atom_ptr m_succ;
 
     elem(tag_head) noexcept;
 
@@ -92,6 +102,7 @@ class ll_qhead {
   ILIAS_ASYNC_EXPORT void push_back_(elem*) noexcept;
   ILIAS_ASYNC_EXPORT elem* pop_front_() noexcept;
   ILIAS_ASYNC_EXPORT void push_front_(elem*) noexcept;
+  elem* pop_front_aid_(hazard_t&, elem*, bool) noexcept;
 
  public:
   void push_back(elem*);

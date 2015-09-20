@@ -84,7 +84,10 @@ inline auto ll_qhead::size() const noexcept -> size_type {
 }
 
 inline auto ll_qhead::empty() const noexcept -> bool {
-  return (m_head.m_succ.load(std::memory_order_consume) == &m_head);
+  using std::get;
+  using std::memory_order_acquire;
+
+  return (get<0>(m_head.m_succ.load(memory_order_acquire)) == &m_head);
 }
 
 inline auto ll_qhead::is_lock_free() const noexcept -> bool {
