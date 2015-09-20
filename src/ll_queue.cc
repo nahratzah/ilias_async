@@ -42,8 +42,12 @@ auto ll_qhead::push_back_(elem* e) noexcept -> void {
   m_size.fetch_add(1, memory_order_release);
 
   for (;;) {
-    if (get<1>(p) == MARKED)
-      p = atom_vt(pop_front_aid_(hz, get<0>(p), true), UNMARKED);
+    if (get<1>(p) == MARKED) {
+      if (get<0>(p) == &m_head)
+        p = get<0>(p)->m_succ.load(memory_order_relaxed);
+      if (get<1>(p) == MARKED)
+        p = atom_vt(pop_front_aid_(hz, get<0>(p), true), UNMARKED);
+    }
 
     bool done = false;
     atom_vt p_succ = atom_vt(&m_head, UNMARKED);
@@ -186,6 +190,13 @@ auto ll_qhead::pop_front_aid_(hazard_t& hz, elem* s, bool until_valid)
                    }
                    get<1>(ss) = UNMARKED;
 
+                   /* Update m_head to point at successor of s. */
+                   if (m_head.m_succ.compare_exchange_strong(
+                           h_succ, ss,
+                           memory_order_acq_rel,
+                           memory_order_acquire))
+                     h_succ = ss;
+
                    /* Move tail away from s. */
                    {
                      atom_vt expect = atom_vt(s, MARKED);
@@ -193,13 +204,6 @@ auto ll_qhead::pop_front_aid_(hazard_t& hz, elem* s, bool until_valid)
                                                     memory_order_release,
                                                     memory_order_relaxed);
                    }
-
-                   /* Update m_head to point at successor of s. */
-                   if (m_head.m_succ.compare_exchange_strong(
-                           h_succ, ss,
-                           memory_order_acq_rel,
-                           memory_order_acquire))
-                     h_succ = ss;
                  },
                  []() {
                    assert(false);  // We don't use grants.
