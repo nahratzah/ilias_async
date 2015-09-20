@@ -64,9 +64,10 @@ auto ll_qhead::push_back_(elem* e) noexcept -> void {
                      return;
                    }
 
-                   if (m_tail.compare_exchange_weak(p, get<0>(p_succ),
-                       memory_order_release,
-                       memory_order_relaxed))
+                   if (get<1>(p_succ) == UNMARKED &&
+                       m_tail.compare_exchange_weak(p, get<0>(p_succ),
+                                                    memory_order_release,
+                                                    memory_order_relaxed))
                      p = get<0>(p_succ);
                  },
                  []() {
