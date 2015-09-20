@@ -23,6 +23,7 @@ namespace ll_queue_detail {
 
 
 inline auto ll_qhead::elem::ensure_unused() const noexcept -> void {
+  std::atomic_thread_fence(std::memory_order_acq_rel);
   hazard_t::wait_unused(token, *this);
   std::atomic_thread_fence(std::memory_order_acq_rel);
 }

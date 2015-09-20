@@ -89,7 +89,7 @@ class ll_qhead {
   };
 
   elem m_head{ tag_head{} };
-  std::atomic<elem*> m_tail{ &m_head };
+  atom_ptr m_tail{ atom_vt(&m_head, UNMARKED) };
   std::atomic<size_type> m_size{ 0U };
 
  public:
