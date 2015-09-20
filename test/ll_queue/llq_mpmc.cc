@@ -62,10 +62,10 @@ int main() {
   ll_queue<vtype, no_intrusive_tag> q;
 
   /* Start 2 producers, 2 consumers. */
-  auto push_a = std::async(std::launch::async, &push_back, &q, &elems_a);
-  auto push_b = std::async(std::launch::async, &push_back, &q, &elems_b);
   auto pop_1 = std::async(std::launch::async, &pop_front, &q, elems_a.size());
   auto pop_2 = std::async(std::launch::async, &pop_front, &q, elems_b.size());
+  auto push_a = std::async(std::launch::async, &push_back, &q, &elems_a);
+  auto push_b = std::async(std::launch::async, &push_back, &q, &elems_b);
   std::cout << "started push and pop threads." << std::endl;
   /* Wait for producers to complete. */
   push_a.get();
