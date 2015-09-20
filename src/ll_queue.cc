@@ -163,8 +163,7 @@ auto ll_qhead::pop_front_aid_(hazard_t& hz, elem* s, bool until_valid)
                               ss, atom_vt(get<0>(ss), MARKED),
                               memory_order_acq_rel,
                               memory_order_acquire)) {
-                     // ss == &m_head  ==>  ss is unmarked
-                     assert(get<1>(ss) == UNMARKED || get<0>(ss) != &m_head);
+                     /* SKIP */
                    }
 
                    /* Move tail out of the way. */
