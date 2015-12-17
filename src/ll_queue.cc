@@ -21,7 +21,7 @@ namespace ll_queue_detail {
 
 
 auto ll_qhead::push_back_(elem& e) noexcept -> void {
-  head_.link_back(e);
+  head_.link_back(*elem_ptr(&e));
 }
 
 auto ll_qhead::pop_front_() noexcept -> elem* {
@@ -29,7 +29,7 @@ auto ll_qhead::pop_front_() noexcept -> elem* {
 }
 
 auto ll_qhead::push_front_(elem& e) noexcept -> void {
-  head_.link_front(e);
+  head_.link_front(*elem_ptr(&e));
 }
 
 auto ll_qhead::size() const noexcept -> size_type {
