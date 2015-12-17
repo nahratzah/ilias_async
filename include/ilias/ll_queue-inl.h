@@ -22,51 +22,11 @@ namespace ilias {
 namespace ll_queue_detail {
 
 
-inline auto ll_qhead::elem::ensure_unused() const noexcept -> void {
-  std::atomic_thread_fence(std::memory_order_acq_rel);
-  hazard_t::wait_unused(token, *this);
-  std::atomic_thread_fence(std::memory_order_acq_rel);
-}
-
-inline ll_qhead::elem::elem(tag_head) noexcept
-: m_succ(this)
-{}
-
-inline ll_qhead::elem::elem(const elem&) noexcept
-: elem()
-{}
-
-inline ll_qhead::elem::elem(elem&&) noexcept
-: elem()
-{}
-
-inline ll_qhead::elem::~elem() noexcept {
-  this->ensure_unused();
-}
-
-inline auto ll_qhead::elem::operator=(const elem&) noexcept -> elem& {
-  return *this;
-}
-
-inline auto ll_qhead::elem::operator=(elem&&) noexcept -> elem& {
-  return *this;
-}
-
-inline auto ll_qhead::elem::operator==(const elem&) const noexcept -> bool {
-  return true;
-}
-
-
-inline ll_qhead::hazard_t::hazard_t() noexcept
-: hazard<token_, elem>(token)
-{}
-
-
 inline auto ll_qhead::push_back(elem* e) -> void {
   if (!e)
     throw std::invalid_argument("ll_queue: cannot push back nil");
 
-  push_back_(e);
+  push_back_(*e);
 }
 
 inline auto ll_qhead::pop_front() noexcept -> elem* {
@@ -77,25 +37,11 @@ inline auto ll_qhead::push_front(elem* e) -> void {
   if (!e)
     throw std::invalid_argument("ll_queue: cannot push back nil");
 
-  push_front_(e);
-}
-
-inline auto ll_qhead::size() const noexcept -> size_type {
-  return m_size.load(std::memory_order_consume);
-}
-
-inline auto ll_qhead::empty() const noexcept -> bool {
-  using std::get;
-  using std::memory_order_acquire;
-
-  return (get<0>(m_head.m_succ.load(memory_order_acquire)) == &m_head);
+  push_front_(*e);
 }
 
 inline auto ll_qhead::is_lock_free() const noexcept -> bool {
-  hazard_t hz;
-  return atomic_is_lock_free(&m_head.m_succ) &&
-         atomic_is_lock_free(&m_tail) &&
-         atomic_is_lock_free(&hz);
+  return head_.is_lock_free();
 }
 
 inline auto atomic_is_lock_free(const ll_qhead* h) noexcept -> bool {
