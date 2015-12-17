@@ -79,6 +79,8 @@ class elem {
   elem& operator=(const elem&) noexcept { return *this; }
   ILIAS_ASYNC_EXPORT ~elem() noexcept;
 
+  friend bool atomic_is_lock_free(const elem* e) noexcept;
+
  private:
   ILIAS_ASYNC_EXPORT elem(elem_type) noexcept;
 
@@ -189,9 +191,13 @@ class list {
 
   ILIAS_ASYNC_EXPORT static bool iterator_to(elem&, position*) noexcept;
 
+  bool is_lock_free() const noexcept;
+
  private:
   elem data_;
 };
+
+bool atomic_is_lock_free(const list*) noexcept;
 
 class iter_link final
 : public elem

@@ -37,6 +37,14 @@ inline auto elem_acqrel::release(const elem& e, size_t nrefs) noexcept ->
 }
 
 
+inline auto atomic_is_lock_free(const elem* e) noexcept -> bool {
+  return e &&
+      atomic_is_lock_free(&e->link_count_) &&
+      atomic_is_lock_free(&e->linking_) &&
+      atomic_is_lock_free(&e->succ_) && atomic_is_lock_free(&e->pred_);
+}
+
+
 inline auto list::is_unlinked_(const elem& e) noexcept -> bool {
   const auto e_p = e.pred_.load_no_acquire(memory_order_acquire);
   return get<0>(e_p) == nullptr || get<1>(e_p) == MARKED;
@@ -44,6 +52,14 @@ inline auto list::is_unlinked_(const elem& e) noexcept -> bool {
 
 inline auto list::get_elem_type(const elem& e) noexcept -> elem_type {
   return e.type_;
+}
+
+inline auto list::is_lock_free() const noexcept -> bool {
+  return atomic_is_lock_free(&data_);
+}
+
+inline auto atomic_is_lock_free(const list* l) noexcept -> bool {
+  return l->is_lock_free();
 }
 
 

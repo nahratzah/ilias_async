@@ -17,10 +17,10 @@
 #define ILIAS_LL_QUEUE_H
 
 #include <ilias/ilias_async_export.h>
-#include <ilias/hazard.h>
+#include <ilias/ll_list.h>
 #include <ilias/util.h>
 #include <ilias/refcnt.h>
-#include <atomic>
+#include <ilias/llptr.h>
 
 namespace ilias {
 namespace ll_queue_detail {
@@ -32,55 +32,13 @@ namespace ll_queue_detail {
  * Uses intrusively linked elem objects.
  */
 class ll_qhead {
- private:
-  struct tag_head {};
-  struct alignas(2) token_ {};
-
-  /*
-   * Global address token, to identify all ll_qhead hazard pointers.
-   *
-   * Using a globally shared token, the algorithm can rely on a
-   * delayed hazard-wait function, which is only called when elem
-   * is destroyed.
-   */
-  ILIAS_ASYNC_EXPORT static const token_ token;
-
  public:
-  class elem {
-    friend class ll_qhead;
-
-   private:
-    mutable std::atomic<elem*> m_succ{ nullptr };
-
-    elem(tag_head) noexcept;
-
-    void ensure_unused() const noexcept;
-
-   public:
-    elem() = default;
-    elem(const elem&) noexcept;
-    elem(elem&&) noexcept;
-    ~elem() noexcept;
-
-   protected:
-    elem& operator=(const elem&) noexcept;
-    elem& operator=(elem&&) noexcept;
-    bool operator==(const elem&) const noexcept;
-  };
-
-  using size_type = std::size_t;
+  using elem = ll_list_detail::elem;
+  using elem_ptr = ll_list_detail::elem_ptr;
+  using size_type = ll_list_detail::list::size_type;
 
  private:
-  class hazard_t
-  : public hazard<token_, elem>
-  {
-   public:
-    hazard_t() noexcept;
-  };
-
-  elem m_head{ tag_head{} };
-  std::atomic<elem*> m_tail{ &m_head };
-  std::atomic<size_type> m_size{ 0U };
+  ll_list_detail::list head_;
 
  public:
   ll_qhead() = default;
@@ -89,17 +47,17 @@ class ll_qhead {
   /* XXX implement move constructor. */
 
  private:
-  ILIAS_ASYNC_EXPORT void push_back_(elem*) noexcept;
+  ILIAS_ASYNC_EXPORT void push_back_(elem&) noexcept;
   ILIAS_ASYNC_EXPORT elem* pop_front_() noexcept;
-  ILIAS_ASYNC_EXPORT void push_front_(elem*) noexcept;
+  ILIAS_ASYNC_EXPORT void push_front_(elem&) noexcept;
 
  public:
   void push_back(elem*);
   elem* pop_front() noexcept;
   void push_front(elem*);
 
-  size_type size() const noexcept;
-  bool empty() const noexcept;
+  ILIAS_ASYNC_EXPORT size_type size() const noexcept;
+  ILIAS_ASYNC_EXPORT bool empty() const noexcept;
 
   bool is_lock_free() const noexcept;
   friend bool atomic_is_lock_free(const ll_qhead*) noexcept;
