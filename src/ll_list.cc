@@ -379,7 +379,7 @@ auto list::link_(elem& a, elem& x, elem& b) noexcept -> axb_link_result {
       error = XLINK_LOST_AB;
     else
       error = XLINK_LOST_A;
-  } else if (get<0>(as_expect) != &b) {
+  } else if (as_expect != make_tuple(&b, S_MARKED)) {
     error = XLINK_RETRY;
   } else /* if (get<1>(as_expect) == MARKED) */ {
     auto ap = a.pred_.load_no_acquire(memory_order_relaxed);
