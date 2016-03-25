@@ -526,7 +526,9 @@ auto list::unlink_aid_(elem& a, elem& x) noexcept ->
         a_ptr->succ_.compare_exchange_weak(as_expect, x_succ,
                                            memory_order_acq_rel,
                                            memory_order_acquire);
-  } while (!cas_succeeded && get<0>(as_expect) == &x);
+  } while (!cas_succeeded &&
+           get<0>(as_expect) == &x &&
+           (get<1>(as_expect) & S_MARKED) == S_MARKED);
 
   if (cas_succeeded) {
     b_ptr = move(x_succ);
